@@ -43,3 +43,8 @@ dev-dist/
 .cache/
 .eslintcache
 .prettiercache
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
