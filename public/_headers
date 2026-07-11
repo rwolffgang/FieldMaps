@@ -1,0 +1,14 @@
+# Cloudflare Pages custom headers.
+# Keep the service worker, its registration shim, and the manifest fresh so
+# PWA updates roll out on reload instead of being served from a stale cache.
+/sw.js
+  Cache-Control: no-cache
+/registerSW.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# Vite emits content-hashed filenames under /assets, so they can be cached
+# forever — a new build produces a new URL.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
