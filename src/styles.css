@@ -176,6 +176,11 @@ map-view,
 	backdrop-filter: blur(6px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 }
+.pill.warn {
+	background: rgba(180, 40, 40, 0.92);
+	color: #fff;
+	border-color: rgba(255, 120, 120, 0.5);
+}
 .recenter {
 	pointer-events: auto;
 	width: 52px;

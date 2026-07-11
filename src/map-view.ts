@@ -38,6 +38,7 @@ export class MapView extends LitElement {
 
 	@state() private status = "Waiting for GPS…";
 	@state() private following = true;
+	@state() private offMap = false;
 	@state() private selectedMapId = localStorage.getItem(STORAGE_KEY) ?? DEFAULT_MAP_ID;
 	@state() private selectedPoiId = "";
 	@state() private navDistanceM = 0;
@@ -245,6 +246,8 @@ export class MapView extends LitElement {
 		const pixel = this.transform.toPixel(lat, lng);
 		this.lastPixel = pixel;
 		const latLng = this.px2ll(pixel.px, pixel.py);
+		this.offMap =
+			pixel.px < 0 || pixel.px > this.mapWidth || pixel.py < 0 || pixel.py > this.mapHeight;
 
 		this.accuracyCircle.setLatLng(latLng);
 		this.accuracyCircle.setRadius(this.transform.metersToPixels(accuracyM));
@@ -264,19 +267,33 @@ export class MapView extends LitElement {
 			this.marker.setIcon(this.makeIcon(screenDegrees, showTriangle));
 		}
 
-		if (this.selectedPoiId) {
-			this.updateNavigation();
+		if (this.selectedPoiId) this.updateNavigation();
+
+		if (this.offMap) {
+			this.status = "⚠ Off map — you're outside this field";
+		} else if (this.selectedPoiId) {
 			this.status = `${this.getSelectedPoi()?.name ?? "POI"} · ${this.navDistanceM.toFixed(0)} m`;
 		} else {
 			this.status = `±${accuracyM.toFixed(0)} m`;
 		}
 
-		if (this.following) this.map.panTo(latLng, { animate: true });
+		// Keep the map in view when the fix falls outside the image; following it
+		// would just pan into empty background.
+		if (this.following && !this.offMap) this.map.panTo(latLng, { animate: true });
 	}
 
 	private recenter() {
 		this.following = true;
-		if (this.lastPixel) this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py));
+		// Off-map: re-following would pan into empty background, so snap back to the
+		// whole field instead — the warning already tells the user where they are.
+		if (this.offMap) {
+			this.map.fitBounds([
+				[0, 0],
+				[this.mapHeight, this.mapWidth],
+			]);
+		} else if (this.lastPixel) {
+			this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py));
+		}
 	}
 
 	render() {
@@ -330,7 +347,7 @@ export class MapView extends LitElement {
 								`
 							: ""
 					}
-					<span class="pill">${this.status}</span>
+					<span class="pill ${this.offMap ? "warn" : ""}">${this.status}</span>
 				</div>
 				<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>◎</button>
 			</div>
