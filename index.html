@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+		/>
+		<meta name="theme-color" content="#0b0f14" />
+		<title>Field Map</title>
+	</head>
+	<body>
+		<map-view></map-view>
+		<button id="enable-compass" hidden>Enable compass</button>
+		<!-- Testing aid: paste "lat, lng" copied from Google Maps to drop the dot. -->
+		<input
+			id="test-coords"
+			type="text"
+			inputmode="decimal"
+			autocomplete="off"
+			autocorrect="off"
+			spellcheck="false"
+			placeholder="Paste lat, lng"
+		/>
+		<div id="toast" hidden></div>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>
