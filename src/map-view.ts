@@ -28,6 +28,7 @@ export class MapView extends LitElement {
 	private accuracyCircle!: L.Circle;
 	private imageOverlay: L.ImageOverlay | null = null;
 	private poiMarker: L.Marker | null = null;
+	private poiDotsLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
 	private arrowEl: HTMLElement | null = null;
 	private lastPixel: { px: number; py: number } | null = null;
@@ -105,6 +106,8 @@ export class MapView extends LitElement {
 		if (this.lastGps) {
 			this.update_(this.lastGps.lat, this.lastGps.lng, this.lastGps.accuracy, this.lastGps.heading);
 		}
+
+		this.syncPoiDots();
 	}
 
 	private onMapSelect(event: Event) {
@@ -163,23 +166,33 @@ export class MapView extends LitElement {
 			return;
 		}
 
-		const distance = distanceMeters(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
-		const targetBearing = bearingDegrees(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
+		const gpsPixel = this.transform.toPixel(this.lastGps.lat, this.lastGps.lng);
+		const userPixel = this.displayPixel(gpsPixel);
+		const poiPixel = this.transform.toPixel(poi.lat, poi.lng);
 
-		this.navDistanceM = distance;
-		this.navArrowDeg = this.transform.bearingToScreenDeg(targetBearing);
-
-		if (distance <= ARRIVED_DISTANCE_M) {
-			this.navHint = "You have arrived";
-		} else if (this.lastGps.heading != null) {
-			const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
-			this.navHint = navigationHint(relative);
+		if (this.offMap) {
+			const deltaX = poiPixel.px - userPixel.px;
+			const deltaY = poiPixel.py - userPixel.py;
+			this.navDistanceM = this.transform.pixelsToMeters(Math.hypot(deltaX, deltaY));
+			this.navArrowDeg = this.screenArrowDeg(userPixel, poiPixel);
+			this.navHint = "Approximate — GPS is off this field";
 		} else {
-			this.navHint = "Enable compass for turn hints";
+			const distance = distanceMeters(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
+			const targetBearing = bearingDegrees(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
+
+			this.navDistanceM = distance;
+			this.navArrowDeg = this.transform.bearingToScreenDeg(targetBearing);
+
+			if (distance <= ARRIVED_DISTANCE_M) {
+				this.navHint = "You have arrived";
+			} else if (this.lastGps.heading != null) {
+				const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
+				this.navHint = navigationHint(relative);
+			} else {
+				this.navHint = "Enable compass for turn hints";
+			}
 		}
 
-		const userPixel = this.transform.toPixel(this.lastGps.lat, this.lastGps.lng);
-		const poiPixel = this.transform.toPixel(poi.lat, poi.lng);
 		const userLatLng = this.px2ll(userPixel.px, userPixel.py);
 		const poiLatLng = this.px2ll(poiPixel.px, poiPixel.py);
 
@@ -202,7 +215,7 @@ export class MapView extends LitElement {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) return;
 
-		const userPixel = this.transform.toPixel(this.lastGps.lat, this.lastGps.lng);
+		const userPixel = this.displayPixel(this.transform.toPixel(this.lastGps.lat, this.lastGps.lng));
 		const poiPixel = this.transform.toPixel(poi.lat, poi.lng);
 		const bounds = L.latLngBounds([
 			this.px2ll(userPixel.px, userPixel.py),
@@ -215,6 +228,28 @@ export class MapView extends LitElement {
 	/** IMAGE pixel (y-down, from top) -> Leaflet CRS.Simple latLng (y-up). */
 	private px2ll(px: number, py: number): L.LatLngExpression {
 		return [this.mapHeight - py, px];
+	}
+
+	private mapCenterPixel(): { px: number; py: number } {
+		return { px: this.mapWidth / 2, py: this.mapHeight / 2 };
+	}
+
+	private isOffMapPixel(pixel: { px: number; py: number }): boolean {
+		return pixel.px < 0 || pixel.px > this.mapWidth || pixel.py < 0 || pixel.py > this.mapHeight;
+	}
+
+	/** On-map GPS pixel, or map center when the fix falls outside the image. */
+	private displayPixel(gpsPixel: { px: number; py: number }): { px: number; py: number } {
+		return this.isOffMapPixel(gpsPixel) ? this.mapCenterPixel() : gpsPixel;
+	}
+
+	private screenArrowDeg(
+		fromPixel: { px: number; py: number },
+		toPixel: { px: number; py: number },
+	) {
+		const deltaX = toPixel.px - fromPixel.px;
+		const deltaY = toPixel.py - fromPixel.py;
+		return (Math.atan2(deltaY, deltaX) * 180) / Math.PI + 90;
 	}
 
 	private makeIcon(rotationDeg = 0, showTriangle = false) {
@@ -238,16 +273,63 @@ export class MapView extends LitElement {
 		});
 	}
 
+	private makePoiDotIcon() {
+		return L.divIcon({
+			className: "poi-dot-marker",
+			html: `<div class="poi-dot-hit"><div class="poi-dot"></div></div>`,
+			iconSize: [24, 24],
+			iconAnchor: [12, 12],
+		});
+	}
+
+	private poiLabel(poi: PointOfInterest) {
+		return `${poi.id} · ${poi.name}`;
+	}
+
+	private clearPoiDots() {
+		if (this.poiDotsLayer) {
+			this.map.removeLayer(this.poiDotsLayer);
+			this.poiDotsLayer = null;
+		}
+	}
+
+	private syncPoiDots() {
+		this.clearPoiDots();
+		if (!this.transform) return;
+
+		const pointsOfInterest = this.currentPointsOfInterest().filter(
+			(poi) => poi.lat !== 0 || poi.lng !== 0,
+		);
+		if (pointsOfInterest.length === 0) return;
+
+		this.poiDotsLayer = L.layerGroup();
+		for (const poi of pointsOfInterest) {
+			const pixel = this.transform.toPixel(poi.lat, poi.lng);
+			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
+				icon: this.makePoiDotIcon(),
+				interactive: true,
+			});
+			marker.bindTooltip(this.poiLabel(poi), {
+				className: "poi-tooltip",
+				direction: "top",
+				offset: [0, -10],
+				opacity: 1,
+			});
+			marker.addTo(this.poiDotsLayer);
+		}
+		this.poiDotsLayer.addTo(this.map);
+	}
+
 	/** Called by the app whenever a new position/heading is available. */
 	update_(lat: number, lng: number, accuracyM: number, headingDeg: number | null) {
 		if (!this.transform) return;
 		this.lastGps = { lat, lng, accuracy: accuracyM, heading: headingDeg };
 
-		const pixel = this.transform.toPixel(lat, lng);
-		this.lastPixel = pixel;
+		const gpsPixel = this.transform.toPixel(lat, lng);
+		this.lastPixel = gpsPixel;
+		this.offMap = this.isOffMapPixel(gpsPixel);
+		const pixel = this.displayPixel(gpsPixel);
 		const latLng = this.px2ll(pixel.px, pixel.py);
-		this.offMap =
-			pixel.px < 0 || pixel.px > this.mapWidth || pixel.py < 0 || pixel.py > this.mapHeight;
 
 		this.accuracyCircle.setLatLng(latLng);
 		this.accuracyCircle.setRadius(this.transform.metersToPixels(accuracyM));
@@ -270,7 +352,7 @@ export class MapView extends LitElement {
 		if (this.selectedPoiId) this.updateNavigation();
 
 		if (this.offMap) {
-			this.status = "⚠ Off map — you're outside this field";
+			this.status = "⚠ Off map — outside this field; position shown at map center";
 		} else if (this.selectedPoiId) {
 			this.status = `${this.getSelectedPoi()?.name ?? "POI"} · ${this.navDistanceM.toFixed(0)} m`;
 		} else {
@@ -309,7 +391,7 @@ export class MapView extends LitElement {
 								<select class="poi-select" .value=${this.selectedPoiId} @change=${this.onPoiSelect}>
 									<option value="">Navigate to…</option>
 									${pointsOfInterest.map(
-										(poi) => html` <option value=${poi.id}>${poi.name}</option> `,
+										(poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `,
 									)}
 								</select>
 								${

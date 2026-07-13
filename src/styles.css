@@ -163,6 +163,39 @@ map-view,
 	background: none;
 	border: none;
 }
+.poi-dot-hit {
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.poi-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #f59e0b;
+	border: 1.5px solid #fff;
+	box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.4);
+}
+.poi-dot-marker {
+	background: none;
+	border: none;
+}
+
+.leaflet-tooltip.poi-tooltip {
+	background: rgba(11, 15, 20, 0.92);
+	color: #e6edf3;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 6px;
+	padding: 6px 10px;
+	font-size: 13px;
+	font-weight: 600;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.leaflet-tooltip.poi-tooltip::before {
+	border-top-color: rgba(11, 15, 20, 0.92);
+}
 
 .pill {
 	pointer-events: auto;
