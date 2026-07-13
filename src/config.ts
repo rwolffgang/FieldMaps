@@ -156,7 +156,7 @@ export interface MapDefinition {
 export const MAPS: MapDefinition[] = [
 	{
 		id: "m24",
-		name: "M24",
+		name: "Mission24",
 		image: "map_m24.png",
 		width: 1598,
 		height: 906,
