@@ -7,13 +7,20 @@ import {
 	MAPS,
 	DEFAULT_MAP_ID,
 	getMapById,
+	getPointsOfInterestForMap,
 	type MapDefinition,
-	type PointOfInterest,
+	type LabeledPointOfInterest,
 } from "./config.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 
 const STORAGE_KEY = "field-map-selected-id";
 const ARRIVED_DISTANCE_M = 8;
+
+function loadStoredMapId(): string {
+	const stored = localStorage.getItem(STORAGE_KEY);
+	if (stored != null && MAPS.some((map) => map.id === stored)) return stored;
+	return DEFAULT_MAP_ID;
+}
 
 @customElement("map-view")
 export class MapView extends LitElement {
@@ -40,7 +47,7 @@ export class MapView extends LitElement {
 	@state() private status = "Waiting for GPS…";
 	@state() private following = true;
 	@state() private offMap = false;
-	@state() private selectedMapId = localStorage.getItem(STORAGE_KEY) ?? DEFAULT_MAP_ID;
+	@state() private selectedMapId = loadStoredMapId();
 	@state() private selectedPoiId = "";
 	@state() private navDistanceM = 0;
 	@state() private navHint = "";
@@ -69,20 +76,24 @@ export class MapView extends LitElement {
 		});
 		this.marker = L.marker(this.px2ll(0, 0), { icon: this.makeIcon(), interactive: false });
 
-		this.loadMap(getMapById(this.selectedMapId), false);
+		this.loadMap(getMapById(this.selectedMapId));
 	}
 
-	private currentPointsOfInterest(): PointOfInterest[] {
-		return getMapById(this.selectedMapId).pointsOfInterest ?? [];
+	private currentPointsOfInterest(): LabeledPointOfInterest[] {
+		return getPointsOfInterestForMap(this.selectedMapId);
 	}
 
-	private getSelectedPoi(): PointOfInterest | null {
+	private getSelectedPoi(): LabeledPointOfInterest | null {
 		return this.currentPointsOfInterest().find((poi) => poi.id === this.selectedPoiId) ?? null;
 	}
 
-	private loadMap(definition: MapDefinition, persist: boolean) {
+	private loadMap(definition: MapDefinition) {
 		this.selectedMapId = definition.id;
-		if (persist) localStorage.setItem(STORAGE_KEY, definition.id);
+		try {
+			localStorage.setItem(STORAGE_KEY, definition.id);
+		} catch {
+			// Storage unavailable (private mode, quota, etc.) — session still works.
+		}
 
 		this.clearNavigation();
 		this.mapWidth = definition.width;
@@ -113,7 +124,7 @@ export class MapView extends LitElement {
 	private onMapSelect(event: Event) {
 		const id = (event.target as HTMLSelectElement).value;
 		if (id === this.selectedMapId) return;
-		this.loadMap(getMapById(id), true);
+		this.loadMap(getMapById(id));
 	}
 
 	private onPoiSelect(event: Event) {
@@ -282,7 +293,7 @@ export class MapView extends LitElement {
 		});
 	}
 
-	private poiLabel(poi: PointOfInterest) {
+	private poiLabel(poi: LabeledPointOfInterest) {
 		return `${poi.id} · ${poi.name}`;
 	}
 
@@ -419,12 +430,14 @@ export class MapView extends LitElement {
 					${
 						MAPS.length > 1
 							? html`
-									<select
-										class="map-select"
-										.value=${this.selectedMapId}
-										@change=${this.onMapSelect}
-									>
-										${MAPS.map((map) => html` <option value=${map.id}>${map.name}</option> `)}
+									<select class="map-select" @change=${this.onMapSelect}>
+										${MAPS.map(
+											(map) => html`
+												<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
+													${map.name}
+												</option>
+											`,
+										)}
 									</select>
 								`
 							: ""
