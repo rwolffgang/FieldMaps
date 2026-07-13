@@ -59,13 +59,53 @@ export const MAPS: MapDefinition[] = [
 			{ lat: 52.382855, lng: 11.821238, px: 561, py: 301 },
 			{ lat: 52.382526, lng: 11.827816, px: 893, py: 328 },
 			{ lat: 52.381769, lng: 11.833687, px: 1193, py: 390 },
-			// 4th point sits below the top edge, giving the lower half of the map real
-			// vertical control. (The originally supplied lat/lng was a mis-copy; this is
-			// the confirmed value against pixel 874, 603.)
 			{ lat: 52.379209, lng: 11.827408, px: 874, py: 603 },
 		],
-		pointsOfInterest: [],
+		pointsOfInterest: [
+			{ id: "502", name: "Alter Bahnhof", lat: 52.381657, lng: 11.817742 },
+			{ id: "506", name: "Rampe", lat: 52.381947, lng: 11.815984 },
+			{ id: "600", name: "Roter Platz", lat: 0, lng: 0 },
+			{ id: "601", name: "Garnison", lat: 0, lng: 0 },
+			{ id: "606", name: "Garage", lat: 0, lng: 0 },
+			{ id: "607", name: "Dorf", lat: 0, lng: 0 },
+			{ id: "608", name: "Funkstation", lat: 0, lng: 0 },
+			{ id: "610", name: "Esco Bar", lat: 0, lng: 0 },
+			{ id: "611", name: "Gefängnis", lat: 0, lng: 0 },
+			{ id: "613", name: "Fahrzeughalle", lat: 0, lng: 0 },
+			{ id: "616", name: "Forschungskeller", lat: 0, lng: 0 },
+			{ id: "617", name: "Heizwerk", lat: 0, lng: 0 },
+			{ id: "620", name: "MP Station", lat: 0, lng: 0 },
+			{ id: "621", name: "Gebäude 1981", lat: 0, lng: 0 },
+			{ id: "622", name: "Munitionslager", lat: 0, lng: 0 },
+			{ id: "623", name: "Frachtlager", lat: 0, lng: 0 },
+			{ id: "624", name: "Werkstatt", lat: 0, lng: 0 },
+			{ id: "630", name: "Tower", lat: 0, lng: 0 },
+			{ id: "631", name: "Grabensystem", lat: 0, lng: 0 },
+			{ id: "632", name: "Fort", lat: 0, lng: 0 },
+			{ id: "635", name: "Schießstand", lat: 0, lng: 0 },
+			{ id: "638", name: "Hangar", lat: 0, lng: 0 },
+			{ id: "700", name: "Kaserne", lat: 0, lng: 0 },
+			{ id: "714", name: "Hacienda El Mojito", lat: 0, lng: 0 },
+			{ id: "720", name: "Zollhaus", lat: 0, lng: 0 },
+			{ id: "800", name: "Task Force HQ", lat: 0, lng: 0 },
+			{ id: "803", name: "Kirche", lat: 0, lng: 0 },
+			{ id: "807", name: "Schützengräben", lat: 0, lng: 0 },
+			{ id: "810", name: "Verladeplatz", lat: 0, lng: 0 },
+			{ id: "813", name: "Kommandobunker", lat: 0, lng: 0 },
+			{ id: "814", name: "Testgelände", lat: 0, lng: 0 },
+			{ id: "817", name: "Depot", lat: 0, lng: 0 },
+			{ id: "820", name: "Asservatenkammer", lat: 0, lng: 0 },
+			{ id: "821", name: "Grenzposten", lat: 0, lng: 0 },
+			{ id: "825", name: "Markt", lat: 0, lng: 0 },
+			{ id: "826", name: "Checkpoint A", lat: 0, lng: 0 },
+		],
 	},
+	// Add more maps here — copy the block above, change id/name/image/dimensions,
+	// and supply control points for that field's GPS location.
+];
+
+/*
+,
 	{
 		id: "muenster",
 		name: "Münster",
@@ -79,9 +119,7 @@ export const MAPS: MapDefinition[] = [
 		],
 		pointsOfInterest: [{ id: "patrick", name: "Patrick HQ", lat: 51.975859, lng: 7.62732 }],
 	},
-	// Add more maps here — copy the block above, change id/name/image/dimensions,
-	// and supply control points for that field's GPS location.
-];
+*/
 
 /** Which map loads on first visit (before any saved preference). */
 export const DEFAULT_MAP_ID = MAPS[0]?.id ?? "";
