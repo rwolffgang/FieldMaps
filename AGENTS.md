@@ -16,17 +16,21 @@ Vite + Lit + TypeScript, Leaflet (`L.CRS.Simple`) for rendering, `vite-plugin-pw
 
 Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), install as a PWA on the phone. Geolocation requires a secure context, so it will not work from `file://`.
 
-## The only file a user edits
+## The files a user edits
 
-`src/config.ts` holds the map filename, its pixel dimensions, the hardcoded `CONTROL_POINTS`, and the smoothing tunables. Everything else is generic plumbing. If a change can be made in `config.ts`, make it there rather than touching the modules.
+- `src/scenarios/*.ts` — **one file per playable scenario.** Each holds the scenario's PoI labels (`poiNames`) and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Copy a file, edit it, register it in `src/scenarios/index.ts`.
+- `src/points-of-interest.ts` — the shared registry of physical PoI **coordinates** (same across all scenarios) plus the default label set.
+- `src/config.ts` — wires the shared OSM base + the legacy photo maps into selectable maps, and holds the smoothing tunables. Prefer editing scenario files over this.
 
 ## File map
 
 - `src/transform.ts` — **the core.** GPS → image pixel via a least-squares _similarity_ fit from the control points. Exposes `solveTransform(points)` returning `{ toPixel, metersToPixels, pixelsToMeters, bearingToScreenDeg, scale, rmsMeters }`.
-- `src/config.ts` — user-editable calibration and tuning.
+- `src/config.ts` — map definitions (photo + one OSM vector map per scenario) and tuning.
+- `src/scenarios/` — per-scenario labels + play area; `index.ts` registers them.
+- `src/points-of-interest.ts` — shared PoI coordinates + default labels + `labelPointsOfInterest`.
 - `src/geo.ts` — `watch(onFix, onError)` wraps `watchPosition`, emits a `Fix { lat, lng, accuracy, heading, speed }`, applies light EMA smoothing with a snap-on-teleport.
 - `src/heading.ts` — compass. `watchHeading(onHeading)`, plus `needsPermission()` / `requestPermission()` for iOS. Circular-mean angle smoothing.
-- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay, accuracy circle, position marker (dot or heading triangle), follow/recenter.
+- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay OR OSM vector base, the out-of-bounds play-area mask (darken + diagonal hatch, injected SVG `<pattern>`), accuracy circle, position marker (dot or heading triangle), follow/recenter. A `ResizeObserver` re-fits when the container gains size (0×0 cold start).
 - `src/main.ts` — wires geo + heading into the view, chooses heading source, wake lock, iOS compass button.
 - `src/transform.test.ts` — synthetic known-truth self-test. Not part of the build (`tsconfig` excludes `*.test.ts`).
 - `src/osm-map.ts` — renders an OpenStreetMap-derived GeoJSON (`public/map_osm.geojson`) as styled Leaflet vector layers (roads, paths, buildings, forest, water). Projects each feature through the same GPS→pixel transform, so it lines up with the GPS dot and PoIs. Fully offline: the data is bundled and precached.

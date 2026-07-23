@@ -37,6 +37,7 @@ export class MapView extends LitElement {
 	private imageOverlay: L.ImageOverlay | null = null;
 	private vectorLayer: L.LayerGroup | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
+	private maskLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
@@ -70,6 +71,14 @@ export class MapView extends LitElement {
 		this.map.createPane("osm-basemap");
 		this.map.getPane("osm-basemap")!.style.zIndex = "250";
 
+		// Out-of-bounds mask sits above the basemap (300) but below the overlay pane
+		// (400), so it dims the terrain while the GPS dot, route, and PoIs stay clear.
+		this.map.createPane("playarea-mask");
+		this.map.getPane("playarea-mask")!.style.zIndex = "300";
+		// Leaflet builds the mask pane's SVG lazily during a render; (re)inject the
+		// hatch pattern whenever the map renders. Idempotent, so it's safe to repeat.
+		this.map.on("load zoomend moveend", () => this.injectHatchPattern());
+
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
 			this.following = false;
@@ -85,6 +94,22 @@ export class MapView extends LitElement {
 		this.marker = L.marker(this.px2ll(0, 0), { icon: this.makeIcon(), interactive: false });
 
 		this.loadMap(getMapById(this.selectedMapId));
+
+		// The container can start at 0×0 (PWA cold start, orientation change, or a
+		// not-yet-laid-out preview). fitBounds would then snap to min zoom. Re-sync and
+		// re-fit whenever the container resizes, until GPS or the user takes over.
+		const mapEl = this.querySelector("#map");
+		if (mapEl) {
+			new ResizeObserver(() => {
+				this.map.invalidateSize({ animate: false });
+				if (this.following && !this.lastGps) {
+					this.map.fitBounds([
+						[0, 0],
+						[this.mapHeight, this.mapWidth],
+					]);
+				}
+			}).observe(mapEl);
+		}
 	}
 
 	private currentPointsOfInterest(): LabeledPointOfInterest[] {
@@ -120,6 +145,10 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.vectorLayer);
 			this.vectorLayer = null;
 		}
+		if (this.maskLayer) {
+			this.map.removeLayer(this.maskLayer);
+			this.maskLayer = null;
+		}
 
 		const bounds: L.LatLngBoundsExpression = [
 			[0, 0],
@@ -131,6 +160,7 @@ export class MapView extends LitElement {
 		} else if (definition.image) {
 			this.imageOverlay = L.imageOverlay(definition.image, bounds).addTo(this.map);
 		}
+		this.renderPlayAreaMask(definition.playArea);
 		this.map.fitBounds(bounds);
 		this.following = true;
 
@@ -176,6 +206,102 @@ export class MapView extends LitElement {
 			console.error("[osm] failed to load vector map", err);
 			this.status = "⚠ Map data unavailable";
 		}
+	}
+
+	/**
+	 * Cover everything OUTSIDE the play-area polygon with a darken + diagonal-hatch
+	 * texture, and outline the boundary. Emulates the printed maps, where the area
+	 * beyond the active field is masked out. No polygon (or fewer than 3 points)
+	 * means "whole field" — nothing is drawn.
+	 */
+	private renderPlayAreaMask(playArea: [number, number][] | undefined) {
+		if (this.maskLayer) {
+			this.map.removeLayer(this.maskLayer);
+			this.maskLayer = null;
+		}
+		if (!playArea || playArea.length < 3 || !this.transform) return;
+
+		// Play-area ring in Leaflet coords (GPS -> pixel -> CRS.Simple latLng).
+		const hole = playArea.map(([lat, lng]) => {
+			const { px, py } = this.transform.toPixel(lat, lng);
+			return this.px2ll(px, py);
+		});
+
+		// A rectangle far larger than the field, so the mask covers the whole viewport
+		// (including the black margin) at any pan/zoom. The play-area ring is a hole.
+		const M = 100000;
+		const outer: L.LatLngExpression[] = [
+			[-M, -M],
+			[-M, this.mapWidth + M],
+			[this.mapHeight + M, this.mapWidth + M],
+			[this.mapHeight + M, -M],
+		];
+
+		this.maskLayer = L.layerGroup();
+
+		// 1) Darken (reliable flat fill, also the fallback if the pattern is missing).
+		L.polygon([outer, hole], {
+			pane: "playarea-mask",
+			stroke: false,
+			fill: true,
+			fillColor: "#05070a",
+			fillOpacity: 0.55,
+			interactive: false,
+		}).addTo(this.maskLayer);
+
+		// 2) Diagonal hatch on top (transparent-background SVG pattern, via CSS class).
+		L.polygon([outer, hole], {
+			pane: "playarea-mask",
+			className: "playarea-hatch",
+			stroke: false,
+			fill: true,
+			fillOpacity: 1,
+			interactive: false,
+		}).addTo(this.maskLayer);
+
+		// 3) Boundary outline so the play-area edge is legible.
+		L.polygon(hole, {
+			pane: "playarea-mask",
+			color: "#e8c24d",
+			weight: 2,
+			dashArray: "10 6",
+			opacity: 0.9,
+			fill: false,
+			interactive: false,
+		}).addTo(this.maskLayer);
+
+		this.maskLayer.addTo(this.map);
+		this.injectHatchPattern();
+	}
+
+	/**
+	 * Inject the diagonal-hatch <pattern> into the mask pane's SVG. Leaflet creates
+	 * that SVG lazily, so retry across a few frames until it exists.
+	 */
+	private injectHatchPattern(attempt = 0) {
+		if (!this.maskLayer) return;
+		const svg = this.map.getPane("playarea-mask")?.querySelector("svg");
+		if (!svg) {
+			if (attempt < 40) requestAnimationFrame(() => this.injectHatchPattern(attempt + 1));
+			return;
+		}
+		if (svg.querySelector("#playarea-hatch")) return;
+		const NS = "http://www.w3.org/2000/svg";
+		const defs = document.createElementNS(NS, "defs");
+		const pattern = document.createElementNS(NS, "pattern");
+		pattern.setAttribute("id", "playarea-hatch");
+		pattern.setAttribute("patternUnits", "userSpaceOnUse");
+		pattern.setAttribute("width", "9");
+		pattern.setAttribute("height", "9");
+		pattern.setAttribute("patternTransform", "rotate(45)");
+		const stripe = document.createElementNS(NS, "rect");
+		stripe.setAttribute("width", "2.5");
+		stripe.setAttribute("height", "9");
+		stripe.setAttribute("fill", "#000000");
+		stripe.setAttribute("fill-opacity", "0.3");
+		pattern.appendChild(stripe);
+		defs.appendChild(pattern);
+		svg.insertBefore(defs, svg.firstChild);
 	}
 
 	private onMapSelect(event: Event) {

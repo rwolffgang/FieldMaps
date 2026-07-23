@@ -183,6 +183,12 @@ map-view,
 	border: none;
 }
 
+/* Out-of-bounds hatch: the fill comes from an injected SVG <pattern>, which
+   overrides Leaflet's flat fill attribute. */
+.playarea-hatch {
+	fill: url(#playarea-hatch);
+}
+
 .leaflet-tooltip.poi-tooltip {
 	background: rgba(11, 15, 20, 0.92);
 	color: #e6edf3;
