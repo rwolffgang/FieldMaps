@@ -12,15 +12,37 @@ import {
 	type LabeledPointOfInterest,
 } from "./config.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
-import { buildOsmLayer, type OsmFeatureCollection } from "./osm-map.js";
+import { buildOsmLayer, buildOsmGrid, type OsmFeatureCollection } from "./osm-map.js";
 
 const STORAGE_KEY = "field-map-selected-id";
+const TOGGLES_KEY = "field-map-toggles";
 const ARRIVED_DISTANCE_M = 8;
 
 function loadStoredMapId(): string {
 	const stored = localStorage.getItem(STORAGE_KEY);
 	if (stored != null && MAPS.some((map) => map.id === stored)) return stored;
 	return DEFAULT_MAP_ID;
+}
+
+interface Toggles {
+	/** Show the id (number) label on every PoI, not just on hover. */
+	poiIds: boolean;
+	/** Show the coordinate grid (OSM maps only). */
+	grid: boolean;
+	/** Cover the area outside the play boundary (scenarios with a play area). */
+	mask: boolean;
+}
+
+const DEFAULT_TOGGLES: Toggles = { poiIds: false, grid: true, mask: true };
+
+function loadStoredToggles(): Toggles {
+	try {
+		const raw = localStorage.getItem(TOGGLES_KEY);
+		if (raw) return { ...DEFAULT_TOGGLES, ...(JSON.parse(raw) as Partial<Toggles>) };
+	} catch {
+		// Ignore malformed/unavailable storage — fall back to defaults.
+	}
+	return { ...DEFAULT_TOGGLES };
 }
 
 @customElement("map-view")
@@ -37,6 +59,7 @@ export class MapView extends LitElement {
 	private imageOverlay: L.ImageOverlay | null = null;
 	private vectorLayer: L.LayerGroup | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
+	private gridLayer: L.LayerGroup | null = null;
 	private maskLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
@@ -56,6 +79,8 @@ export class MapView extends LitElement {
 	@state() private navDistanceM = 0;
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
+	@state() private togglesOpen = false;
+	@state() private toggles: Toggles = loadStoredToggles();
 
 	firstUpdated() {
 		this.map = L.map(this.querySelector("#map") as HTMLElement, {
@@ -70,6 +95,11 @@ export class MapView extends LitElement {
 		// circle, nav route, and markers all draw on top of it.
 		this.map.createPane("osm-basemap");
 		this.map.getPane("osm-basemap")!.style.zIndex = "250";
+
+		// Coordinate grid sits just above the terrain (like the printed map's grid),
+		// below the mask so out-of-bounds grid is dimmed too.
+		this.map.createPane("osm-grid");
+		this.map.getPane("osm-grid")!.style.zIndex = "260";
 
 		// Out-of-bounds mask sits above the basemap (300) but below the overlay pane
 		// (400), so it dims the terrain while the GPS dot, route, and PoIs stay clear.
@@ -145,6 +175,10 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.vectorLayer);
 			this.vectorLayer = null;
 		}
+		if (this.gridLayer) {
+			this.map.removeLayer(this.gridLayer);
+			this.gridLayer = null;
+		}
 		if (this.maskLayer) {
 			this.map.removeLayer(this.maskLayer);
 			this.maskLayer = null;
@@ -197,11 +231,20 @@ export class MapView extends LitElement {
 				pixelProject: (px, py) => this.px2ll(px, py),
 				width: this.mapWidth,
 				height: this.mapHeight,
-				// 100 m coordinate grid, matching the OPT map's scale bar.
-				gridStepPx: this.transform.metersToPixels(100),
 				pane: "osm-basemap",
 			});
 			this.vectorLayer.addTo(this.map);
+
+			// Coordinate grid as its own toggleable layer (100 m, matching the scale bar).
+			if (this.gridLayer) this.map.removeLayer(this.gridLayer);
+			this.gridLayer = buildOsmGrid({
+				pixelProject: (px, py) => this.px2ll(px, py),
+				width: this.mapWidth,
+				height: this.mapHeight,
+				stepPx: this.transform.metersToPixels(100),
+				pane: "osm-grid",
+			});
+			if (this.toggles.grid) this.gridLayer.addTo(this.map);
 		} catch (err) {
 			console.error("[osm] failed to load vector map", err);
 			this.status = "⚠ Map data unavailable";
@@ -270,8 +313,45 @@ export class MapView extends LitElement {
 			interactive: false,
 		}).addTo(this.maskLayer);
 
-		this.maskLayer.addTo(this.map);
-		this.injectHatchPattern();
+		if (this.toggles.mask) {
+			this.maskLayer.addTo(this.map);
+			this.injectHatchPattern();
+		}
+	}
+
+	/** Whether the current map can show the grid / mask toggles. */
+	private get hasGrid(): boolean {
+		return getMapById(this.selectedMapId).vectorData != null;
+	}
+	private get hasMask(): boolean {
+		return (getMapById(this.selectedMapId).playArea?.length ?? 0) >= 3;
+	}
+
+	private toggle(key: keyof Toggles) {
+		this.toggles = { ...this.toggles, [key]: !this.toggles[key] };
+		try {
+			localStorage.setItem(TOGGLES_KEY, JSON.stringify(this.toggles));
+		} catch {
+			// Non-fatal — the toggle still applies for this session.
+		}
+		this.applyToggles();
+	}
+
+	/** Apply the current toggle states to the live layers. */
+	private applyToggles() {
+		if (this.gridLayer) {
+			if (this.toggles.grid) this.gridLayer.addTo(this.map);
+			else this.map.removeLayer(this.gridLayer);
+		}
+		if (this.maskLayer) {
+			if (this.toggles.mask) {
+				this.maskLayer.addTo(this.map);
+				this.injectHatchPattern();
+			} else {
+				this.map.removeLayer(this.maskLayer);
+			}
+		}
+		this.syncPoiDots();
 	}
 
 	/**
@@ -467,10 +547,11 @@ export class MapView extends LitElement {
 		});
 	}
 
-	private makePoiDotIcon() {
+	private makePoiDotIcon(idLabel?: string) {
+		const label = idLabel ? `<span class="poi-dot-label">${idLabel}</span>` : "";
 		return L.divIcon({
 			className: "poi-dot-marker",
-			html: `<div class="poi-dot-hit"><div class="poi-dot"></div></div>`,
+			html: `<div class="poi-dot-hit"><div class="poi-dot"></div>${label}</div>`,
 			iconSize: [24, 24],
 			iconAnchor: [12, 12],
 		});
@@ -500,7 +581,7 @@ export class MapView extends LitElement {
 		for (const poi of pointsOfInterest) {
 			const pixel = this.transform.toPixel(poi.lat, poi.lng);
 			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
-				icon: this.makePoiDotIcon(),
+				icon: this.makePoiDotIcon(this.toggles.poiIds ? poi.id : undefined),
 				interactive: true,
 			});
 			marker.bindTooltip(this.poiLabel(poi), {
@@ -627,7 +708,45 @@ export class MapView extends LitElement {
 					}
 					<span class="pill ${this.offMap ? "warn" : ""}">${this.status}</span>
 				</div>
-				<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>◎</button>
+				<div class="hud-right">
+					${this.renderToggles()}
+					<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>◎</button>
+				</div>
+			</div>
+		`;
+	}
+
+	private renderToggles() {
+		const row = (key: keyof Toggles, label: string) => html`
+			<button
+				class="toggle-row ${this.toggles[key] ? "on" : ""}"
+				role="switch"
+				aria-checked=${this.toggles[key]}
+				@click=${() => this.toggle(key)}
+			>
+				<span class="toggle-label">${label}</span>
+				<span class="toggle-switch"></span>
+			</button>
+		`;
+		return html`
+			<div class="toggles">
+				${
+					this.togglesOpen
+						? html`
+								<div class="toggles-panel">
+									${row("poiIds", "PoI numbers")} ${this.hasGrid ? row("grid", "Grid") : ""}
+									${this.hasMask ? row("mask", "Boundary mask") : ""}
+								</div>
+							`
+						: ""
+				}
+				<button
+					class="toggle-btn ${this.togglesOpen ? "on" : ""}"
+					aria-label="Map layers"
+					@click=${() => (this.togglesOpen = !this.togglesOpen)}
+				>
+					▤
+				</button>
 			</div>
 		`;
 	}

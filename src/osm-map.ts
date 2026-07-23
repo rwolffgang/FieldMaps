@@ -135,8 +135,6 @@ export interface BuildOsmOptions {
 	/** Canvas size in pixels (from the map definition). */
 	width: number;
 	height: number;
-	/** Grid line spacing in pixels; omit or 0 to skip the grid. */
-	gridStepPx?: number;
 	/** Dedicated (low z-index) pane so the map renders under markers/overlays. */
 	pane?: string;
 }
@@ -151,7 +149,7 @@ function ringToLatLngs(ring: [number, number][], project: ProjectFn): L.LatLngEx
  * to the map like any other layer.
  */
 export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions): L.LayerGroup {
-	const { project, pixelProject, width, height, gridStepPx, pane } = opts;
+	const { project, pixelProject, width, height, pane } = opts;
 	const group = L.layerGroup();
 
 	const canvasCorners = (): L.LatLngExpression[] => [
@@ -171,27 +169,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 		interactive: false,
 	}).addTo(group);
 
-	// 2) Faint gold coordinate grid.
-	if (gridStepPx && gridStepPx > 0) {
-		const gridStyle = { pane, color: GRID_COLOR, weight: 1, opacity: 0.16, interactive: false };
-		for (let x = gridStepPx; x < width; x += gridStepPx) {
-			L.polyline([pixelProject(x, 0), pixelProject(x, height)], gridStyle).addTo(group);
-		}
-		for (let y = gridStepPx; y < height; y += gridStepPx) {
-			L.polyline([pixelProject(0, y), pixelProject(width, y)], gridStyle).addTo(group);
-		}
-		// Outer frame, a touch stronger.
-		L.polygon(canvasCorners(), {
-			pane,
-			color: GRID_COLOR,
-			weight: 1.5,
-			opacity: 0.3,
-			fill: false,
-			interactive: false,
-		}).addTo(group);
-	}
-
-	// 3) OSM features, bucketed by class and painted in DRAW_ORDER (Leaflet paints
+	// 2) OSM features, bucketed by class and painted in DRAW_ORDER (Leaflet paints
 	// in insertion order within the SVG pane).
 	const byClass = new Map<FeatureClass, OsmFeature[]>();
 	for (const f of data.features) {
@@ -246,7 +224,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 		}
 	}
 
-	// 4) Sepia tone wash over the whole field, tying the palette together.
+	// 3) Sepia tone wash over the whole field, tying the palette together.
 	L.polygon(canvasCorners(), {
 		pane,
 		stroke: false,
@@ -255,6 +233,49 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 		fillOpacity: TONE_OPACITY,
 		interactive: false,
 	}).addTo(group);
+
+	return group;
+}
+
+export interface BuildGridOptions {
+	/** Canvas pixel -> Leaflet LatLng. */
+	pixelProject: PixelProjectFn;
+	/** Canvas size in pixels. */
+	width: number;
+	height: number;
+	/** Grid line spacing in pixels. */
+	stepPx: number;
+	/** Pane to draw into (kept separate so the grid can be toggled). */
+	pane?: string;
+}
+
+/**
+ * Build the faint gold coordinate grid + outer frame as its own layer, so it can be
+ * shown/hidden independently of the terrain. Drawn on top of the terrain, like the
+ * printed OPT map's grid.
+ */
+export function buildOsmGrid(opts: BuildGridOptions): L.LayerGroup {
+	const { pixelProject, width, height, stepPx, pane } = opts;
+	const group = L.layerGroup();
+	if (stepPx <= 0) return group;
+
+	const gridStyle = { pane, color: GRID_COLOR, weight: 1, opacity: 0.16, interactive: false };
+	for (let x = stepPx; x < width; x += stepPx) {
+		L.polyline([pixelProject(x, 0), pixelProject(x, height)], gridStyle).addTo(group);
+	}
+	for (let y = stepPx; y < height; y += stepPx) {
+		L.polyline([pixelProject(0, y), pixelProject(width, y)], gridStyle).addTo(group);
+	}
+	// Outer frame, a touch stronger.
+	L.polygon(
+		[
+			pixelProject(0, 0),
+			pixelProject(width, 0),
+			pixelProject(width, height),
+			pixelProject(0, height),
+		],
+		{ pane, color: GRID_COLOR, weight: 1.5, opacity: 0.3, fill: false, interactive: false },
+	).addTo(group);
 
 	return group;
 }

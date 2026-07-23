@@ -169,6 +169,7 @@ map-view,
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	position: relative;
 }
 .poi-dot {
 	width: 8px;
@@ -220,6 +221,11 @@ map-view,
 	color: #fff;
 	border-color: rgba(255, 120, 120, 0.5);
 }
+.hud-right {
+	display: flex;
+	align-items: flex-end;
+	gap: 10px;
+}
 .recenter {
 	pointer-events: auto;
 	width: 52px;
@@ -234,6 +240,103 @@ map-view,
 }
 .recenter.on {
 	color: var(--accent);
+}
+
+/* Layer toggles */
+.toggles {
+	position: relative;
+	pointer-events: auto;
+}
+.toggle-btn {
+	pointer-events: auto;
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(11, 15, 20, 0.82);
+	color: #8b98a5;
+	font-size: 22px;
+	backdrop-filter: blur(6px);
+}
+.toggle-btn.on {
+	color: var(--accent);
+	border-color: var(--accent);
+}
+.toggles-panel {
+	position: absolute;
+	bottom: 60px;
+	right: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px;
+	min-width: 190px;
+	background: rgba(11, 15, 20, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 14px;
+	backdrop-filter: blur(6px);
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.toggle-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 9px 10px;
+	border: none;
+	border-radius: 9px;
+	background: transparent;
+	color: #e6edf3;
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+.toggle-row:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+.toggle-switch {
+	flex-shrink: 0;
+	width: 38px;
+	height: 22px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.14);
+	position: relative;
+	transition: background 0.15s ease;
+}
+.toggle-switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #e6edf3;
+	transition: transform 0.15s ease;
+}
+.toggle-row.on .toggle-switch {
+	background: var(--accent);
+}
+.toggle-row.on .toggle-switch::after {
+	transform: translateX(16px);
+}
+
+/* PoI id (number) labels, shown when the toggle is on */
+.poi-dot-label {
+	position: absolute;
+	left: 16px;
+	top: 50%;
+	transform: translateY(-50%);
+	white-space: nowrap;
+	font-size: 11px;
+	font-weight: 700;
+	color: #f5e6c8;
+	text-shadow:
+		0 0 2px #000,
+		0 0 3px #000,
+		0 1px 2px #000;
+	pointer-events: none;
 }
 
 #enable-compass {
