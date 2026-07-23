@@ -12,6 +12,7 @@ import {
 	type LabeledPointOfInterest,
 } from "./config.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
+import { buildOsmLayer, type OsmFeatureCollection } from "./osm-map.js";
 
 const STORAGE_KEY = "field-map-selected-id";
 const ARRIVED_DISTANCE_M = 8;
@@ -34,6 +35,8 @@ export class MapView extends LitElement {
 	private marker!: L.Marker;
 	private accuracyCircle!: L.Circle;
 	private imageOverlay: L.ImageOverlay | null = null;
+	private vectorLayer: L.LayerGroup | null = null;
+	private vectorCache = new Map<string, OsmFeatureCollection>();
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
@@ -61,6 +64,11 @@ export class MapView extends LitElement {
 			zoomControl: false,
 			attributionControl: false,
 		});
+
+		// Basemap pane for the OSM vector map: below overlayPane (400) so the accuracy
+		// circle, nav route, and markers all draw on top of it.
+		this.map.createPane("osm-basemap");
+		this.map.getPane("osm-basemap")!.style.zIndex = "250";
 
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
@@ -104,13 +112,25 @@ export class MapView extends LitElement {
 			`[calibration:${definition.id}] RMS error: ${this.transform.rmsMeters.toFixed(2)} m across ${definition.controlPoints.length} points`,
 		);
 
-		if (this.imageOverlay) this.map.removeLayer(this.imageOverlay);
+		if (this.imageOverlay) {
+			this.map.removeLayer(this.imageOverlay);
+			this.imageOverlay = null;
+		}
+		if (this.vectorLayer) {
+			this.map.removeLayer(this.vectorLayer);
+			this.vectorLayer = null;
+		}
 
 		const bounds: L.LatLngBoundsExpression = [
 			[0, 0],
 			[this.mapHeight, this.mapWidth],
 		];
-		this.imageOverlay = L.imageOverlay(definition.image, bounds).addTo(this.map);
+
+		if (definition.vectorData) {
+			void this.loadVectorMap(definition, definition.vectorData);
+		} else if (definition.image) {
+			this.imageOverlay = L.imageOverlay(definition.image, bounds).addTo(this.map);
+		}
 		this.map.fitBounds(bounds);
 		this.following = true;
 
@@ -119,6 +139,39 @@ export class MapView extends LitElement {
 		}
 
 		this.syncPoiDots();
+	}
+
+	/**
+	 * Fetch (once) and draw the bundled OSM GeoJSON as styled vector layers. The
+	 * file is precached by the service worker, so this resolves from cache offline.
+	 */
+	private async loadVectorMap(definition: MapDefinition, dataUrl: string) {
+		try {
+			let data = this.vectorCache.get(dataUrl);
+			if (!data) {
+				const res = await fetch(dataUrl);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				data = (await res.json()) as OsmFeatureCollection;
+				this.vectorCache.set(dataUrl, data);
+			}
+
+			// Guard against a map switch while the fetch was in flight.
+			if (this.selectedMapId !== definition.id || !this.transform) return;
+
+			if (this.vectorLayer) this.map.removeLayer(this.vectorLayer);
+			this.vectorLayer = buildOsmLayer(
+				data,
+				(lng, lat) => {
+					const { px, py } = this.transform.toPixel(lat, lng);
+					return this.px2ll(px, py);
+				},
+				"osm-basemap",
+			);
+			this.vectorLayer.addTo(this.map);
+		} catch (err) {
+			console.error("[osm] failed to load vector map", err);
+			this.status = "⚠ Map data unavailable";
+		}
 	}
 
 	private onMapSelect(event: Event) {

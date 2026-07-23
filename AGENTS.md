@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Offline-first PWA that shows the user's live GPS position on a single, pre-georeferenced airsoft field map. No tile server, no backend — the map is one image and everything is computed client-side from a hardcoded calibration.
+Offline-first PWA that shows the user's live GPS position on a pre-georeferenced airsoft field map. No tile server, no backend — everything is computed client-side from a hardcoded calibration. Maps are either a pre-rendered image or a custom vector map drawn live from bundled OpenStreetMap data (`scripts/fetch-osm.mjs` → `public/map_osm.geojson`, rendered by `src/osm-map.ts`).
 
 ## Stack
 
@@ -29,6 +29,8 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 - `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay, accuracy circle, position marker (dot or heading triangle), follow/recenter.
 - `src/main.ts` — wires geo + heading into the view, chooses heading source, wake lock, iOS compass button.
 - `src/transform.test.ts` — synthetic known-truth self-test. Not part of the build (`tsconfig` excludes `*.test.ts`).
+- `src/osm-map.ts` — renders an OpenStreetMap-derived GeoJSON (`public/map_osm.geojson`) as styled Leaflet vector layers (roads, paths, buildings, forest, water). Projects each feature through the same GPS→pixel transform, so it lines up with the GPS dot and PoIs. Fully offline: the data is bundled and precached.
+- `scripts/fetch-osm.mjs` — one-off, reproducible download of OSM data from the Overpass API into `public/map_osm.geojson`. The **only** online step; run `node scripts/fetch-osm.mjs` to refresh the data. It also prints the control points + canvas dimensions to paste into the OSM `MapDefinition` in `config.ts`.
 
 ## Invariants — do not break these
 
