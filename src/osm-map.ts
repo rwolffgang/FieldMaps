@@ -7,6 +7,11 @@
 // app uses, then handed to Leaflet CRS.Simple, so the drawn features line up with
 // the GPS dot and the points of interest. Everything is bundled — no tiles, no
 // network — so the custom map works fully offline.
+//
+// Styling deliberately mimics the "Operation Tschernobyl" printed map: an aged
+// sepia satellite look — dark olive-brown forest, sandy clearings, gold roads and
+// trails, translucent building footprints, a faint gold coordinate grid, and a
+// warm tone wash over the whole field.
 // -----------------------------------------------------------------------------
 
 import * as L from "leaflet";
@@ -56,30 +61,44 @@ interface LineStyle {
 	weight: number;
 	dashArray?: string;
 	opacity?: number;
+	lineCap?: "butt" | "round" | "square";
 }
 type ClassStyle = AreaStyle | LineStyle;
 
-// Dark-theme palette tuned to read against the app background (#0b0f14). Kept
-// deliberately muted so the amber points-of-interest and the cyan GPS dot pop.
+// "Operation Tschernobyl" palette. Warm, desaturated, satellite-photo tones. The
+// ground BASE fills the whole field so no black shows through between features;
+// forest darkens it, clearings/sand lighten it — the OPT contrast. A translucent
+// TONE wash on top unifies everything into a single sepia cast.
+const GROUND_BASE = "#5c5233"; // olive-tan "open ground" the whole field sits on
+const TONE_WASH = "#6b4a1e"; // warm brown overlay painted over the field
+const TONE_OPACITY = 0.1;
+const GRID_COLOR = "#c8aa5a"; // faint gold coordinate grid
+const GOLD = "#e6c24d"; // roads / trails
+
 const STYLES: Record<FeatureClass, ClassStyle> = {
-	// --- area fills ---
-	builtup: { kind: "area", fillColor: "#2b2f38", fillOpacity: 0.5 },
-	bare: { kind: "area", fillColor: "#3a352b", fillOpacity: 0.5 },
-	farmland: { kind: "area", fillColor: "#41482a", fillOpacity: 0.35 },
-	grass: { kind: "area", fillColor: "#2c4a32", fillOpacity: 0.4 },
-	wetland: { kind: "area", fillColor: "#284a42", fillOpacity: 0.4 },
-	forest: { kind: "area", fillColor: "#1f5b34", fillOpacity: 0.6 },
-	water: { kind: "area", fillColor: "#1b4a72", fillOpacity: 0.75, color: "#3d6f9e", weight: 1 },
-	building: { kind: "area", fillColor: "#5b6270", fillOpacity: 0.6, color: "#8b98a5", weight: 1 },
+	// --- area fills (over the olive-tan ground base) ---
+	forest: { kind: "area", fillColor: "#37401f", fillOpacity: 0.82 },
+	treeline: { kind: "line", color: "#4a5a2e", weight: 2, dashArray: "2 5" },
+	grass: { kind: "area", fillColor: "#7c7040", fillOpacity: 0.5 },
+	farmland: { kind: "area", fillColor: "#8a7845", fillOpacity: 0.5 },
+	bare: { kind: "area", fillColor: "#b39a5f", fillOpacity: 0.7 },
+	builtup: { kind: "area", fillColor: "#6b6040", fillOpacity: 0.45 },
+	wetland: { kind: "area", fillColor: "#4d5540", fillOpacity: 0.55 },
+	water: { kind: "area", fillColor: "#4a5a5e", fillOpacity: 0.7, color: "#6b7d7f", weight: 1 },
+	// Translucent whitish satellite footprints, like the OPT building boxes.
+	building: { kind: "area", fillColor: "#d8d0b6", fillOpacity: 0.4, color: "#e6dcc0", weight: 1 },
 	// --- lines ---
-	waterway: { kind: "line", color: "#3d6f9e", weight: 2 },
-	railway: { kind: "line", color: "#b8c0cc", weight: 1.4, dashArray: "9 6" },
-	road_major: { kind: "line", color: "#e0c56b", weight: 3.5 },
-	road_minor: { kind: "line", color: "#9a9488", weight: 2 },
-	track: { kind: "line", color: "#b39a63", weight: 1.6, dashArray: "5 5" },
-	path: { kind: "line", color: "#d9b98a", weight: 1.6, dashArray: "2 5" },
-	treeline: { kind: "line", color: "#3f7a4e", weight: 2, dashArray: "3 4" },
-	barrier: { kind: "line", color: "#6b7280", weight: 1 },
+	waterway: { kind: "line", color: "#6b7d7f", weight: 2 },
+	railway: { kind: "line", color: "#b0a262", weight: 1.6, dashArray: "8 5" },
+	// Straße — solid gold.
+	road_major: { kind: "line", color: GOLD, weight: 3 },
+	road_minor: { kind: "line", color: "#d8b84a", weight: 2.2 },
+	// Befahrbare Wege — dashed gold (drivable tracks).
+	track: { kind: "line", color: "#d8b84a", weight: 2, dashArray: "9 7" },
+	// Marschwege — dotted gold foot trails (round caps make round dots).
+	path: { kind: "line", color: "#e0c464", weight: 2, dashArray: "1 8", lineCap: "round" },
+	// Sperrgebiet-style boundary — light blue-white dashes.
+	barrier: { kind: "line", color: "#c2d6e2", weight: 1.6, dashArray: "9 7" },
 };
 
 // Paint order, bottom to top: broad land cover, then water, then buildings, then
@@ -105,26 +124,75 @@ const DRAW_ORDER: FeatureClass[] = [
 
 /** Project GeoJSON [lng, lat] to a Leaflet CRS.Simple LatLng for the current map. */
 export type ProjectFn = (lng: number, lat: number) => L.LatLngExpression;
+/** Project a canvas pixel (x from left, y from top) to a Leaflet CRS.Simple LatLng. */
+export type PixelProjectFn = (px: number, py: number) => L.LatLngExpression;
+
+export interface BuildOsmOptions {
+	/** GeoJSON [lng,lat] -> Leaflet LatLng, for the OSM features. */
+	project: ProjectFn;
+	/** Canvas pixel -> Leaflet LatLng, for the ground base and grid. */
+	pixelProject: PixelProjectFn;
+	/** Canvas size in pixels (from the map definition). */
+	width: number;
+	height: number;
+	/** Grid line spacing in pixels; omit or 0 to skip the grid. */
+	gridStepPx?: number;
+	/** Dedicated (low z-index) pane so the map renders under markers/overlays. */
+	pane?: string;
+}
 
 function ringToLatLngs(ring: [number, number][], project: ProjectFn): L.LatLngExpression[] {
 	return ring.map(([lng, lat]) => project(lng, lat));
 }
 
 /**
- * Build a single LayerGroup containing every OSM feature, styled and stacked in a
- * sensible paint order. Add it to the map like any other layer. Pass `pane` to put
- * the features in a dedicated (low z-index) pane so they render as a basemap under
- * the app's markers and overlays.
+ * Build a single LayerGroup containing the OPT-styled ground base, coordinate
+ * grid, every OSM feature, and a sepia tone wash — stacked bottom to top. Add it
+ * to the map like any other layer.
  */
-export function buildOsmLayer(
-	data: OsmFeatureCollection,
-	project: ProjectFn,
-	pane?: string,
-): L.LayerGroup {
+export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions): L.LayerGroup {
+	const { project, pixelProject, width, height, gridStepPx, pane } = opts;
 	const group = L.layerGroup();
 
-	// Bucket features by class so we can add them in DRAW_ORDER (Leaflet paints in
-	// insertion order within the SVG pane).
+	const canvasCorners = (): L.LatLngExpression[] => [
+		pixelProject(0, 0),
+		pixelProject(width, 0),
+		pixelProject(width, height),
+		pixelProject(0, height),
+	];
+
+	// 1) Ground base — the whole field filled so no background shows between features.
+	L.polygon(canvasCorners(), {
+		pane,
+		stroke: false,
+		fill: true,
+		fillColor: GROUND_BASE,
+		fillOpacity: 1,
+		interactive: false,
+	}).addTo(group);
+
+	// 2) Faint gold coordinate grid.
+	if (gridStepPx && gridStepPx > 0) {
+		const gridStyle = { pane, color: GRID_COLOR, weight: 1, opacity: 0.16, interactive: false };
+		for (let x = gridStepPx; x < width; x += gridStepPx) {
+			L.polyline([pixelProject(x, 0), pixelProject(x, height)], gridStyle).addTo(group);
+		}
+		for (let y = gridStepPx; y < height; y += gridStepPx) {
+			L.polyline([pixelProject(0, y), pixelProject(width, y)], gridStyle).addTo(group);
+		}
+		// Outer frame, a touch stronger.
+		L.polygon(canvasCorners(), {
+			pane,
+			color: GRID_COLOR,
+			weight: 1.5,
+			opacity: 0.3,
+			fill: false,
+			interactive: false,
+		}).addTo(group);
+	}
+
+	// 3) OSM features, bucketed by class and painted in DRAW_ORDER (Leaflet paints
+	// in insertion order within the SVG pane).
 	const byClass = new Map<FeatureClass, OsmFeature[]>();
 	for (const f of data.features) {
 		const list = byClass.get(f.properties.k);
@@ -151,13 +219,13 @@ export function buildOsmLayer(
 					interactive: false,
 				}).addTo(group);
 			} else if (f.geometry.type === "LineString") {
-				const line = style.kind === "line" ? style : STYLES.path;
-				const s = line as LineStyle;
+				const s = (style.kind === "line" ? style : STYLES.path) as LineStyle;
 				L.polyline(ringToLatLngs(f.geometry.coordinates, project), {
 					pane,
 					color: s.color,
 					weight: s.weight,
 					dashArray: s.dashArray,
+					lineCap: s.lineCap,
 					opacity: s.opacity ?? 0.95,
 					interactive: false,
 				}).addTo(group);
@@ -169,6 +237,7 @@ export function buildOsmLayer(
 						color: style.color,
 						weight: style.weight,
 						dashArray: style.dashArray,
+						lineCap: style.lineCap,
 						opacity: style.opacity ?? 0.95,
 						interactive: false,
 					}).addTo(group);
@@ -176,6 +245,16 @@ export function buildOsmLayer(
 			}
 		}
 	}
+
+	// 4) Sepia tone wash over the whole field, tying the palette together.
+	L.polygon(canvasCorners(), {
+		pane,
+		stroke: false,
+		fill: true,
+		fillColor: TONE_WASH,
+		fillOpacity: TONE_OPACITY,
+		interactive: false,
+	}).addTo(group);
 
 	return group;
 }

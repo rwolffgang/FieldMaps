@@ -159,14 +159,18 @@ export class MapView extends LitElement {
 			if (this.selectedMapId !== definition.id || !this.transform) return;
 
 			if (this.vectorLayer) this.map.removeLayer(this.vectorLayer);
-			this.vectorLayer = buildOsmLayer(
-				data,
-				(lng, lat) => {
+			this.vectorLayer = buildOsmLayer(data, {
+				project: (lng, lat) => {
 					const { px, py } = this.transform.toPixel(lat, lng);
 					return this.px2ll(px, py);
 				},
-				"osm-basemap",
-			);
+				pixelProject: (px, py) => this.px2ll(px, py),
+				width: this.mapWidth,
+				height: this.mapHeight,
+				// 100 m coordinate grid, matching the OPT map's scale bar.
+				gridStepPx: this.transform.metersToPixels(100),
+				pane: "osm-basemap",
+			});
 			this.vectorLayer.addTo(this.map);
 		} catch (err) {
 			console.error("[osm] failed to load vector map", err);
