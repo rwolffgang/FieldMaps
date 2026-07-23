@@ -12,7 +12,12 @@ import {
 	type LabeledPointOfInterest,
 } from "./config.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
-import { buildOsmLayer, buildOsmGrid, type OsmFeatureCollection } from "./osm-map.js";
+import {
+	buildOsmLayer,
+	buildOsmGrid,
+	buildOsmFrame,
+	type OsmFeatureCollection,
+} from "./osm-map.js";
 
 const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
@@ -60,6 +65,7 @@ export class MapView extends LitElement {
 	private vectorLayer: L.LayerGroup | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
 	private gridLayer: L.LayerGroup | null = null;
+	private frameLayer: L.LayerGroup | null = null;
 	private maskLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
@@ -100,6 +106,11 @@ export class MapView extends LitElement {
 		// below the mask so out-of-bounds grid is dimmed too.
 		this.map.createPane("osm-grid");
 		this.map.getPane("osm-grid")!.style.zIndex = "260";
+
+		// Frame: opaque surround that clips the map to the grid rectangle. Above the
+		// grid so it hides any geometry spilling past the edge, below the mask.
+		this.map.createPane("osm-frame");
+		this.map.getPane("osm-frame")!.style.zIndex = "270";
 
 		// Out-of-bounds mask sits above the basemap (300) but below the overlay pane
 		// (400), so it dims the terrain while the GPS dot, route, and PoIs stay clear.
@@ -179,6 +190,10 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.gridLayer);
 			this.gridLayer = null;
 		}
+		if (this.frameLayer) {
+			this.map.removeLayer(this.frameLayer);
+			this.frameLayer = null;
+		}
 		if (this.maskLayer) {
 			this.map.removeLayer(this.maskLayer);
 			this.maskLayer = null;
@@ -222,15 +237,19 @@ export class MapView extends LitElement {
 			// Guard against a map switch while the fetch was in flight.
 			if (this.selectedMapId !== definition.id || !this.transform) return;
 
+			const theme = definition.theme ?? "opt";
+			const pixelProject = (px: number, py: number) => this.px2ll(px, py);
+
 			if (this.vectorLayer) this.map.removeLayer(this.vectorLayer);
 			this.vectorLayer = buildOsmLayer(data, {
 				project: (lng, lat) => {
 					const { px, py } = this.transform.toPixel(lat, lng);
 					return this.px2ll(px, py);
 				},
-				pixelProject: (px, py) => this.px2ll(px, py),
+				pixelProject,
 				width: this.mapWidth,
 				height: this.mapHeight,
+				theme,
 				pane: "osm-basemap",
 			});
 			this.vectorLayer.addTo(this.map);
@@ -238,13 +257,25 @@ export class MapView extends LitElement {
 			// Coordinate grid as its own toggleable layer (100 m, matching the scale bar).
 			if (this.gridLayer) this.map.removeLayer(this.gridLayer);
 			this.gridLayer = buildOsmGrid({
-				pixelProject: (px, py) => this.px2ll(px, py),
+				pixelProject,
 				width: this.mapWidth,
 				height: this.mapHeight,
 				stepPx: this.transform.metersToPixels(100),
+				theme,
 				pane: "osm-grid",
 			});
 			if (this.toggles.grid) this.gridLayer.addTo(this.map);
+
+			// Clean border: opaque surround that clips the map to the grid rectangle.
+			if (this.frameLayer) this.map.removeLayer(this.frameLayer);
+			this.frameLayer = buildOsmFrame({
+				pixelProject,
+				width: this.mapWidth,
+				height: this.mapHeight,
+				theme,
+				pane: "osm-frame",
+			});
+			this.frameLayer.addTo(this.map);
 		} catch (err) {
 			console.error("[osm] failed to load vector map", err);
 			this.status = "⚠ Map data unavailable";
@@ -270,14 +301,13 @@ export class MapView extends LitElement {
 			return this.px2ll(px, py);
 		});
 
-		// A rectangle far larger than the field, so the mask covers the whole viewport
-		// (including the black margin) at any pan/zoom. The play-area ring is a hole.
-		const M = 100000;
+		// The mask covers the play-area's complement WITHIN the map rectangle; beyond
+		// the rectangle the frame provides the border. The play-area ring is a hole.
 		const outer: L.LatLngExpression[] = [
-			[-M, -M],
-			[-M, this.mapWidth + M],
-			[this.mapHeight + M, this.mapWidth + M],
-			[this.mapHeight + M, -M],
+			this.px2ll(0, 0),
+			this.px2ll(this.mapWidth, 0),
+			this.px2ll(this.mapWidth, this.mapHeight),
+			this.px2ll(0, this.mapHeight),
 		];
 
 		this.maskLayer = L.layerGroup();

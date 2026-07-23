@@ -13,13 +13,14 @@
 // -----------------------------------------------------------------------------
 
 import type { ControlPoint } from "../transform.js";
+import type { OsmThemeName } from "../osm-map.js";
 
 /** A [lat, lng] coordinate pair, as copied from Google Maps. */
 export type LatLng = [number, number];
 
 /** What a scenario draws underneath its points of interest. */
 export type ScenarioBase =
-	| { kind: "osm" }
+	| { kind: "osm"; theme?: OsmThemeName }
 	| {
 			kind: "image";
 			/** Image file in /public. */

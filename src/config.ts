@@ -5,6 +5,7 @@ import {
 	type PointOfInterest,
 } from "./points-of-interest.js";
 import { SCENARIOS, type LatLng, type Scenario } from "./scenarios/index.js";
+import type { OsmThemeName } from "./osm-map.js";
 
 // =============================================================================
 //  Scenarios live in src/scenarios/ (labels + play area) and points of interest
@@ -25,6 +26,8 @@ export interface MapDefinition {
 	image?: string;
 	/** Path to the bundled OSM GeoJSON to render as a vector map. Omit for photos. */
 	vectorData?: string;
+	/** Which OSM look to render (vector maps only). Defaults to "opt". */
+	theme?: OsmThemeName;
 	/** Pixel dimensions of the coordinate canvas (image size, or OSM canvas size). */
 	width: number;
 	height: number;
@@ -62,7 +65,7 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		playArea: scenario.playArea,
 	};
 	if (scenario.base.kind === "osm") {
-		return { ...common, ...OSM_BASE };
+		return { ...common, ...OSM_BASE, theme: scenario.base.theme ?? "opt" };
 	}
 	const { image, width, height, controlPoints } = scenario.base;
 	return { ...common, image, width, height, controlPoints };
