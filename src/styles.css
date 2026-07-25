@@ -129,12 +129,42 @@ landing-view {
 	font-weight: 700;
 	letter-spacing: -0.01em;
 }
+.event-when {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.45rem;
+}
 .event-dates {
 	font-size: 0.75rem;
 	font-weight: 700;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 	color: var(--event-accent);
+}
+.event-variant {
+	color: #64788b;
+}
+/* "Läuft jetzt" / "In N Tagen" — only on the soonest event, so it stays meaningful. */
+.event-badge {
+	padding: 0.1rem 0.45rem;
+	border-radius: 999px;
+	border: 1px solid color-mix(in srgb, var(--event-accent) 45%, transparent);
+	background: color-mix(in srgb, var(--event-accent) 14%, transparent);
+	color: var(--event-accent);
+	font-size: 0.6875rem;
+	font-weight: 700;
+	letter-spacing: 0.03em;
+	white-space: nowrap;
+}
+.event-card.is-running {
+	border-color: color-mix(in srgb, var(--event-accent) 50%, transparent);
+	background: color-mix(in srgb, var(--event-accent) 7%, rgba(255, 255, 255, 0.025));
+}
+.event-card.is-running .event-badge {
+	background: var(--event-accent);
+	border-color: var(--event-accent);
+	color: #0b0f14;
 }
 .event-blurb {
 	font-size: 0.875rem;
@@ -500,6 +530,13 @@ landing-view {
 	background: rgba(180, 40, 40, 0.92);
 	color: #fff;
 	border-color: rgba(255, 120, 120, 0.5);
+}
+/* The map data failed to load — the pill becomes the retry button. */
+.pill.retry {
+	background: rgba(180, 40, 40, 0.92);
+	color: #fff;
+	border-color: rgba(255, 120, 120, 0.5);
+	cursor: pointer;
 }
 .hud-right {
 	display: flex;

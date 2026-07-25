@@ -13,6 +13,7 @@ import {
 	type Zone,
 } from "./scenarios/index.js";
 import type { OsmThemeName } from "./osm-map.js";
+import { compareBySchedule, type EventSchedule } from "./event-schedule.js";
 
 // =============================================================================
 //  Scenarios live in src/scenarios/ (labels + play area) and points of interest
@@ -31,8 +32,8 @@ export interface MapDefinition {
 	name: string;
 	/** One-line description for the landing page card. */
 	blurb?: string;
-	/** When the event runs; free text, shown on the landing card. */
-	dates?: string;
+	/** When the event runs; drives the landing card's date and the overview ordering. */
+	schedule?: EventSchedule;
 	/** Accent colour for the landing card. */
 	accent?: string;
 	/** Path to a photo map image (drop the file in /public). Omit for OSM maps. */
@@ -81,7 +82,7 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		id: scenario.id,
 		name: scenario.name,
 		blurb: scenario.blurb,
-		dates: scenario.dates,
+		schedule: scenario.schedule,
 		accent: scenario.accent,
 		poiNames: scenario.poiNames,
 		playArea: scenario.playArea,
@@ -96,10 +97,22 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 	return { ...common, image, width, height, controlPoints };
 }
 
-/** All selectable maps, one per scenario. Order = order in the selector. */
+/** All selectable maps, one per scenario, in registration order. */
 export const MAPS: MapDefinition[] = SCENARIOS.map(scenarioToMap);
 
-/** Which map loads on first visit (before any saved preference). */
+/**
+ * The maps in the order a player wants them: the event that is running right now
+ * first, then the next one, and so on — style variants (no schedule) last.
+ *
+ * A function rather than a constant because the answer depends on today's date, and
+ * this is a PWA that people leave open for a whole weekend. Cheap enough to call per
+ * render; the list is single digits long.
+ */
+export function mapsByDate(now = new Date()): MapDefinition[] {
+	return [...MAPS].sort((a, b) => compareBySchedule(a, b, now));
+}
+
+/** Which map loads on first visit (before any saved preference or URL). */
 export const DEFAULT_MAP_ID = MAPS[0]?.id ?? "";
 
 export function getMapById(id: string): MapDefinition {

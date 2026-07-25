@@ -20,7 +20,7 @@ export const lightSim: Scenario = {
 	id: "lso",
 	name: "LIGHT-SIM",
 	blurb: "TERRA gegen UCRF auf dem Airfield. Leichtes Regelwerk, volle Fläche.",
-	dates: "17.–20. September",
+	schedule: { start: [9, 17], end: [9, 20] },
 	accent: "#4aa3d6",
 	base: { kind: "osm", theme: "lso" },
 	poiNames: scenarioPoiNames({ "700": "UCRF HQ" }, ["Tango", "423", "505", "508"]),

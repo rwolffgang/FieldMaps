@@ -26,8 +26,8 @@ export default defineConfig({
 				globPatterns: ["**/*.{js,css,html,png,svg,webp,jpg,geojson}"],
 			},
 			manifest: {
-				name: "Fieldmaps",
-				short_name: "Fieldmaps",
+				name: "Field Maps",
+				short_name: "Field Maps",
 				description: "Deine GPS-Position auf der Taktikkarte des Events — offline.",
 				start_url: ".",
 				theme_color: "#0b0f14",
@@ -37,7 +37,14 @@ export default defineConfig({
 				icons: [
 					{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
 					{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },
-					{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+					// Separate file: the artwork's own rounded corners would show through
+					// Android's adaptive-icon mask, so this one is full-bleed and inset.
+					{
+						src: "icons/icon-512-maskable.png",
+						sizes: "512x512",
+						type: "image/png",
+						purpose: "maskable",
+					},
 				],
 			},
 		}),

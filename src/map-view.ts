@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { solveTransform, type Transform } from "./transform.js";
 import {
 	MAPS,
+	mapsByDate,
 	DEFAULT_MAP_ID,
 	getMapById,
 	getPointsOfInterestForMap,
@@ -25,20 +26,35 @@ const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
 const ARRIVED_DISTANCE_M = 8;
 
-// Leaflet only redraws vector layers on `moveend`; while a drag is in flight it just
-// translates the SVG panes. Anything beyond the drawn clip area is therefore blank
-// until the finger lifts. The clip area is the viewport grown by `padding` (a
-// fraction of the viewport, per side), so one viewport of slack covers any single
-// drag gesture and the map never goes empty mid-drag. Cheap here: the whole field is
-// a 379-feature GeoJSON, and the extra area is mostly empty anyway — Leaflet clips
-// the geometry to the same bounds, so a bigger buffer costs a bigger (but largely
-// blank) SVG, not more geometry than the field has.
+// --- Keeping the vector map painted while you drag -------------------------------
 //
-// Must be set on `Renderer` itself rather than passed as the map's `renderer` option:
-// every layer here draws into a custom pane, and Leaflet builds those pane renderers
-// itself (`Map._createRenderer`), passing only the pane name — map-level renderer
-// options never reach them.
-L.Renderer.mergeOptions({ padding: 1 });
+// Leaflet re-clips vector layers on `moveend` only: mid-drag it just slides the SVG
+// panes, so once the pan leaves the drawn area the map is blank until you let go.
+// Two knobs fix that together — a buffer around the viewport, plus a redraw during
+// the drag once that buffer is nearly used up.
+//
+// RENDER_BUFFER is Leaflet's renderer `padding`: how far past the viewport, as a
+// fraction of it per side, stays drawn (its default is 0.1). It has to stay small.
+// The panes are *painted* at that size — five of them, at device pixel ratio — so a
+// buffer wide enough to cover a whole gesture on its own (padding 1 = nine viewports
+// per pane) stalls the first frame of a drag for a few hundred milliseconds.
+//
+// RECLIP_FRACTION is how much of the buffer a pan may eat before we redraw instead of
+// waiting for the drop. Leaflet already does this for tile layers — GridLayer re-runs
+// its `moveend` work on `move`, throttled — the vector renderers just never got the
+// equivalent. Each redraw costs exactly one drop-redraw, a handful of times per drag.
+//
+// Tune them against each other: if a drag ever feels heavy, shrink RENDER_BUFFER
+// (less to paint per redraw) and raise RECLIP_FRACTION (fewer redraws); if the leading
+// edge flashes blank on a fast flick, do the opposite.
+const RENDER_BUFFER = 0.2;
+const RECLIP_FRACTION = 0.5;
+
+// Set on `Renderer` itself rather than passed as the map's `renderer` option: every
+// layer here draws into a custom pane, and Leaflet builds those pane renderers itself
+// (`Map._createRenderer`), passing only the pane name — map-level renderer options
+// never reach them.
+L.Renderer.mergeOptions({ padding: RENDER_BUFFER });
 
 /**
  * Which map to show on first paint. The URL wins — a bookmarked `?map=…` must open
@@ -122,6 +138,10 @@ export class MapView extends LitElement {
 		null;
 	private mapWidth = 0;
 	private mapHeight = 0;
+	private resizeObserver: ResizeObserver | null = null;
+	/** View the vector panes were last clipped around, for the mid-drag redraw. */
+	private clipCenter: L.LatLng | null = null;
+	private clipZoom = NaN;
 
 	@state() private status = "Waiting for GPS…";
 	@state() private following = true;
@@ -133,6 +153,8 @@ export class MapView extends LitElement {
 	@state() private navArrowDeg = 0;
 	@state() private togglesOpen = false;
 	@state() private toggles: Toggles = loadStoredToggles();
+	/** Set when the OSM data failed to load, so the user (or `online`) can retry it. */
+	@state() private vectorRetry: { definition: MapDefinition; dataUrl: string } | null = null;
 
 	firstUpdated() {
 		this.map = L.map(this.querySelector("#map") as HTMLElement, {
@@ -141,6 +163,11 @@ export class MapView extends LitElement {
 			maxZoom: 4,
 			zoomControl: false,
 			attributionControl: false,
+			// Fractional zoom. With Leaflet's default snap of 1, `fitBounds` rounds *down*
+			// to a whole power of two, so a field only slightly wider than the screen opens
+			// at half scale and wastes half the display. The field is a fixed-size canvas,
+			// not a tile pyramid, so there is no reason to quantise its zoom at all.
+			zoomSnap: 0,
 		});
 
 		// Basemap pane for the OSM vector map: below overlayPane (400) so the accuracy
@@ -172,6 +199,16 @@ export class MapView extends LitElement {
 		// hatch pattern whenever the map renders. Idempotent, so it's safe to repeat.
 		this.map.on("load zoomend moveend", () => this.injectHatchPattern());
 
+		// Redraw while the view is still moving, before the pan runs off the drawn
+		// buffer (see RENDER_BUFFER). Covers drags, inertia flings and animated pans.
+		this.map.on("move", () => this.reclipIfPannedOut());
+		// Whatever ended the move (a real moveend, or our own) leaves the panes freshly
+		// clipped around this view: that is the point the next pan is measured from.
+		this.map.on("moveend zoomend", () => {
+			this.clipCenter = this.map.getCenter();
+			this.clipZoom = this.map.getZoom();
+		});
+
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
 			this.following = false;
@@ -188,21 +225,43 @@ export class MapView extends LitElement {
 
 		this.loadMap(getMapById(this.selectedMapId));
 
-		// The container can start at 0×0 (PWA cold start, orientation change, or a
-		// not-yet-laid-out preview). fitBounds would then snap to min zoom. Re-sync and
-		// re-fit whenever the container resizes, until GPS or the user takes over.
+		// The container starts at 0×0 whenever the overview is the entry screen (this
+		// element is `hidden` until a map is routed to), and can also be 0×0 on a PWA
+		// cold start or a not-yet-laid-out preview. fitBounds would then snap to min
+		// zoom and stick there. Re-sync and re-fit whenever the container resizes, until
+		// GPS or the user takes over.
+		//
+		// The observer must be held in a field: an unreferenced ResizeObserver is
+		// collectable even while it has live observations, and losing it here leaves the
+		// map stuck at min zoom with no way back.
 		const mapEl = this.querySelector("#map");
 		if (mapEl) {
-			new ResizeObserver(() => {
-				this.map.invalidateSize({ animate: false });
-				if (this.following && !this.lastGps) {
-					this.map.fitBounds([
-						[0, 0],
-						[this.mapHeight, this.mapWidth],
-					]);
-				}
-			}).observe(mapEl);
+			this.resizeObserver = new ResizeObserver(() => this.resyncSize());
+			this.resizeObserver.observe(mapEl);
 		}
+
+		// If the map data failed to load, take a returning network as the cue to retry
+		// without the user having to notice the pill.
+		window.addEventListener("online", () => this.retryVectorMap());
+	}
+
+	/**
+	 * Re-clip the vector panes while the view is still moving, once the pan has eaten
+	 * RECLIP_FRACTION of the drawn buffer — otherwise the leading edge would stay blank
+	 * until the move ends. `moveend` is the event the renderers redraw on, so firing it
+	 * is the redraw; everything else listening to it here is idempotent. Zoom is the
+	 * exception: Leaflet scales the panes during a pinch and redraws them at the end,
+	 * so any pan measured across a zoom change is left to that redraw.
+	 */
+	private reclipIfPannedOut() {
+		const zoom = this.map.getZoom();
+		if (this.clipCenter && this.clipZoom === zoom) {
+			const size = this.map.getSize();
+			const budget = RECLIP_FRACTION * RENDER_BUFFER * Math.min(size.x, size.y);
+			const from = this.map.project(this.clipCenter, zoom);
+			if (from.distanceTo(this.map.project(this.map.getCenter(), zoom)) < budget) return;
+		}
+		this.map.fire("moveend");
 	}
 
 	private currentPointsOfInterest(): LabeledPointOfInterest[] {
@@ -277,7 +336,7 @@ export class MapView extends LitElement {
 		this.renderPlayAreaMask(definition.playArea);
 		this.renderZones(definition);
 		this.renderHeadquarters(definition);
-		this.map.fitBounds(bounds);
+		this.map.fitBounds(this.initialBounds(definition));
 		this.following = true;
 
 		if (this.lastGps) {
@@ -295,9 +354,7 @@ export class MapView extends LitElement {
 		try {
 			let data = this.vectorCache.get(dataUrl);
 			if (!data) {
-				const res = await fetch(dataUrl);
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				data = (await res.json()) as OsmFeatureCollection;
+				data = await this.fetchVectorData(dataUrl);
 				this.vectorCache.set(dataUrl, data);
 			}
 
@@ -343,10 +400,50 @@ export class MapView extends LitElement {
 				pane: "osm-frame",
 			});
 			this.frameLayer.addTo(this.map);
+
+			// Clear a previous failure. The GPS status normally owns this pill, so only
+			// take it back when there is no fix yet to report.
+			this.vectorRetry = null;
+			if (!this.lastGps) this.status = "Waiting for GPS…";
 		} catch (err) {
 			console.error("[osm] failed to load vector map", err);
-			this.status = "⚠ Map data unavailable";
+			this.status = "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen";
+			this.vectorRetry = { definition, dataUrl };
 		}
+	}
+
+	/**
+	 * Fetch the bundled GeoJSON, retrying a couple of times.
+	 *
+	 * Normally this resolves straight from the service worker cache, but it can still
+	 * fail: a precache miss, a dev-server restart, or a flaky first load in the car
+	 * park before anyone reaches the field. A single failure used to leave the map
+	 * permanently blank with no way back, which is the worst way for this app to fail —
+	 * you find out standing in a forest with no signal. Retry, then let the user tap
+	 * the status pill to try again.
+	 */
+	private async fetchVectorData(dataUrl: string, attempts = 3): Promise<OsmFeatureCollection> {
+		let lastError: unknown;
+		for (let attempt = 0; attempt < attempts; attempt++) {
+			if (attempt > 0) await new Promise((r) => setTimeout(r, 300 * attempt));
+			try {
+				const res = await fetch(dataUrl, { cache: "force-cache" });
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return (await res.json()) as OsmFeatureCollection;
+			} catch (err) {
+				lastError = err;
+			}
+		}
+		throw lastError;
+	}
+
+	/** Retry a failed vector load — from the status pill, or when the network returns. */
+	private retryVectorMap() {
+		const pending = this.vectorRetry;
+		if (!pending) return;
+		this.vectorRetry = null;
+		this.status = "Karte wird geladen…";
+		void this.loadVectorMap(pending.definition, pending.dataUrl);
 	}
 
 	/**
@@ -414,6 +511,39 @@ export class MapView extends LitElement {
 			this.maskLayer.addTo(this.map);
 			this.injectHatchPattern();
 		}
+	}
+
+	/**
+	 * Tell Leaflet the container changed size, and re-frame the field if the user has
+	 * not taken over yet. Called by the ResizeObserver, and directly when a route
+	 * change reveals this element — Leaflet caches its container size, so a map that
+	 * was laid out at 0×0 stays at minimum zoom until something re-syncs it.
+	 */
+	private resyncSize() {
+		if (!this.map) return;
+		this.map.invalidateSize({ animate: false });
+		if (this.following && !this.lastGps) {
+			this.map.fitBounds(this.initialBounds(getMapById(this.selectedMapId)));
+		}
+	}
+
+	/**
+	 * What the map should frame when it opens.
+	 *
+	 * The shared OSM canvas spans far more ground than any single event uses, so
+	 * fitting the whole canvas opens on a screenful of masked-out surround with the
+	 * actual field small in the middle. Frame the scenario's play area instead when it
+	 * has one; only fall back to the canvas for scenarios that play the whole field.
+	 */
+	private initialBounds(definition: MapDefinition): L.LatLngBoundsExpression {
+		const canvas: L.LatLngBoundsExpression = [
+			[0, 0],
+			[this.mapHeight, this.mapWidth],
+		];
+		const playArea = definition.playArea;
+		if (!playArea || playArea.length < 3 || !this.transform) return canvas;
+		// A little slack so the boundary itself is not flush against the screen edge.
+		return L.latLngBounds(this.ring(playArea) as L.LatLngTuple[]).pad(0.05);
 	}
 
 	/** GPS ring -> Leaflet CRS.Simple ring, through the current calibration. */
@@ -674,10 +804,13 @@ export class MapView extends LitElement {
 		goToMap(id);
 	}
 
-	/** Show a map because the route changed. No-op if it is already the current one. */
+	/** Show a map because the route changed. */
 	showRoutedMap(id: string) {
-		if (id === this.selectedMapId) return;
-		this.loadMap(getMapById(id));
+		if (id !== this.selectedMapId) this.loadMap(getMapById(id));
+		// This element was `hidden` until now, so its container may still be 0×0 as far
+		// as Leaflet knows. The ResizeObserver catches that too, but only after layout —
+		// resync on the next frame so the first paint is already framed correctly.
+		requestAnimationFrame(() => this.resyncSize());
 	}
 
 	private onPoiSelect(event: Event) {
@@ -934,10 +1067,7 @@ export class MapView extends LitElement {
 		// Off-map: re-following would pan into empty background, so snap back to the
 		// whole field instead — the warning already tells the user where they are.
 		if (this.offMap) {
-			this.map.fitBounds([
-				[0, 0],
-				[this.mapHeight, this.mapWidth],
-			]);
+			this.map.fitBounds(this.initialBounds(getMapById(this.selectedMapId)));
 		} else if (this.lastPixel) {
 			this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py));
 		}
@@ -986,7 +1116,7 @@ export class MapView extends LitElement {
 						MAPS.length > 1
 							? html`
 									<select class="map-select" @change=${this.onMapSelect}>
-										${MAPS.map(
+										${mapsByDate().map(
 											(map) => html`
 												<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
 													${map.name}
@@ -997,7 +1127,12 @@ export class MapView extends LitElement {
 								`
 							: ""
 					}
-					<span class="pill ${this.offMap ? "warn" : ""}">${this.status}</span>
+					<span
+						class="pill ${this.offMap ? "warn" : ""} ${this.vectorRetry ? "retry" : ""}"
+						role=${this.vectorRetry ? "button" : "status"}
+						@click=${() => this.retryVectorMap()}
+						>${this.status}</span
+					>
 				</div>
 				<div class="hud-right">
 					${this.renderToggles()}

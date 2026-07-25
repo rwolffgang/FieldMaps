@@ -14,6 +14,7 @@
 
 import type { ControlPoint } from "../transform.js";
 import type { OsmThemeName } from "../osm-map.js";
+import type { EventSchedule } from "../event-schedule.js";
 
 /** A [lat, lng] coordinate pair, as copied from Google Maps. */
 export type LatLng = [number, number];
@@ -86,8 +87,12 @@ export interface Scenario {
 	name: string;
 	/** One line for the landing page card — what this game is, in the user's words. */
 	blurb?: string;
-	/** When it runs, e.g. "3.–5. Juli". Free text; shown on the landing card. */
-	dates?: string;
+	/**
+	 * When the event runs, month/day only — these repeat every year. Drives both the
+	 * date shown on the landing card and the ordering there (soonest first). Leave it
+	 * off for a style variant that isn't an event of its own.
+	 */
+	schedule?: EventSchedule;
 	/** Accent colour for the landing card, taken from the event's printed map. */
 	accent?: string;
 	/** The map drawn under the PoIs: the shared OSM vector base, or a photo image. */

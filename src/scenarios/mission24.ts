@@ -14,7 +14,7 @@ export const mission24: Scenario = {
 	id: "m24",
 	name: "Mission 24",
 	blurb: "24 Stunden am Stück: Kartell, Task Force und Rebellen um die Zivile Zone.",
-	dates: "3.–5. Juli",
+	schedule: { start: [7, 3], end: [7, 5] },
 	accent: "#b8483c",
 	base: {
 		kind: "image",

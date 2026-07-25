@@ -33,7 +33,7 @@ function applyRoute() {
 		else if (el.dataset.wanted === "1") el.hidden = false;
 	}
 	if (mapId != null) view.showRoutedMap(mapId);
-	document.title = mapId != null ? `${getMapById(mapId).name} · Fieldmaps` : "Fieldmaps";
+	document.title = mapId != null ? `${getMapById(mapId).name} · Field Maps` : "Field Maps";
 }
 
 onRouteChange(applyRoute);
@@ -132,9 +132,11 @@ if (testInput) {
 }
 
 function setStatus(msg: string) {
-	const el = document.querySelector("#toast");
-	if (el) {
-		el.textContent = msg;
-		(el as HTMLElement).hidden = false;
-	}
+	const el = document.querySelector("#toast") as HTMLElement | null;
+	if (!el) return;
+	el.textContent = msg;
+	// Remember that there is something to say, but only show it over a map — a GPS
+	// error is noise on the overview, where there is no position to place anyway.
+	el.dataset.wanted = "1";
+	el.hidden = routedMapId() == null;
 }
