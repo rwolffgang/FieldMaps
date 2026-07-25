@@ -4,7 +4,14 @@ import {
 	type LabeledPointOfInterest,
 	type PointOfInterest,
 } from "./points-of-interest.js";
-import { SCENARIOS, type LatLng, type Scenario } from "./scenarios/index.js";
+import {
+	SCENARIOS,
+	type BoundaryLine,
+	type Headquarters,
+	type LatLng,
+	type Scenario,
+	type Zone,
+} from "./scenarios/index.js";
 import type { OsmThemeName } from "./osm-map.js";
 
 // =============================================================================
@@ -40,6 +47,12 @@ export interface MapDefinition {
 	 * by the out-of-bounds texture. Empty/undefined = whole field, no mask.
 	 */
 	playArea?: LatLng[];
+	/** Marked areas traced from the event's tactical map. */
+	zones?: Zone[];
+	/** Faction headquarters with their emblems. */
+	headquarters?: Headquarters[];
+	/** Open frontlines traced from the event's tactical map. */
+	lines?: BoundaryLine[];
 }
 
 // Shared calibration for the OSM vector base. Every OSM scenario renders on this
@@ -63,6 +76,9 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		name: scenario.name,
 		poiNames: scenario.poiNames,
 		playArea: scenario.playArea,
+		zones: scenario.zones,
+		headquarters: scenario.headquarters,
+		lines: scenario.lines,
 	};
 	if (scenario.base.kind === "osm") {
 		return { ...common, ...OSM_BASE, theme: scenario.base.theme ?? "opt" };

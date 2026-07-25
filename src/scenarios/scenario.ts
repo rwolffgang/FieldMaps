@@ -32,6 +32,53 @@ export type ScenarioBase =
 			controlPoints: ControlPoint[];
 	  };
 
+/**
+ * A marked area copied off the printed tactical map — a safe zone, a faction's
+ * territory, the "Zivile Zone", and so on. Drawn over the terrain, under the PoIs.
+ */
+export interface Zone {
+	/** Stable id (used as a React-less render key and for the hatch pattern). */
+	id: string;
+	/** Label drawn in the middle of the area. */
+	name: string;
+	/** Ordered ring of [lat, lng] points. */
+	points: LatLng[];
+	/** Line + fill colour, any CSS colour. */
+	color: string;
+	/**
+	 * "hatch" = diagonal stripes (the printed maps' safe-zone look), "fill" = flat
+	 * translucent wash, "outline" = ring only. Defaults to "hatch".
+	 */
+	style?: "hatch" | "fill" | "outline";
+}
+
+/**
+ * A faction headquarters / spawn, drawn as its emblem in a coloured ring — the
+ * "Hauptquartier" circles on the printed maps.
+ */
+export interface Headquarters {
+	id: string;
+	/** Label shown under the emblem. */
+	name: string;
+	lat: number;
+	lng: number;
+	/** Ring colour, matching the printed map. */
+	color: string;
+	/** Emblem file under /public/logos (omit for a plain ring). */
+	logo?: string;
+}
+
+/**
+ * An open boundary line — a faction frontline such as Mission 24H's "Task Force
+ * Grenze". Unlike a Zone this is not closed and encloses nothing.
+ */
+export interface BoundaryLine {
+	id: string;
+	name?: string;
+	points: LatLng[];
+	color: string;
+}
+
 export interface Scenario {
 	/** Stable id, also used for persistence and as the map id. */
 	id: string;
@@ -53,4 +100,10 @@ export interface Scenario {
 	 * corner -> copy the lat/lng, and paste the pairs here in order.
 	 */
 	playArea: LatLng[];
+	/** Marked areas from the printed map (safe zones, faction territory, …). */
+	zones?: Zone[];
+	/** Faction headquarters, drawn with their emblems. */
+	headquarters?: Headquarters[];
+	/** Open frontlines / boundary lines from the printed map. */
+	lines?: BoundaryLine[];
 }

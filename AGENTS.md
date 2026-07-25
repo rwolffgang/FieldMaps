@@ -18,7 +18,7 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 
 ## The files a user edits
 
-- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (the shared OSM vector map, or a photo `image` with its own control points), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Copy a file, edit it, register it in `src/scenarios/index.ts`.
+- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (the shared OSM vector map, or a photo `image` with its own control points), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Optionally also `zones` (marked areas: safe zones, "Zivile Zone", …), `headquarters` (faction HQs drawn with their emblem from `/public/logos`), and `lines` (open frontlines). Copy a file, edit it, register it in `src/scenarios/index.ts`.
 - `src/points-of-interest.ts` — the shared registry of physical PoI **coordinates** (same across all scenarios) plus the default label set.
 - `src/config.ts` — turns each scenario into a selectable map (resolving its base) and holds the smoothing tunables. Prefer editing scenario files over this.
 
@@ -30,10 +30,12 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 - `src/points-of-interest.ts` — shared PoI coordinates + default labels + `labelPointsOfInterest`.
 - `src/geo.ts` — `watch(onFix, onError)` wraps `watchPosition`, emits a `Fix { lat, lng, accuracy, heading, speed }`, applies light EMA smoothing with a snap-on-teleport.
 - `src/heading.ts` — compass. `watchHeading(onHeading)`, plus `needsPermission()` / `requestPermission()` for iOS. Circular-mean angle smoothing.
-- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay OR OSM vector base, coordinate grid, the out-of-bounds play-area mask (darken + diagonal hatch, injected SVG `<pattern>`), accuracy circle, position marker, follow/recenter, and the layer **toggles** (PoI id labels, grid, boundary mask — persisted; grid/mask shown only when applicable). A `ResizeObserver` re-fits when the container gains size (0×0 cold start).
+- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay OR OSM vector base, coordinate grid, the out-of-bounds play-area mask (darken + diagonal hatch, injected SVG `<pattern>`), the scenario's zones/frontlines and HQ emblems, accuracy circle, position marker, follow/recenter, and the layer **toggles** (PoI id labels, grid, boundary mask, zones, HQs — persisted; each shown only when applicable). A `ResizeObserver` re-fits when the container gains size (0×0 cold start).
 - `src/main.ts` — wires geo + heading into the view, chooses heading source, wake lock, iOS compass button.
 - `src/transform.test.ts` — synthetic known-truth self-test. Not part of the build (`tsconfig` excludes `*.test.ts`).
-- `src/osm-map.ts` — renders an OpenStreetMap-derived GeoJSON (`public/map_osm.geojson`) as styled Leaflet vector layers (roads, paths, buildings, forest, water). Ships two **themes** (`opt` warm sepia, `m24` cold dark-satellite); a scenario's OSM base picks one. `buildOsmFrame` paints an opaque surround outside the grid rectangle so the map has a clean border and nothing renders past the edge. Projects each feature through the same GPS→pixel transform, so it lines up with the GPS dot and PoIs. Fully offline: the data is bundled and precached.
+- `src/osm-map.ts` — renders an OpenStreetMap-derived GeoJSON (`public/map_osm.geojson`) as styled Leaflet vector layers (roads, paths, buildings, forest, water). Ships six **themes**, one per event's printed tactical map: `opt` (warm sepia), `m24` (cold dark satellite), `de` (near-black), `asd` (green surround), `lso` (cool blue-grey), `laf` (grey-green). A scenario's OSM base picks one. `buildOsmFrame` paints an opaque surround outside the grid rectangle so the map has a clean border and nothing renders past the edge. Projects each feature through the same GPS→pixel transform, so it lines up with the GPS dot and PoIs. Fully offline: the data is bundled and precached.
+- `reference/tactical-maps/` — the organiser's printed Taktikkarten, one per event, downloaded from `airsofthelden-events.com/<event>/taktikkarte`. **Source material, not app assets** — they live outside `public/` so they are not bundled or precached. Every PoI coordinate, play area, zone and HQ position in `src/` was read off these; keep them so the numbers can be re-derived or checked.
+- `public/logos/` — faction emblems (GOF, KGG, Miliz, Task Force, Kartell, Rebellen, TERRA, UCRF, the TNO factions, Delta, Ghost), pulled from the organiser's site and normalised to 256×256 PNG. Referenced by `Headquarters.logo`, so these **are** bundled.
 - `scripts/fetch-osm.mjs` — one-off, reproducible download of OSM data from the Overpass API into `public/map_osm.geojson`. The **only** online step; run `node scripts/fetch-osm.mjs` to refresh the data. It also prints the control points + canvas dimensions to paste into the OSM `MapDefinition` in `config.ts`.
 
 ## Invariants — do not break these
@@ -52,6 +54,17 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 5. **The heading triangle rotates an _inner_ element.** Leaflet owns the marker's outer `transform` (positioning translate). Rotation is applied to `.pm-arrow` inside the divIcon. Rotating the outer element will fight Leaflet.
 
 6. **`map-view` renders in light DOM** (`createRenderRoot() { return this; }`) so Leaflet's global CSS applies. Don't move it into shadow DOM without also injecting Leaflet's stylesheet.
+
+## Where the coordinates come from
+
+Every number in `points-of-interest.ts` and the scenario files was derived from the maps in `reference/tactical-maps/`, by fitting the same similarity transform the app uses (image pixels ↔ GPS) and inverting it. Accuracy differs by source, so treat them differently:
+
+- **LIGHT-SIM** is the anchor. Its map carries a real UTM zone 32N grid at 100 m spacing (192.7 px per 100 m, detected from the image). Projecting the shared PoIs onto it lands them squarely on their buildings — that is the cross-check that validates the whole registry.
+- **Dark Emergency 2026** fitted to **3.0 m RMS** from the five named wind turbines. Its extra buildings (423, 500, 505, 508, 808, 824, Tango) are that good.
+- **Lost Airfield** fitted to **9.8 m RMS** from 28 buildings shared with the other maps. Its 31 exclusive buildings are good to ~10 m.
+- **Play areas, zones and frontlines were traced by hand** off the printed maps and are only good to a few tens of metres. LIGHT-SIM's own map says as much: "Tatsächliche Spielfeldgrenzen werden durch Flatterband markiert." Refine them from a walked GPS track when you can.
+
+Beware that the events renumber things: Dark Emergency 2026's "612 Fahrzeughalle" is the building every other legend calls 613, and the same id can carry a different name per event (610 is Esco Bar, Laborkomplex or Stalker Bar depending on the game). Ids are physical; names are per scenario.
 
 ## Calibration & correctness
 

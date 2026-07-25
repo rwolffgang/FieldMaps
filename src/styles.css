@@ -190,6 +190,66 @@ map-view,
 	fill: url(#playarea-hatch);
 }
 
+/* Marked areas traced off the printed tactical maps. The per-zone fill is set
+   imperatively (each zone has its own coloured <pattern>), so this only has to
+   keep the label and emblem chrome consistent. */
+.zone-label-marker {
+	background: none;
+	border: none;
+	pointer-events: none;
+}
+.zone-label {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	text-shadow:
+		0 0 4px rgba(0, 0, 0, 0.95),
+		0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.hq-marker {
+	background: none;
+	border: none;
+}
+.hq-ring {
+	width: 44px;
+	height: 44px;
+	margin: 4px;
+	border-radius: 50%;
+	border: 3px solid currentColor;
+	background: rgba(8, 11, 15, 0.72);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+.hq-logo {
+	width: 34px;
+	height: 34px;
+	object-fit: contain;
+	/* Most faction emblems are white line art; a light drop shadow keeps them
+	   readable when a zone or a pale building sits underneath. */
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+.hq-name {
+	position: absolute;
+	top: 54px;
+	left: 50%;
+	transform: translateX(-50%);
+	white-space: nowrap;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-shadow:
+		0 0 4px rgba(0, 0, 0, 0.95),
+		0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
 .leaflet-tooltip.poi-tooltip {
 	background: rgba(11, 15, 20, 0.92);
 	color: #e6edf3;

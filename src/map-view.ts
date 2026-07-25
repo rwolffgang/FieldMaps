@@ -36,9 +36,29 @@ interface Toggles {
 	grid: boolean;
 	/** Cover the area outside the play boundary (scenarios with a play area). */
 	mask: boolean;
+	/** Show the marked areas and frontlines traced from the printed map. */
+	zones: boolean;
+	/** Show the faction headquarters emblems. */
+	hqs: boolean;
 }
 
-const DEFAULT_TOGGLES: Toggles = { poiIds: false, grid: true, mask: true };
+const DEFAULT_TOGGLES: Toggles = { poiIds: false, grid: true, mask: true, zones: true, hqs: true };
+
+/**
+ * Centroid of a CRS.Simple ring, for placing a zone's label. The plain vertex mean
+ * is enough here — these rings are small and roughly convex, and the label only has
+ * to land inside the shape, not at its exact area centroid.
+ */
+function polygonCenter(ring: L.LatLngExpression[]): L.LatLngExpression {
+	let lat = 0;
+	let lng = 0;
+	for (const point of ring) {
+		const [a, b] = point as [number, number];
+		lat += a;
+		lng += b;
+	}
+	return [lat / ring.length, lng / ring.length];
+}
 
 function loadStoredToggles(): Toggles {
 	try {
@@ -67,6 +87,8 @@ export class MapView extends LitElement {
 	private gridLayer: L.LayerGroup | null = null;
 	private frameLayer: L.LayerGroup | null = null;
 	private maskLayer: L.LayerGroup | null = null;
+	private zonesLayer: L.LayerGroup | null = null;
+	private hqLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
@@ -107,15 +129,21 @@ export class MapView extends LitElement {
 		this.map.createPane("osm-grid");
 		this.map.getPane("osm-grid")!.style.zIndex = "260";
 
-		// Frame: opaque surround that clips the map to the grid rectangle. Above the
-		// grid so it hides any geometry spilling past the edge, below the mask.
+		// Frame: opaque surround that clips the map to the grid rectangle. It sits above
+		// the mask and the zones too — a play area or a safe zone can legitimately run
+		// past the canvas edge (Dark Emergency's does), and nothing may render there.
 		this.map.createPane("osm-frame");
-		this.map.getPane("osm-frame")!.style.zIndex = "270";
+		this.map.getPane("osm-frame")!.style.zIndex = "340";
 
 		// Out-of-bounds mask sits above the basemap (300) but below the overlay pane
 		// (400), so it dims the terrain while the GPS dot, route, and PoIs stay clear.
 		this.map.createPane("playarea-mask");
 		this.map.getPane("playarea-mask")!.style.zIndex = "300";
+
+		// Marked areas + frontlines from the printed map: above the mask (so a safe
+		// zone stays legible) but still below the overlay pane and its markers.
+		this.map.createPane("zones");
+		this.map.getPane("zones")!.style.zIndex = "320";
 		// Leaflet builds the mask pane's SVG lazily during a render; (re)inject the
 		// hatch pattern whenever the map renders. Idempotent, so it's safe to repeat.
 		this.map.on("load zoomend moveend", () => this.injectHatchPattern());
@@ -198,6 +226,14 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.maskLayer);
 			this.maskLayer = null;
 		}
+		if (this.zonesLayer) {
+			this.map.removeLayer(this.zonesLayer);
+			this.zonesLayer = null;
+		}
+		if (this.hqLayer) {
+			this.map.removeLayer(this.hqLayer);
+			this.hqLayer = null;
+		}
 
 		const bounds: L.LatLngBoundsExpression = [
 			[0, 0],
@@ -210,6 +246,8 @@ export class MapView extends LitElement {
 			this.imageOverlay = L.imageOverlay(definition.image, bounds).addTo(this.map);
 		}
 		this.renderPlayAreaMask(definition.playArea);
+		this.renderZones(definition);
+		this.renderHeadquarters(definition);
 		this.map.fitBounds(bounds);
 		this.following = true;
 
@@ -349,12 +387,185 @@ export class MapView extends LitElement {
 		}
 	}
 
+	/** GPS ring -> Leaflet CRS.Simple ring, through the current calibration. */
+	private ring(points: [number, number][]): L.LatLngExpression[] {
+		return points.map(([lat, lng]) => {
+			const { px, py } = this.transform.toPixel(lat, lng);
+			return this.px2ll(px, py);
+		});
+	}
+
+	/**
+	 * Draw the marked areas and frontlines traced off the event's printed map: the
+	 * hatched safe zones, the "Zivile Zone" wash, the faction boundary lines. Each
+	 * zone gets its own SVG hatch pattern, keyed by zone id, so the stripes take the
+	 * zone's colour.
+	 */
+	private renderZones(definition: MapDefinition) {
+		if (this.zonesLayer) {
+			this.map.removeLayer(this.zonesLayer);
+			this.zonesLayer = null;
+		}
+		const zones = definition.zones ?? [];
+		const lines = definition.lines ?? [];
+		if ((zones.length === 0 && lines.length === 0) || !this.transform) return;
+
+		this.zonesLayer = L.layerGroup();
+
+		for (const zone of zones) {
+			if (zone.points.length < 3) continue;
+			const ring = this.ring(zone.points);
+			const style = zone.style ?? "hatch";
+
+			if (style !== "outline") {
+				L.polygon(ring, {
+					pane: "zones",
+					stroke: false,
+					fill: true,
+					fillColor: zone.color,
+					fillOpacity: style === "fill" ? 0.22 : 0.1,
+					interactive: false,
+				}).addTo(this.zonesLayer);
+			}
+			if (style === "hatch") {
+				L.polygon(ring, {
+					pane: "zones",
+					className: `zone-hatch zone-hatch-${zone.id}`,
+					stroke: false,
+					fill: true,
+					fillOpacity: 1,
+					interactive: false,
+				}).addTo(this.zonesLayer);
+			}
+			L.polygon(ring, {
+				pane: "zones",
+				color: zone.color,
+				weight: 2,
+				dashArray: "8 5",
+				opacity: 0.95,
+				fill: false,
+				interactive: false,
+			}).addTo(this.zonesLayer);
+
+			L.marker(polygonCenter(ring), {
+				pane: "zones",
+				icon: L.divIcon({
+					className: "zone-label-marker",
+					html: `<span class="zone-label" style="color:${zone.color}">${zone.name}</span>`,
+					iconSize: [0, 0],
+				}),
+				interactive: false,
+			}).addTo(this.zonesLayer);
+		}
+
+		for (const line of lines) {
+			if (line.points.length < 2) continue;
+			L.polyline(this.ring(line.points), {
+				pane: "zones",
+				color: line.color,
+				weight: 4,
+				dashArray: "14 9",
+				opacity: 0.95,
+				interactive: false,
+			}).addTo(this.zonesLayer);
+		}
+
+		if (this.toggles.zones) {
+			this.zonesLayer.addTo(this.map);
+			this.injectZonePatterns(zones);
+		}
+	}
+
+	/** Faction headquarters, drawn as their emblem in a coloured ring. */
+	private renderHeadquarters(definition: MapDefinition) {
+		if (this.hqLayer) {
+			this.map.removeLayer(this.hqLayer);
+			this.hqLayer = null;
+		}
+		const headquarters = definition.headquarters ?? [];
+		if (headquarters.length === 0 || !this.transform) return;
+
+		this.hqLayer = L.layerGroup();
+		for (const hq of headquarters) {
+			const { px, py } = this.transform.toPixel(hq.lat, hq.lng);
+			const emblem = hq.logo ? `<img class="hq-logo" src="${hq.logo}" alt="" />` : "";
+			const marker = L.marker(this.px2ll(px, py), {
+				icon: L.divIcon({
+					className: "hq-marker",
+					html:
+						`<div class="hq-ring" style="border-color:${hq.color}">${emblem}</div>` +
+						`<span class="hq-name" style="color:${hq.color}">${hq.name}</span>`,
+					iconSize: [52, 52],
+					iconAnchor: [26, 26],
+				}),
+				interactive: true,
+			});
+			marker.bindTooltip(hq.name, { className: "poi-tooltip", direction: "top", offset: [0, -28] });
+			marker.addTo(this.hqLayer);
+		}
+		if (this.toggles.hqs) this.hqLayer.addTo(this.map);
+	}
+
+	/**
+	 * Give every zone a diagonal-stripe <pattern> in its own colour, injected into
+	 * the zones pane's SVG. Same lazy-SVG dance as the play-area hatch.
+	 */
+	private injectZonePatterns(zones: MapDefinition["zones"], attempt = 0) {
+		if (!zones || zones.length === 0 || !this.zonesLayer) return;
+		const svg = this.map.getPane("zones")?.querySelector("svg");
+		if (!svg) {
+			if (attempt < 40) requestAnimationFrame(() => this.injectZonePatterns(zones, attempt + 1));
+			return;
+		}
+		const NS = "http://www.w3.org/2000/svg";
+		let defs = svg.querySelector("defs");
+		if (!defs) {
+			defs = document.createElementNS(NS, "defs");
+			svg.insertBefore(defs, svg.firstChild);
+		}
+		for (const zone of zones) {
+			const id = `zone-hatch-${zone.id}`;
+			if (svg.querySelector(`#${CSS.escape(id)}`)) continue;
+			const pattern = document.createElementNS(NS, "pattern");
+			pattern.setAttribute("id", id);
+			pattern.setAttribute("patternUnits", "userSpaceOnUse");
+			pattern.setAttribute("width", "10");
+			pattern.setAttribute("height", "10");
+			pattern.setAttribute("patternTransform", "rotate(45)");
+			const stripe = document.createElementNS(NS, "rect");
+			stripe.setAttribute("width", "3.5");
+			stripe.setAttribute("height", "10");
+			stripe.setAttribute("fill", zone.color);
+			stripe.setAttribute("fill-opacity", "0.55");
+			pattern.appendChild(stripe);
+			defs.appendChild(pattern);
+		}
+		// Point each zone polygon at its own pattern (CSS can't hold a per-zone url()).
+		for (const zone of zones) {
+			for (const el of this.querySelectorAll_(`.zone-hatch-${zone.id}`)) {
+				el.setAttribute("fill", `url(#zone-hatch-${zone.id})`);
+			}
+		}
+	}
+
+	private querySelectorAll_(selector: string): SVGElement[] {
+		const pane = this.map.getPane("zones");
+		return pane ? Array.from(pane.querySelectorAll<SVGElement>(selector)) : [];
+	}
+
 	/** Whether the current map can show the grid / mask toggles. */
 	private get hasGrid(): boolean {
 		return getMapById(this.selectedMapId).vectorData != null;
 	}
 	private get hasMask(): boolean {
 		return (getMapById(this.selectedMapId).playArea?.length ?? 0) >= 3;
+	}
+	private get hasZones(): boolean {
+		const map = getMapById(this.selectedMapId);
+		return (map.zones?.length ?? 0) + (map.lines?.length ?? 0) > 0;
+	}
+	private get hasHqs(): boolean {
+		return (getMapById(this.selectedMapId).headquarters?.length ?? 0) > 0;
 	}
 
 	private toggle(key: keyof Toggles) {
@@ -380,6 +591,18 @@ export class MapView extends LitElement {
 			} else {
 				this.map.removeLayer(this.maskLayer);
 			}
+		}
+		if (this.zonesLayer) {
+			if (this.toggles.zones) {
+				this.zonesLayer.addTo(this.map);
+				this.injectZonePatterns(getMapById(this.selectedMapId).zones);
+			} else {
+				this.map.removeLayer(this.zonesLayer);
+			}
+		}
+		if (this.hqLayer) {
+			if (this.toggles.hqs) this.hqLayer.addTo(this.map);
+			else this.map.removeLayer(this.hqLayer);
 		}
 		this.syncPoiDots();
 	}
@@ -766,6 +989,8 @@ export class MapView extends LitElement {
 								<div class="toggles-panel">
 									${row("poiIds", "PoI numbers")} ${this.hasGrid ? row("grid", "Grid") : ""}
 									${this.hasMask ? row("mask", "Boundary mask") : ""}
+									${this.hasZones ? row("zones", "Zonen") : ""}
+									${this.hasHqs ? row("hqs", "Hauptquartiere") : ""}
 								</div>
 							`
 						: ""

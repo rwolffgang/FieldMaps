@@ -63,6 +63,52 @@ export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	{ id: "Bravo", lat: 52.38252, lng: 11.827808 },
 	{ id: "Sierra", lat: 52.379219, lng: 11.827421 },
 	{ id: "Echo", lat: 52.381784, lng: 11.833683 },
+
+	// --- Read off the Dark Emergency 2026 tactical map (DE-39517-2026-1). That map
+	// was georeferenced from the five wind turbines above; the fit closed to 3.0 m
+	// RMS, so these are good to a few metres.
+	{ id: "423", lat: 52.377631, lng: 11.813228 },
+	{ id: "500", lat: 52.379487, lng: 11.820102 },
+	{ id: "505", lat: 52.380906, lng: 11.816381 },
+	{ id: "508", lat: 52.379583, lng: 11.816271 },
+	{ id: "808", lat: 52.382722, lng: 11.830432 },
+	{ id: "824", lat: 52.380539, lng: 11.832675 },
+	{ id: "Tango", lat: 52.379548, lng: 11.815083 },
+
+	// --- Read off the Lost Airfield tactical map, which numbers many more of the
+	// site's buildings than the other events use. Georeferenced from 28 buildings
+	// shared with the list above (9.8 m RMS), so treat these as ~10 m accurate.
+	{ id: "206", lat: 52.377679, lng: 11.82373 },
+	{ id: "207", lat: 52.378267, lng: 11.823273 },
+	{ id: "210", lat: 52.377977, lng: 11.825122 },
+	{ id: "211", lat: 52.378629, lng: 11.824747 },
+	{ id: "212", lat: 52.378632, lng: 11.824052 },
+	{ id: "213", lat: 52.37825, lng: 11.822312 },
+	{ id: "215", lat: 52.378894, lng: 11.825456 },
+	{ id: "216", lat: 52.379454, lng: 11.826897 },
+	{ id: "220", lat: 52.378236, lng: 11.825819 },
+	{ id: "603", lat: 52.378919, lng: 11.822782 },
+	{ id: "604", lat: 52.379142, lng: 11.82363 },
+	{ id: "605", lat: 52.378802, lng: 11.822202 },
+	{ id: "609", lat: 52.379588, lng: 11.82331 },
+	{ id: "614", lat: 52.381072, lng: 11.825202 },
+	{ id: "615", lat: 52.38116, lng: 11.824219 },
+	{ id: "625", lat: 52.381759, lng: 11.824688 },
+	{ id: "626", lat: 52.382125, lng: 11.82519 },
+	{ id: "633", lat: 52.380216, lng: 11.827056 },
+	{ id: "634", lat: 52.381069, lng: 11.825873 },
+	{ id: "636", lat: 52.381065, lng: 11.826973 },
+	{ id: "637", lat: 52.382475, lng: 11.826004 },
+	{ id: "802", lat: 52.381915, lng: 11.833291 },
+	{ id: "804", lat: 52.38246, lng: 11.834801 },
+	{ id: "811", lat: 52.380551, lng: 11.835244 },
+	{ id: "812", lat: 52.379683, lng: 11.831299 },
+	{ id: "815", lat: 52.380099, lng: 11.83341 },
+	{ id: "816", lat: 52.379419, lng: 11.831967 },
+	{ id: "819", lat: 52.380093, lng: 11.834799 },
+	{ id: "823", lat: 52.380642, lng: 11.833624 },
+	{ id: "827", lat: 52.380615, lng: 11.831598 },
+	{ id: "830", lat: 52.381917, lng: 11.829239 },
 ];
 
 /**
@@ -114,7 +160,69 @@ export const DEFAULT_POI_NAMES: Record<string, string> = {
 	Bravo: "Turbine Bravo",
 	Sierra: "Turbine Sierra",
 	Echo: "Turbine Echo",
+	Tango: "Turbine Tango",
+	// Named on the Dark Emergency / Airsoft Days / OP Tschernobyl legends.
+	"423": "Steinbruch",
+	"500": "Wasserreservoir",
+	"505": "Fertigungsstraße",
+	"508": "Ruine",
+	"808": "Panzerstraße",
+	"824": "Plantagen",
 };
+
+/**
+ * Buildings that only the Lost Airfield map numbers. It ships no legend, so these
+ * are labelled by their site building number rather than a game name.
+ */
+export const LOST_AIRFIELD_ONLY_NAMES: Record<string, string> = Object.fromEntries(
+	[
+		"206",
+		"207",
+		"210",
+		"211",
+		"212",
+		"213",
+		"215",
+		"216",
+		"220",
+		"603",
+		"604",
+		"605",
+		"609",
+		"614",
+		"615",
+		"625",
+		"626",
+		"633",
+		"634",
+		"636",
+		"637",
+		"802",
+		"804",
+		"811",
+		"812",
+		"815",
+		"816",
+		"819",
+		"823",
+		"827",
+		"830",
+	].map((id) => [id, `Gebäude ${id}`]),
+);
+
+/**
+ * Build a scenario's label set: the Mission 24 baseline, with `overrides` applied
+ * and `hide` removed. Removing (not blanking) matters — a PoI is shown if its id is
+ * *present* in the map, so an empty string would render an unlabelled dot.
+ */
+export function scenarioPoiNames(
+	overrides: Record<string, string> = {},
+	hide: string[] = [],
+): Record<string, string> {
+	const names = { ...DEFAULT_POI_NAMES, ...overrides };
+	for (const id of hide) delete names[id];
+	return names;
+}
 
 /**
  * Resolve a scenario's `poiNames` map into displayable points of interest: only
