@@ -10,5 +10,8 @@ export const operationTschernobylM24: Scenario = {
 	...operationTschernobyl,
 	id: "opt-m24",
 	name: "Op Tschernobyl (M24-Stil)",
+	blurb: "Dieselben Daten, kalter Mission-24-Look — zum Vergleich der beiden Stile.",
+	dates: "Variante",
+	accent: "#c8ccc0",
 	base: { kind: "osm", theme: "m24" },
 };

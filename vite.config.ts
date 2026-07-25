@@ -26,9 +26,10 @@ export default defineConfig({
 				globPatterns: ["**/*.{js,css,html,png,svg,webp,jpg,geojson}"],
 			},
 			manifest: {
-				name: "Airsoft Field Map",
-				short_name: "Field Map",
-				description: "Offline GPS map of the playfield",
+				name: "Fieldmaps",
+				short_name: "Fieldmaps",
+				description: "Deine GPS-Position auf der Taktikkarte des Events — offline.",
+				start_url: ".",
 				theme_color: "#0b0f14",
 				background_color: "#0b0f14",
 				display: "standalone",

@@ -29,6 +29,12 @@ export interface MapDefinition {
 	id: string;
 	/** Label shown in the map selector dropdown. */
 	name: string;
+	/** One-line description for the landing page card. */
+	blurb?: string;
+	/** When the event runs; free text, shown on the landing card. */
+	dates?: string;
+	/** Accent colour for the landing card. */
+	accent?: string;
 	/** Path to a photo map image (drop the file in /public). Omit for OSM maps. */
 	image?: string;
 	/** Path to the bundled OSM GeoJSON to render as a vector map. Omit for photos. */
@@ -74,6 +80,9 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 	const common = {
 		id: scenario.id,
 		name: scenario.name,
+		blurb: scenario.blurb,
+		dates: scenario.dates,
+		accent: scenario.accent,
 		poiNames: scenario.poiNames,
 		playArea: scenario.playArea,
 		zones: scenario.zones,

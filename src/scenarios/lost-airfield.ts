@@ -17,6 +17,9 @@ import type { Scenario } from "./scenario.js";
 export const lostAirfield: Scenario = {
 	id: "laf",
 	name: "Lost Airfield",
+	blurb: "Das Airsoft-Tagesspiel in Mahlwinkel. PMC gegen Rebellen, ein Tag.",
+	dates: "20. Juni",
+	accent: "#d8b34a",
 	base: { kind: "osm", theme: "laf" },
 	poiNames: scenarioPoiNames(
 		{ ...LOST_AIRFIELD_ONLY_NAMES, "204": "Gebäude 204", "217": "Gebäude 217" },

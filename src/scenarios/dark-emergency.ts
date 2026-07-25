@@ -18,6 +18,9 @@ import type { Scenario } from "./scenario.js";
 export const darkEmergency: Scenario = {
 	id: "de",
 	name: "Dark Emergency",
+	blurb: "Das größte Airsoft-Event der Welt. GOF gegen KGG, mit der Miliz dazwischen.",
+	dates: "Mai",
+	accent: "#d8433f",
 	base: { kind: "osm", theme: "de" },
 	poiNames: scenarioPoiNames(
 		{

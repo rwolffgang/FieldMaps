@@ -9,10 +9,15 @@
 		<meta name="theme-color" content="#0b0f14" />
 		<link rel="icon" type="image/png" href="/icons/icon-192.png" />
 		<link rel="apple-touch-icon" href="/icons/icon-192.png" />
-		<title>Field Map</title>
+		<title>Fieldmaps</title>
+		<meta
+			name="description"
+			content="Deine GPS-Position auf der Taktikkarte des Events — offline, ohne Empfang."
+		/>
 	</head>
 	<body>
-		<map-view></map-view>
+		<landing-view hidden></landing-view>
+		<map-view hidden></map-view>
 		<button id="enable-compass" hidden>Enable compass</button>
 		<!-- Testing aid: paste "lat, lng" copied from Google Maps to drop the dot. -->
 		<input

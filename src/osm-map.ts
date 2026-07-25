@@ -290,6 +290,16 @@ const THEMES = {
 /** Name of an available OSM look. */
 export type OsmThemeName = keyof typeof THEMES;
 
+/**
+ * The theme's opaque surround color — the same fill `buildOsmFrame` paints outside the
+ * grid rectangle. Used as the map container's background so panning past the field (or
+ * past the drawn clip area during a fast fling) shows the map's own border color
+ * instead of the app's dark blue.
+ */
+export function osmSurroundColor(theme: OsmThemeName = "opt"): string {
+	return THEMES[theme].border;
+}
+
 // Paint order, bottom to top: broad land cover, then water, then buildings, then
 // the linear network (roads/paths) so routes stay visible on top of everything.
 const DRAW_ORDER: FeatureClass[] = [

@@ -10,5 +10,8 @@
   },
   "compatibility_flags": [
     "nodejs_compat"
+  ],
+  "routes": [
+    { "pattern": "fieldmaps.app", "custom_domain": true }
   ]
 }

@@ -84,6 +84,12 @@ export interface Scenario {
 	id: string;
 	/** Label shown in the scenario selector. */
 	name: string;
+	/** One line for the landing page card — what this game is, in the user's words. */
+	blurb?: string;
+	/** When it runs, e.g. "3.–5. Juli". Free text; shown on the landing card. */
+	dates?: string;
+	/** Accent colour for the landing card, taken from the event's printed map. */
+	accent?: string;
 	/** The map drawn under the PoIs: the shared OSM vector base, or a photo image. */
 	base: ScenarioBase;
 	/**

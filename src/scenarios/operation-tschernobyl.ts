@@ -16,6 +16,9 @@ import type { Scenario } from "./scenario.js";
 export const operationTschernobyl: Scenario = {
 	id: "opt",
 	name: "Operation Tschernobyl",
+	blurb: "Stalker-Szenario in der Zone: fünf Fraktionen, Sperrgebiet, Anomalien.",
+	dates: "8.–11. Oktober",
+	accent: "#e6c24d",
 	base: { kind: "osm" },
 	poiNames: scenarioPoiNames(
 		{

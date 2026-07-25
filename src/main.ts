@@ -1,11 +1,43 @@
 import "./styles.css";
 import "./map-view.js";
+import "./landing-view.js";
 import type { MapView } from "./map-view.js";
 import { watch, type Fix } from "./geo.js";
 import { watchHeading, needsPermission, requestPermission } from "./heading.js";
-import { GPS_HEADING_SPEED } from "./config.js";
+import { getMapById, GPS_HEADING_SPEED } from "./config.js";
+import { onRouteChange, routedMapId } from "./router.js";
 
 const view = document.querySelector("map-view") as MapView;
+const landing = document.querySelector("landing-view") as HTMLElement;
+
+// --- Routing: overview at /, one map at /?map=<id> ---
+// Both elements stay in the DOM and we toggle `hidden`, rather than tearing the map
+// down: map-view already re-fits itself when its container gains size (it has to,
+// for the 0x0 cold start), so hiding it is cheap and returning to it is instant.
+// The map-only chrome (status toast, compass prompt, coordinate test input) follows
+// the same switch — none of it means anything on the overview.
+const mapOnlyChrome = ["#test-coords", "#toast", "#enable-compass"].map(
+	(selector) => document.querySelector(selector) as HTMLElement | null,
+);
+
+function applyRoute() {
+	const mapId = routedMapId();
+	const showMap = mapId != null;
+	landing.hidden = showMap;
+	view.hidden = !showMap;
+	for (const el of mapOnlyChrome) {
+		if (!el) continue;
+		// Never *reveal* chrome that was hidden for its own reasons (an unused compass
+		// prompt, an empty toast) — only hide it while the overview is up.
+		if (!showMap) el.hidden = true;
+		else if (el.dataset.wanted === "1") el.hidden = false;
+	}
+	if (mapId != null) view.showRoutedMap(mapId);
+	document.title = mapId != null ? `${getMapById(mapId).name} · Fieldmaps` : "Fieldmaps";
+}
+
+onRouteChange(applyRoute);
+applyRoute();
 
 let compassHeading: number | null = null;
 let lastFix: Fix | null = null;
@@ -40,9 +72,11 @@ function startCompass() {
 if (needsPermission()) {
 	// iOS: must be triggered by a user gesture.
 	const btn = document.querySelector("#enable-compass") as HTMLButtonElement;
-	btn.hidden = false;
+	btn.dataset.wanted = "1";
+	btn.hidden = routedMapId() == null;
 	btn.addEventListener("click", async () => {
 		if (await requestPermission()) {
+			delete btn.dataset.wanted;
 			btn.hidden = true;
 			startCompass();
 		} else setStatus("Compass permission denied");
@@ -67,6 +101,7 @@ document.addEventListener("visibilitychange", () => {
 // Lets you exercise the calibration on a desktop without a real GPS fix.
 const testInput = document.querySelector("#test-coords") as HTMLInputElement | null;
 if (testInput) {
+	testInput.dataset.wanted = "1"; // always shown over a map, never on the overview
 	const applyTestCoords = (text: string) => {
 		const m = text.match(/(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)/);
 		if (!m) {

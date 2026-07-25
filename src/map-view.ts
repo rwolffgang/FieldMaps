@@ -16,14 +16,38 @@ import {
 	buildOsmLayer,
 	buildOsmGrid,
 	buildOsmFrame,
+	osmSurroundColor,
 	type OsmFeatureCollection,
 } from "./osm-map.js";
+import { goHome, goToMap, routedMapId } from "./router.js";
 
 const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
 const ARRIVED_DISTANCE_M = 8;
 
-function loadStoredMapId(): string {
+// Leaflet only redraws vector layers on `moveend`; while a drag is in flight it just
+// translates the SVG panes. Anything beyond the drawn clip area is therefore blank
+// until the finger lifts. The clip area is the viewport grown by `padding` (a
+// fraction of the viewport, per side), so one viewport of slack covers any single
+// drag gesture and the map never goes empty mid-drag. Cheap here: the whole field is
+// a 379-feature GeoJSON, and the extra area is mostly empty anyway — Leaflet clips
+// the geometry to the same bounds, so a bigger buffer costs a bigger (but largely
+// blank) SVG, not more geometry than the field has.
+//
+// Must be set on `Renderer` itself rather than passed as the map's `renderer` option:
+// every layer here draws into a custom pane, and Leaflet builds those pane renderers
+// itself (`Map._createRenderer`), passing only the pane name — map-level renderer
+// options never reach them.
+L.Renderer.mergeOptions({ padding: 1 });
+
+/**
+ * Which map to show on first paint. The URL wins — a bookmarked `?map=…` must open
+ * that map even if the user last looked at a different one — then the last used map,
+ * then the first one registered.
+ */
+function initialMapId(): string {
+	const routed = routedMapId();
+	if (routed != null) return routed;
 	const stored = localStorage.getItem(STORAGE_KEY);
 	if (stored != null && MAPS.some((map) => map.id === stored)) return stored;
 	return DEFAULT_MAP_ID;
@@ -102,7 +126,7 @@ export class MapView extends LitElement {
 	@state() private status = "Waiting for GPS…";
 	@state() private following = true;
 	@state() private offMap = false;
-	@state() private selectedMapId = loadStoredMapId();
+	@state() private selectedMapId = initialMapId();
 	@state() private selectedPoiId = "";
 	@state() private navDistanceM = 0;
 	@state() private navHint = "";
@@ -239,6 +263,11 @@ export class MapView extends LitElement {
 			[0, 0],
 			[this.mapHeight, this.mapWidth],
 		];
+
+		// Match the container to the theme's surround, so whatever is not painted yet
+		// (outside the field, or a fling past the clip area) blends into the border.
+		const container = this.map.getContainer();
+		container.style.background = definition.vectorData ? osmSurroundColor(definition.theme) : "";
 
 		if (definition.vectorData) {
 			void this.loadVectorMap(definition, definition.vectorData);
@@ -640,6 +669,14 @@ export class MapView extends LitElement {
 	private onMapSelect(event: Event) {
 		const id = (event.target as HTMLSelectElement).value;
 		if (id === this.selectedMapId) return;
+		// Route rather than load directly, so switching maps from the HUD produces the
+		// same shareable URL as arriving from the landing page.
+		goToMap(id);
+	}
+
+	/** Show a map because the route changed. No-op if it is already the current one. */
+	showRoutedMap(id: string) {
+		if (id === this.selectedMapId) return;
 		this.loadMap(getMapById(id));
 	}
 
@@ -944,6 +981,7 @@ export class MapView extends LitElement {
 			}
 			<div class="hud">
 				<div class="hud-left">
+					<button class="home-btn" aria-label="Zur Übersicht" @click=${() => goHome()}>‹</button>
 					${
 						MAPS.length > 1
 							? html`
