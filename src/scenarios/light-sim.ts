@@ -20,6 +20,7 @@ export const lightSim: Scenario = {
 	id: "lso",
 	name: "LIGHT-SIM",
 	blurb: "TERRA gegen UCRF auf dem Airfield. Leichtes Regelwerk, volle Fläche.",
+	blurbEn: "TERRA against UCRF on the airfield. Light rule set, the whole site.",
 	schedule: { start: [9, 17], end: [9, 20] },
 	accent: "#4aa3d6",
 	base: { kind: "osm", theme: "lso" },

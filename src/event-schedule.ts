@@ -11,6 +11,8 @@
 // the map you actually need is at the top of the list on the day you need it.
 // -----------------------------------------------------------------------------
 
+import { currentLang, monthNames, type Lang } from "./i18n.js";
+
 /** [month, day] with month 1–12. */
 export type MonthDay = [number, number];
 
@@ -19,21 +21,6 @@ export interface EventSchedule {
 	/** Last day of the event, inclusive. Omit for a one-day game. */
 	end?: MonthDay;
 }
-
-const MONTHS_DE = [
-	"Januar",
-	"Februar",
-	"März",
-	"April",
-	"Mai",
-	"Juni",
-	"Juli",
-	"August",
-	"September",
-	"Oktober",
-	"November",
-	"Dezember",
-];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -73,15 +60,21 @@ export function isRunning(schedule: EventSchedule, now = new Date()): boolean {
 	return daysUntil(schedule, now) === 0;
 }
 
-/** German date range, e.g. "3.–5. Juli", "29. April – 2. Mai", "20. Juni". */
-export function formatSchedule(schedule: EventSchedule): string {
+/**
+ * Date range in the reader's language: "3.–5. Juli" / "3–5 July",
+ * "29. April – 2. Mai" / "29 April – 2 May", "20. Juni" / "20 June".
+ * German puts an ordinal dot after the day, English does not.
+ */
+export function formatSchedule(schedule: EventSchedule, lang: Lang = currentLang()): string {
+	const months = monthNames(lang);
+	const dot = lang === "de" ? "." : "";
 	const [startMonth, startDay] = schedule.start;
-	if (!schedule.end) return `${startDay}. ${MONTHS_DE[startMonth - 1]}`;
+	if (!schedule.end) return `${startDay}${dot} ${months[startMonth - 1]}`;
 	const [endMonth, endDay] = schedule.end;
 	if (startMonth === endMonth) {
-		return `${startDay}.–${endDay}. ${MONTHS_DE[startMonth - 1]}`;
+		return `${startDay}${dot}–${endDay}${dot} ${months[startMonth - 1]}`;
 	}
-	return `${startDay}. ${MONTHS_DE[startMonth - 1]} – ${endDay}. ${MONTHS_DE[endMonth - 1]}`;
+	return `${startDay}${dot} ${months[startMonth - 1]} – ${endDay}${dot} ${months[endMonth - 1]}`;
 }
 
 /**

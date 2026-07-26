@@ -18,6 +18,7 @@ export const lostAirfield: Scenario = {
 	id: "laf",
 	name: "Lost Airfield",
 	blurb: "Das Airsoft-Tagesspiel in Mahlwinkel. PMC gegen Rebellen, ein Tag.",
+	blurbEn: "The one-day airsoft game in Mahlwinkel. PMC against rebels, a single day.",
 	schedule: { start: [6, 20] },
 	accent: "#d8b34a",
 	base: { kind: "osm", theme: "laf" },

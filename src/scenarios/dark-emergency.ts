@@ -19,6 +19,7 @@ export const darkEmergency: Scenario = {
 	id: "de",
 	name: "Dark Emergency",
 	blurb: "Das größte Airsoft-Event der Welt. GOF gegen KGG, mit der Miliz dazwischen.",
+	blurbEn: "The largest airsoft event in the world. GOF against KGG, with the militia in between.",
 	schedule: { start: [4, 29], end: [5, 2] },
 	accent: "#d8433f",
 	base: { kind: "osm", theme: "de" },

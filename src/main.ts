@@ -6,6 +6,9 @@ import { watch, type Fix } from "./geo.js";
 import { watchHeading, needsPermission, requestPermission } from "./heading.js";
 import { getMapById, GPS_HEADING_SPEED } from "./config.js";
 import { onRouteChange, routedMapId } from "./router.js";
+import { applyDocumentLang } from "./i18n.js";
+
+applyDocumentLang();
 
 const view = document.querySelector("map-view") as MapView;
 const landing = document.querySelector("landing-view") as HTMLElement;

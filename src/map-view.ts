@@ -12,6 +12,7 @@ import {
 	type MapDefinition,
 	type LabeledPointOfInterest,
 } from "./config.js";
+import { isWindTurbine } from "./points-of-interest.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
 	buildOsmLayer,
@@ -980,6 +981,27 @@ export class MapView extends LitElement {
 		});
 	}
 
+	/**
+	 * The wind turbines, drawn as a glyph standing on their coordinate: the icon is
+	 * anchored bottom-centre so the tower's base sits on the GPS position, the way
+	 * the mast does in the field. Screen-sized (not map-scaled) and never rotated —
+	 * it is a pictogram, not a footprint.
+	 */
+	private makeTurbineIcon() {
+		const blade = (deg: number) =>
+			`<path d="M20 16 C18.3 10 17.7 5 19 0.8 C21.7 4.4 22.5 10 21.7 16 Z" transform="rotate(${deg} 20 16)" />`;
+		return L.divIcon({
+			className: "turbine-marker",
+			html: `<svg class="turbine-glyph" viewBox="0 0 40 56" width="30" height="42" aria-hidden="true">
+					<polygon points="17.7,56 22.3,56 20.9,17 19.1,17" />
+					${blade(0)}${blade(120)}${blade(240)}
+					<circle cx="20" cy="16" r="2.6" />
+				</svg>`,
+			iconSize: [30, 42],
+			iconAnchor: [15, 42],
+		});
+	}
+
 	private poiLabel(poi: LabeledPointOfInterest) {
 		return `${poi.id} · ${poi.name}`;
 	}
@@ -1003,6 +1025,15 @@ export class MapView extends LitElement {
 		this.poiDotsLayer = L.layerGroup();
 		for (const poi of pointsOfInterest) {
 			const pixel = this.transform.toPixel(poi.lat, poi.lng);
+			// The turbine stands on the dot: same position, glyph anchored at its base,
+			// non-interactive so the dot underneath keeps the tooltip and the hit area.
+			if (isWindTurbine(poi.id)) {
+				L.marker(this.px2ll(pixel.px, pixel.py), {
+					icon: this.makeTurbineIcon(),
+					interactive: false,
+					keyboard: false,
+				}).addTo(this.poiDotsLayer);
+			}
 			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
 				icon: this.makePoiDotIcon(this.toggles.poiIds ? poi.id : undefined),
 				interactive: true,
@@ -1110,23 +1141,9 @@ export class MapView extends LitElement {
 					: ""
 			}
 			<div class="hud">
-				<div class="hud-left">
-					<button class="home-btn" aria-label="Zur Übersicht" @click=${() => goHome()}>‹</button>
-					${
-						MAPS.length > 1
-							? html`
-									<select class="map-select" @change=${this.onMapSelect}>
-										${mapsByDate().map(
-											(map) => html`
-												<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
-													${map.name}
-												</option>
-											`,
-										)}
-									</select>
-								`
-							: ""
-					}
+				<!-- Status and errors get a row of their own above the controls, so a long
+				     message (a failed map load, the off-map warning) can use the full width. -->
+				<div class="hud-status">
 					<span
 						class="pill ${this.offMap ? "warn" : ""} ${this.vectorRetry ? "retry" : ""}"
 						role=${this.vectorRetry ? "button" : "status"}
@@ -1134,9 +1151,31 @@ export class MapView extends LitElement {
 						>${this.status}</span
 					>
 				</div>
-				<div class="hud-right">
-					${this.renderToggles()}
-					<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>◎</button>
+				<div class="hud-controls">
+					<div class="hud-left">
+						<button class="home-btn" aria-label="Zur Übersicht" @click=${() => goHome()}>‹</button>
+						${
+							MAPS.length > 1
+								? html`
+										<select class="map-select" @change=${this.onMapSelect}>
+											${mapsByDate().map(
+												(map) => html`
+													<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
+														${map.name}
+													</option>
+												`,
+											)}
+										</select>
+									`
+								: ""
+						}
+					</div>
+					<div class="hud-right">
+						${this.renderToggles()}
+						<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>
+							◎
+						</button>
+					</div>
 				</div>
 			</div>
 		`;

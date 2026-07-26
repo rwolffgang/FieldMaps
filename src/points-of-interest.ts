@@ -17,6 +17,17 @@ export interface LabeledPointOfInterest extends PointOfInterest {
 	name: string;
 }
 
+/**
+ * The six wind turbines on the field. They are the tallest thing out there and
+ * every scenario renames them, so they are recognised by id and drawn as a
+ * turbine glyph standing on their coordinate rather than as a plain dot.
+ */
+export const WIND_TURBINE_IDS = new Set(["Lima", "Oskar", "Bravo", "Sierra", "Echo", "Tango"]);
+
+export function isWindTurbine(id: string): boolean {
+	return WIND_TURBINE_IDS.has(id);
+}
+
 /** Every physical point of interest on the field, keyed by a stable id. */
 export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	{ id: "204", lat: 52.379127, lng: 11.823623 },

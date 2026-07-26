@@ -17,6 +17,7 @@ export const operationTschernobyl: Scenario = {
 	id: "opt",
 	name: "Operation Tschernobyl",
 	blurb: "Stalker-Szenario in der Zone: fünf Fraktionen, Sperrgebiet, Anomalien.",
+	blurbEn: "Stalker scenario in the Zone: five factions, an exclusion area, anomalies.",
 	schedule: { start: [10, 8], end: [10, 11] },
 	accent: "#e6c24d",
 	base: { kind: "osm" },

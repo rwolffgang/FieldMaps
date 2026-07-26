@@ -14,13 +14,18 @@ import { customElement } from "lit/decorators.js";
 import { mapsByDate, getPointsOfInterestForMap } from "./config.js";
 import { goToMap, mapUrl } from "./router.js";
 import { daysUntil, formatSchedule, isRunning } from "./event-schedule.js";
+import { currentLang, strings } from "./i18n.js";
 
 /** Donations — the airsoft twist on "buy me a coffee". */
 const SUPPORT_URL = "https://buymeacoffee.com/rwolffgang";
 
+/** The app icon, reused from the PWA manifest set. */
+const APP_ICON = "/icons/icon-192.png";
+
 /** Feature requests. Prefilled subject so they are easy to triage in the inbox. */
-const FEATURE_MAILTO =
-	"mailto:info@fieldmaps.app?subject=" + encodeURIComponent("Field Maps — Feature-Wunsch");
+function featureMailto(subject: string) {
+	return "mailto:info@fieldmaps.app?subject=" + encodeURIComponent(subject);
+}
 
 /** TODO: update once the repository is renamed (see AGENTS.md). */
 const REPO_URL = "https://github.com/rwolffgang/MahlwinkelMap";
@@ -41,20 +46,21 @@ export class LandingView extends LitElement {
 	}
 
 	render() {
+		const t = strings();
+		const lang = currentLang();
+
 		return html`
 			<div class="landing">
 				<header class="landing-head">
-					<h1 class="landing-title">Field Maps</h1>
-					<p class="landing-tagline">Deine Position auf der Taktikkarte — offline, ohne Empfang.</p>
-					<p class="landing-intro">
-						Field Maps zeigt dir per GPS, wo du gerade auf dem Gelände stehst — auf der Taktikkarte
-						des jeweiligen Events, mit allen Gebäuden, Zonen und Hauptquartieren. Karten und Daten
-						sind komplett in der App gespeichert: einmal geladen, funktioniert alles ohne Netz. Zum
-						Startbildschirm hinzufügen, dann läuft sie wie eine normale App.
-					</p>
+					<div class="landing-brand">
+						<img class="landing-icon" src=${APP_ICON} alt="" width="192" height="192" />
+						<h1 class="landing-title">Field Maps</h1>
+					</div>
+					<p class="landing-tagline">${t.tagline}</p>
+					<p class="landing-intro">${t.intro}</p>
 				</header>
 
-				<h2 class="landing-section">Events</h2>
+				<h2 class="landing-section">${t.sectionEvents}</h2>
 				<ul class="event-grid">
 					${(() => {
 						const ordered = mapsByDate();
@@ -67,10 +73,13 @@ export class LandingView extends LitElement {
 							const hqs = map.headquarters?.length ?? 0;
 							const running = map.schedule != null && isRunning(map.schedule);
 							const badge = running
-								? "Läuft jetzt"
+								? t.badgeRunning
 								: map === upcoming
-									? `In ${daysUntil(map.schedule!)} Tagen`
+									? t.badgeInDays(daysUntil(map.schedule!))
 									: "";
+							// German is the source text; fall back to it if a scenario has no
+							// translation yet, rather than showing the card with a hole in it.
+							const blurb = (lang === "en" ? map.blurbEn : map.blurb) ?? map.blurb;
 							return html`
 								<li>
 									<a
@@ -85,16 +94,17 @@ export class LandingView extends LitElement {
 											<span class="event-when">
 												${
 													map.schedule
-														? html`<span class="event-dates">${formatSchedule(map.schedule)}</span>`
-														: html`<span class="event-dates event-variant">Variante</span>`
+														? html`<span class="event-dates"
+																>${formatSchedule(map.schedule, lang)}</span
+															>`
+														: html`<span class="event-dates event-variant">${t.variant}</span>`
 												}
 												${badge ? html`<span class="event-badge">${badge}</span>` : ""}
 											</span>
-											${map.blurb ? html`<span class="event-blurb">${map.blurb}</span>` : ""}
+											${blurb ? html`<span class="event-blurb">${blurb}</span>` : ""}
 											<span class="event-meta">
-												${count}
-												Punkte${hqs ? html` · ${hqs} HQ` : ""}${
-													zones ? html` · ${zones} ${zones === 1 ? "Zone" : "Zonen"}` : ""
+												${t.points(count)}${hqs ? html` · ${hqs} HQ` : ""}${
+													zones ? html` · ${t.zones(zones)}` : ""
 												}
 											</span>
 										</span>
@@ -107,40 +117,33 @@ export class LandingView extends LitElement {
 				</ul>
 
 				<footer class="landing-foot">
-					<p>
-						Jede Karte hat ihren eigenen Link — Karte öffnen und die Adresse speichern, oder hier
-						eine Karte lange antippen und den Link kopieren.
-					</p>
+					<p>${t.linkHint}</p>
 
 					<div class="landing-actions">
 						<a class="action action-support" href=${SUPPORT_URL} target="_blank" rel="noopener">
 							<span class="action-icon" aria-hidden="true">🎯</span>
 							<span class="action-text">
-								<span class="action-label">Buy me a sniper</span>
-								<span class="action-sub">Entwicklung unterstützen</span>
+								<span class="action-label">${t.supportLabel}</span>
+								<span class="action-sub">${t.supportSub}</span>
 							</span>
 						</a>
-						<a class="action" href=${FEATURE_MAILTO}>
+						<a class="action" href=${featureMailto(t.featureSubject)}>
 							<span class="action-icon" aria-hidden="true">✉</span>
 							<span class="action-text">
-								<span class="action-label">Feature vorschlagen</span>
+								<span class="action-label">${t.featureLabel}</span>
 								<span class="action-sub">info@fieldmaps.app</span>
 							</span>
 						</a>
 						<a class="action" href=${REPO_URL} target="_blank" rel="noopener">
 							<span class="action-icon" aria-hidden="true">&lt;/&gt;</span>
 							<span class="action-text">
-								<span class="action-label">Quellcode</span>
+								<span class="action-label">${t.sourceLabel}</span>
 								<span class="action-sub">GitHub</span>
 							</span>
 						</a>
 					</div>
 
-					<p class="landing-fineprint">
-						Taktikkarten und Fraktionslogos: Airsoft Helden. Kartendaten: OpenStreetMap-Mitwirkende.
-						Spielfeldgrenzen sind von den gedruckten Karten abgezeichnet und nur ungefähr — vor Ort
-						gilt das Flatterband.
-					</p>
+					<p class="landing-fineprint">${t.fineprint}</p>
 				</footer>
 			</div>
 		`;

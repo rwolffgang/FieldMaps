@@ -1,5 +1,27 @@
 :root {
 	--accent: #38bdf8;
+	/* Top-of-screen chrome is laid out in rows by hand: the elements live in
+	   different subtrees (map-view's own markup vs. the page shell), so they
+	   cannot share a flex container. Row 1 holds the PoI select and the test
+	   input, row 2 the compass prompt, row 3 the nav card, row 4 the toast.
+	   Each row that can be absent contributes its height through a --stack-*
+	   variable that is 0 while it is hidden, so the rows below just add them up.
+	   Only the last row (the toast) may grow freely; the ones above it are
+	   fixed-content, so their heights can be stated here. */
+	--top-inset: max(12px, env(safe-area-inset-top));
+	--top-row-gap: 8px;
+	--top-row-1-h: 36px;
+	--compass-h: 40px;
+	--nav-card-h: 62px;
+	--top-row-2: calc(var(--top-inset) + var(--top-row-1-h) + var(--top-row-gap));
+	--stack-compass: 0px;
+	--stack-nav: 0px;
+}
+body:has(#enable-compass:not([hidden])) {
+	--stack-compass: calc(var(--compass-h) + var(--top-row-gap));
+}
+body:has(.nav-card) {
+	--stack-nav: calc(var(--nav-card-h) + var(--top-row-gap));
 }
 
 * {
@@ -49,6 +71,20 @@ landing-view {
 	padding: max(2.5rem, env(safe-area-inset-top)) 1.25rem calc(2.5rem + env(safe-area-inset-bottom));
 }
 
+/* App icon next to the wordmark: both scale off the same clamp, so the icon stays
+   the height of the title on every screen. */
+.landing-brand {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+.landing-icon {
+	flex: none;
+	width: clamp(2.75rem, 11vw, 3.75rem);
+	height: clamp(2.75rem, 11vw, 3.75rem);
+	border-radius: 22%;
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+}
 .landing-title {
 	margin: 0;
 	font-size: clamp(2.25rem, 9vw, 3.25rem);
@@ -276,7 +312,7 @@ landing-view {
 	border-color: var(--accent);
 }
 
-/* HUD overlay */
+/* HUD overlay — two rows: status/errors on top, controls below. */
 .hud {
 	position: fixed;
 	left: 0;
@@ -284,11 +320,23 @@ landing-view {
 	bottom: 0;
 	padding: max(12px, env(safe-area-inset-bottom)) 16px;
 	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 10px;
+	pointer-events: none;
+	z-index: 1000;
+}
+/* Own row, so a long error can wrap across the whole screen instead of being
+   squeezed between the home button and the recenter control. */
+.hud-status {
+	display: flex;
+	min-width: 0;
+}
+.hud-controls {
+	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
-	pointer-events: none;
-	z-index: 1000;
 }
 .hud-left {
 	display: flex;
@@ -322,7 +370,7 @@ landing-view {
 /* Points of interest — top left */
 .poi-panel {
 	position: fixed;
-	top: max(12px, env(safe-area-inset-top));
+	top: var(--top-inset);
 	left: 12px;
 	z-index: 1000;
 	display: flex;
@@ -353,7 +401,10 @@ landing-view {
 	outline: none;
 	border-color: #f59e0b;
 }
+/* Row 3: below the compass prompt when that is up, directly under the PoI
+   select when it is not. */
 .nav-card {
+	margin-top: var(--stack-compass);
 	pointer-events: auto;
 	display: flex;
 	align-items: center;
@@ -432,6 +483,21 @@ landing-view {
 .poi-dot-marker {
 	background: none;
 	border: none;
+}
+
+/* Wind turbine glyph, standing on its PoI dot. */
+.turbine-marker {
+	background: none;
+	border: none;
+	pointer-events: none;
+}
+.turbine-glyph {
+	display: block;
+	fill: #f2ede3;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+	stroke-linejoin: round;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
 }
 
 /* Out-of-bounds hatch: the fill comes from an injected SVG <pattern>, which
@@ -516,6 +582,8 @@ landing-view {
 
 .pill {
 	pointer-events: auto;
+	/* Grows only as far as the text needs, up to the full row. */
+	max-width: 100%;
 	background: rgba(11, 15, 20, 0.82);
 	color: #e6edf3;
 	padding: 8px 14px;
@@ -639,10 +707,12 @@ landing-view {
 	transform: translateX(16px);
 }
 
-/* PoI id (number) labels, shown when the toggle is on */
+/* PoI id (number) labels, shown when the toggle is on. The dot is centred in the
+   24px hit box and reads 13px wide with its glow ring, so the text starts clear
+   of it rather than on its edge. */
 .poi-dot-label {
 	position: absolute;
-	left: 16px;
+	left: 21px;
 	top: 50%;
 	transform: translateY(-50%);
 	white-space: nowrap;
@@ -656,11 +726,17 @@ landing-view {
 	pointer-events: none;
 }
 
+/* Second row from the top, spanning the full width: it must never land on the
+   PoI select or the test input above it. */
 #enable-compass {
 	position: fixed;
-	top: max(12px, env(safe-area-inset-top));
-	left: 50%;
-	transform: translateX(-50%);
+	top: var(--top-row-2);
+	left: 12px;
+	right: 12px;
+	/* Fills the row on a phone, stays a button on a wide screen. */
+	max-width: 420px;
+	margin-inline: auto;
+	height: var(--compass-h);
 	z-index: 1000;
 	background: var(--accent);
 	color: #06222e;
@@ -673,7 +749,7 @@ landing-view {
 /* Testing aid: paste "lat, lng" from Google Maps. */
 #test-coords {
 	position: fixed;
-	top: max(12px, env(safe-area-inset-top));
+	top: var(--top-inset);
 	right: 12px;
 	left: auto;
 	z-index: 1000;
@@ -697,18 +773,22 @@ landing-view {
 	color: #8b98a5;
 }
 
+/* Last top row: it is the only one allowed to grow (an error message wraps), so
+   nothing is positioned below it and it keeps the full width to wrap into. */
 #toast {
 	position: fixed;
-	top: max(12px, env(safe-area-inset-top));
-	left: 50%;
-	transform: translateX(-50%);
+	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav));
+	left: 12px;
+	right: 12px;
+	max-width: 420px;
+	margin-inline: auto;
 	z-index: 1000;
 	background: rgba(180, 40, 40, 0.92);
 	color: #fff;
 	padding: 8px 14px;
 	border-radius: 8px;
 	font-size: 14px;
-	max-width: 90vw;
+	text-align: center;
 }
 
 /* Position marker */

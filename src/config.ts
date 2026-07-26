@@ -32,6 +32,8 @@ export interface MapDefinition {
 	name: string;
 	/** One-line description for the landing page card. */
 	blurb?: string;
+	/** The English version of `blurb`, shown to a non-German browser. */
+	blurbEn?: string;
 	/** When the event runs; drives the landing card's date and the overview ordering. */
 	schedule?: EventSchedule;
 	/** Accent colour for the landing card. */
@@ -82,6 +84,7 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		id: scenario.id,
 		name: scenario.name,
 		blurb: scenario.blurb,
+		blurbEn: scenario.blurbEn,
 		schedule: scenario.schedule,
 		accent: scenario.accent,
 		poiNames: scenario.poiNames,

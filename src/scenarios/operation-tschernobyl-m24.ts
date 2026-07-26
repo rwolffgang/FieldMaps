@@ -11,6 +11,7 @@ export const operationTschernobylM24: Scenario = {
 	id: "opt-m24",
 	name: "Op Tschernobyl (M24-Stil)",
 	blurb: "Dieselben Daten, kalter Mission-24-Look — zum Vergleich der beiden Stile.",
+	blurbEn: "The same data in the cold Mission 24 look — for comparing the two styles.",
 	// A style variant, not an event of its own: clear the inherited schedule so it
 	// sorts to the bottom of the overview instead of duplicating OP Tschernobyl's slot.
 	schedule: undefined,

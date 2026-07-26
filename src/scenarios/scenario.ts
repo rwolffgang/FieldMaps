@@ -87,6 +87,8 @@ export interface Scenario {
 	name: string;
 	/** One line for the landing page card — what this game is, in the user's words. */
 	blurb?: string;
+	/** The same line in English, for a browser that is not set to German. */
+	blurbEn?: string;
 	/**
 	 * When the event runs, month/day only — these repeat every year. Drives both the
 	 * date shown on the landing card and the ordering there (soonest first). Leave it

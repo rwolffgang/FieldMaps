@@ -13,6 +13,7 @@ export const airsoftDays: Scenario = {
 	id: "asd",
 	name: "Airsoft Days",
 	blurb: "0,5 Joule only. Delta Unit gegen Ghost Infantry, vier Tage lang.",
+	blurbEn: "0.5 joule only. Delta Unit against Ghost Infantry, over four days.",
 	schedule: { start: [8, 6], end: [8, 9] },
 	accent: "#8cc63f",
 	base: { kind: "osm", theme: "asd" },
