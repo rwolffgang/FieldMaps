@@ -22,6 +22,7 @@ import {
 	type OsmFeatureCollection,
 } from "./osm-map.js";
 import { goHome, goToMap, routedMapId } from "./router.js";
+import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
 
 const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
@@ -217,9 +218,9 @@ export class MapView extends LitElement {
 
 		this.accuracyCircle = L.circle(this.px2ll(0, 0), {
 			radius: 0,
-			color: "#38bdf8",
+			color: BRAND_BLUE,
 			weight: 1,
-			fillColor: "#38bdf8",
+			fillColor: BRAND_BLUE,
 			fillOpacity: 0.15,
 		});
 		this.marker = L.marker(this.px2ll(0, 0), { icon: this.makeIcon(), interactive: false });
@@ -896,7 +897,7 @@ export class MapView extends LitElement {
 
 		if (!this.routeLine) {
 			this.routeLine = L.polyline([userLatLng, poiLatLng], {
-				color: "#f59e0b",
+				color: BRAND_ORANGE,
 				weight: 3,
 				dashArray: "8 8",
 				opacity: 0.85,
