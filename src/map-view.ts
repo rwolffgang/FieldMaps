@@ -252,16 +252,18 @@ export class MapView extends LitElement {
 	 * until the move ends. `moveend` is the event the renderers redraw on, so firing it
 	 * is the redraw; everything else listening to it here is idempotent. Zoom is the
 	 * exception: Leaflet scales the panes during a pinch and redraws them at the end,
-	 * so any pan measured across a zoom change is left to that redraw.
+	 * so any pan measured across a zoom change is left to that redraw. Bail out on it
+	 * rather than redrawing — a pinch fires `move` every frame, and repainting five
+	 * vector panes per frame stalls the gesture so badly that the base map looks frozen
+	 * until the fingers lift while the markers, which are cheap, keep up.
 	 */
 	private reclipIfPannedOut() {
 		const zoom = this.map.getZoom();
-		if (this.clipCenter && this.clipZoom === zoom) {
-			const size = this.map.getSize();
-			const budget = RECLIP_FRACTION * RENDER_BUFFER * Math.min(size.x, size.y);
-			const from = this.map.project(this.clipCenter, zoom);
-			if (from.distanceTo(this.map.project(this.map.getCenter(), zoom)) < budget) return;
-		}
+		if (!this.clipCenter || this.clipZoom !== zoom) return;
+		const size = this.map.getSize();
+		const budget = RECLIP_FRACTION * RENDER_BUFFER * Math.min(size.x, size.y);
+		const from = this.map.project(this.clipCenter, zoom);
+		if (from.distanceTo(this.map.project(this.map.getCenter(), zoom)) < budget) return;
 		this.map.fire("moveend");
 	}
 
