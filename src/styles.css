@@ -1,5 +1,15 @@
 :root {
-	--accent: #38bdf8;
+	/* Brand palette, read off the app icon: the blue of the map linework and the
+	   orange of the position dot. Those two are the only colours in the chrome
+	   that carry meaning — blue is "you and the app", orange is "a place on the
+	   ground" — so everything else stays neutral and they keep their weight.
+	   `src/brand.ts` mirrors these for Leaflet, which needs them as JS strings. */
+	--brand-blue: #38bdf8;
+	--brand-blue-deep: #1a88c5;
+	--brand-orange: #ffa201;
+
+	--accent: var(--brand-blue);
+	--accent-warm: var(--brand-orange);
 	/* Top-of-screen chrome is laid out in rows by hand: the elements live in
 	   different subtrees (map-view's own markup vs. the page shell), so they
 	   cannot share a flex container. Row 1 holds the PoI select and the test
@@ -62,7 +72,15 @@ landing-view {
 	inset: 0;
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
-	background: radial-gradient(120% 80% at 50% 0%, #16202b 0%, #0b0f14 60%), #0b0f14;
+	/* The glow behind the header is the icon's blue, heavily diluted — enough that
+	   the page and the icon read as the same object. */
+	background:
+		radial-gradient(
+			120% 80% at 50% 0%,
+			color-mix(in srgb, var(--brand-blue-deep) 16%, #0b0f14) 0%,
+			#0b0f14 60%
+		),
+		#0b0f14;
 	color: #e6edf3;
 }
 .landing {
@@ -83,7 +101,9 @@ landing-view {
 	width: clamp(2.75rem, 11vw, 3.75rem);
 	height: clamp(2.75rem, 11vw, 3.75rem);
 	border-radius: 22%;
-	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+	box-shadow:
+		0 2px 12px rgba(0, 0, 0, 0.45),
+		0 0 0 1px color-mix(in srgb, var(--brand-blue-deep) 45%, transparent);
 }
 .landing-title {
 	margin: 0;
@@ -104,6 +124,89 @@ landing-view {
 	line-height: 1.6;
 	color: #9fb0c0;
 	max-width: 38rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Install prompt. This is the single most useful thing a first-time visitor can
+   do — installed, the app is full screen and genuinely offline — so it is a card
+   in the icon's orange rather than the last clause of the intro paragraph.
+   --------------------------------------------------------------------------- */
+.install-note {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.9rem;
+	margin: 1.5rem 0 0;
+	padding: 1rem 1.1rem;
+	border: 1px solid color-mix(in srgb, var(--accent-warm) 38%, transparent);
+	border-radius: 14px;
+	background: linear-gradient(
+		135deg,
+		color-mix(in srgb, var(--accent-warm) 11%, transparent),
+		color-mix(in srgb, var(--accent-warm) 3%, transparent)
+	);
+}
+/* The icon with a "+" badge: the same gesture the text is describing. */
+.install-mark {
+	position: relative;
+	flex: none;
+	line-height: 0;
+	/* Optically level with the title's cap height, not with the whole text block. */
+	margin-top: 0.1rem;
+}
+.install-mark img {
+	width: 2.75rem;
+	height: 2.75rem;
+	border-radius: 22%;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.install-plus {
+	position: absolute;
+	right: -0.35rem;
+	bottom: -0.35rem;
+	width: 1.25rem;
+	height: 1.25rem;
+	border-radius: 50%;
+	background: var(--accent-warm);
+	color: #1a1000;
+	font-size: 0.9rem;
+	font-weight: 800;
+	line-height: 1.25rem;
+	text-align: center;
+	/* Punches the badge out of the icon rather than sitting on its edge. */
+	box-shadow: 0 0 0 2px #121a22;
+}
+.install-text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	min-width: 0;
+}
+.install-title {
+	font-size: 1rem;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+	color: var(--accent-warm);
+}
+.install-body {
+	font-size: 0.875rem;
+	line-height: 1.45;
+	color: #d3dbe3;
+}
+/* The actual gesture, per platform. Wraps to one line each on a phone. */
+.install-hints {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	margin-top: 0.4rem;
+	font-size: 0.75rem;
+	line-height: 1.4;
+	color: #93a5b6;
+}
+/* Already installed: the card would be telling them to do what they just did. */
+@media all and (display-mode: standalone) {
+	.install-note {
+		display: none;
+	}
 }
 
 .landing-section {
@@ -260,14 +363,16 @@ landing-view {
 	border-color: rgba(255, 255, 255, 0.24);
 	background: rgba(255, 255, 255, 0.06);
 }
+/* Warm, but a step down from the install card — that one is the page's call to
+   action, this one is an offer. */
 .action-support {
-	border-color: rgba(232, 194, 77, 0.35);
-	background: rgba(232, 194, 77, 0.07);
+	border-color: color-mix(in srgb, var(--accent-warm) 24%, transparent);
+	background: color-mix(in srgb, var(--accent-warm) 6%, transparent);
 }
 .action-support:hover,
 .action-support:focus-visible {
-	border-color: rgba(232, 194, 77, 0.7);
-	background: rgba(232, 194, 77, 0.12);
+	border-color: color-mix(in srgb, var(--accent-warm) 55%, transparent);
+	background: color-mix(in srgb, var(--accent-warm) 11%, transparent);
 }
 .action-icon {
 	font-size: 1.1rem;
@@ -399,7 +504,7 @@ landing-view {
 }
 .poi-select:focus {
 	outline: none;
-	border-color: #f59e0b;
+	border-color: var(--accent-warm);
 }
 /* Row 3: below the compass prompt when that is up, directly under the PoI
    select when it is not. */
@@ -414,7 +519,7 @@ landing-view {
 	padding: 10px 12px;
 	border-radius: 14px;
 	backdrop-filter: blur(6px);
-	border: 1px solid rgba(245, 158, 11, 0.25);
+	border: 1px solid color-mix(in srgb, var(--accent-warm) 28%, transparent);
 }
 .nav-arrow {
 	flex-shrink: 0;
@@ -430,7 +535,7 @@ landing-view {
 	margin: 4px auto 0;
 	border-left: 10px solid transparent;
 	border-right: 10px solid transparent;
-	border-bottom: 22px solid #f59e0b;
+	border-bottom: 22px solid var(--accent-warm);
 	filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
 }
 .nav-info {
@@ -443,7 +548,7 @@ landing-view {
 	font-size: 18px;
 	font-weight: 700;
 	font-variant-numeric: tabular-nums;
-	color: #f59e0b;
+	color: var(--accent-warm);
 }
 .nav-hint {
 	font-size: 13px;
@@ -454,11 +559,11 @@ landing-view {
 .poi-pin {
 	width: 18px;
 	height: 18px;
-	background: #f59e0b;
+	background: var(--accent-warm);
 	border: 2px solid #fff;
 	border-radius: 50% 50% 50% 0;
 	transform: rotate(-45deg);
-	box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-warm) 35%, transparent);
 }
 .poi-marker {
 	background: none;
@@ -476,9 +581,9 @@ landing-view {
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
-	background: #f59e0b;
+	background: var(--accent-warm);
 	border: 1.5px solid #fff;
-	box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.4);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-warm) 40%, transparent);
 }
 .poi-dot-marker {
 	background: none;
@@ -803,7 +908,7 @@ landing-view {
 	border-radius: 50%;
 	background: var(--accent);
 	border: 2px solid #fff;
-	box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .pm-arrow {
 	position: absolute;

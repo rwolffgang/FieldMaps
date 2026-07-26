@@ -62,6 +62,10 @@ export function monthNames(lang: Lang = currentLang()): string[] {
 interface Strings {
 	tagline: string;
 	intro: string;
+	installTitle: string;
+	installText: string;
+	installHintIos: string;
+	installHintAndroid: string;
 	sectionEvents: string;
 	badgeRunning: string;
 	badgeInDays: (days: number) => string;
@@ -84,8 +88,11 @@ const STRINGS: Record<Lang, Strings> = {
 		intro:
 			"Field Maps zeigt dir per GPS, wo du gerade auf dem Gelände stehst — auf der Taktikkarte " +
 			"des jeweiligen Events, mit allen Gebäuden, Zonen und Hauptquartieren. Karten und Daten " +
-			"sind komplett in der App gespeichert: einmal geladen, funktioniert alles ohne Netz. Zum " +
-			"Startbildschirm hinzufügen, dann läuft sie wie eine normale App.",
+			"sind komplett in der App gespeichert: einmal geladen, funktioniert alles ohne Netz.",
+		installTitle: "Zum Startbildschirm hinzufügen",
+		installText: "Dann läuft Field Maps wie eine normale App — im Vollbild, ohne Browserleiste.",
+		installHintIos: "iPhone: Teilen → „Zum Home-Bildschirm“",
+		installHintAndroid: "Android: ⋮ → „App installieren“",
 		sectionEvents: "Events",
 		badgeRunning: "Läuft jetzt",
 		badgeInDays: (days) => (days === 1 ? "Morgen" : `In ${days} Tagen`),
@@ -111,8 +118,11 @@ const STRINGS: Record<Lang, Strings> = {
 		intro:
 			"Field Maps uses GPS to show where you are standing on the site — on the tactical map of " +
 			"the event itself, with every building, zone and headquarters. Maps and data are stored " +
-			"inside the app: once loaded, everything works without a network. Add it to your home " +
-			"screen and it runs like a normal app.",
+			"inside the app: once loaded, everything works without a network.",
+		installTitle: "Add it to your home screen",
+		installText: "Then Field Maps runs like a normal app — full screen, no browser bar.",
+		installHintIos: "iPhone: Share → “Add to Home Screen”",
+		installHintAndroid: "Android: ⋮ → “Install app”",
 		sectionEvents: "Events",
 		badgeRunning: "Running now",
 		badgeInDays: (days) => (days === 1 ? "Tomorrow" : `In ${days} days`),

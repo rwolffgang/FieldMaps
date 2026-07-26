@@ -60,6 +60,24 @@ export class LandingView extends LitElement {
 					<p class="landing-intro">${t.intro}</p>
 				</header>
 
+				<!-- The one thing a first-time visitor should do. Hidden by CSS once the
+				     app runs standalone, where it would only be telling them what they
+				     have already done. -->
+				<aside class="install-note">
+					<span class="install-mark" aria-hidden="true">
+						<img src=${APP_ICON} alt="" width="192" height="192" />
+						<span class="install-plus">+</span>
+					</span>
+					<span class="install-text">
+						<strong class="install-title">${t.installTitle}</strong>
+						<span class="install-body">${t.installText}</span>
+						<span class="install-hints">
+							<span>${t.installHintIos}</span>
+							<span>${t.installHintAndroid}</span>
+						</span>
+					</span>
+				</aside>
+
 				<h2 class="landing-section">${t.sectionEvents}</h2>
 				<ul class="event-grid">
 					${(() => {
