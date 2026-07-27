@@ -1,17 +1,20 @@
 import "./styles.css";
 import "./map-view.js";
 import "./landing-view.js";
+import "./legal-view.js";
 import type { MapView } from "./map-view.js";
 import { watch, type Fix } from "./geo.js";
 import { watchHeading, needsPermission, requestPermission } from "./heading.js";
 import { getMapById, GPS_HEADING_SPEED } from "./config.js";
-import { onRouteChange, routedMapId } from "./router.js";
-import { applyDocumentLang } from "./i18n.js";
+import { onRouteChange, routedMapId, routedLegal } from "./router.js";
+import { applyDocumentLang, strings } from "./i18n.js";
 
 applyDocumentLang();
+const t = strings();
 
 const view = document.querySelector("map-view") as MapView;
 const landing = document.querySelector("landing-view") as HTMLElement;
+const legal = document.querySelector("legal-view") as HTMLElement;
 
 // --- Routing: overview at /, one map at /?map=<id> ---
 // Both elements stay in the DOM and we toggle `hidden`, rather than tearing the map
@@ -24,9 +27,13 @@ const mapOnlyChrome = ["#test-coords", "#toast", "#enable-compass"].map(
 );
 
 function applyRoute() {
-	const mapId = routedMapId();
+	// ?page=impressum wins over ?map= — it is only ever reached through its own
+	// link, which carries no map id, but the precedence keeps the state simple.
+	const showLegal = routedLegal();
+	const mapId = showLegal ? null : routedMapId();
 	const showMap = mapId != null;
-	landing.hidden = showMap;
+	landing.hidden = showMap || showLegal;
+	legal.hidden = !showLegal;
 	view.hidden = !showMap;
 	for (const el of mapOnlyChrome) {
 		if (!el) continue;
@@ -36,7 +43,11 @@ function applyRoute() {
 		else if (el.dataset.wanted === "1") el.hidden = false;
 	}
 	if (mapId != null) view.showRoutedMap(mapId);
-	document.title = mapId != null ? `${getMapById(mapId).name} · Field Maps` : "Field Maps";
+	document.title = showLegal
+		? `${strings().legal.impressumTitle} · Field Maps`
+		: mapId != null
+			? `${getMapById(mapId).name} · Field Maps`
+			: "Field Maps";
 }
 
 onRouteChange(applyRoute);
@@ -61,7 +72,7 @@ watch(
 		pushToMap();
 	},
 	(err) => {
-		setStatus(`GPS error: ${err.message}`);
+		setStatus(t.gpsError(err.message));
 	},
 );
 
@@ -75,6 +86,9 @@ function startCompass() {
 if (needsPermission()) {
 	// iOS: must be triggered by a user gesture.
 	const btn = document.querySelector("#enable-compass") as HTMLButtonElement;
+	// index.html carries an English default so the button is never empty; this is the
+	// first point where the reader's language is known.
+	btn.textContent = t.enableCompass;
 	btn.dataset.wanted = "1";
 	btn.hidden = routedMapId() == null;
 	btn.addEventListener("click", async () => {
@@ -82,7 +96,7 @@ if (needsPermission()) {
 			delete btn.dataset.wanted;
 			btn.hidden = true;
 			startCompass();
-		} else setStatus("Compass permission denied");
+		} else setStatus(t.compassDenied);
 	});
 } else {
 	startCompass();

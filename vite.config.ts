@@ -28,7 +28,9 @@ export default defineConfig({
 			manifest: {
 				name: "Field Maps",
 				short_name: "Field Maps",
-				description: "Deine GPS-Position auf der Taktikkarte des Events — offline.",
+				description:
+					"Deine GPS-Position auf der Taktikkarte der Airsoft-Events auf dem Flugplatz " +
+					"Mahlwinkel — offline.",
 				start_url: ".",
 				theme_color: "#0b0f14",
 				background_color: "#0b0f14",

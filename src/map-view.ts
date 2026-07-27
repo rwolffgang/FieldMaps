@@ -23,10 +23,24 @@ import {
 } from "./osm-map.js";
 import { goHome, goToMap, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
+import { strings } from "./i18n.js";
+
+// There is no in-app language switcher — the browser's choice is fixed for the
+// session — so resolving the strings once at module load is enough.
+const t = strings();
 
 const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
 const ARRIVED_DISTANCE_M = 8;
+
+/**
+ * How close a headquarters has to be to a PoI to count as *the same place* — the
+ * emblem is then drawn on that building and the PoI needs no dot of its own. The
+ * scenarios make this an easy call: every intentional pairing is 0.0 m (both were
+ * read off the same spot on the printed map), and the closest unintentional one is
+ * ~10 m, so anything in between separates the two cases.
+ */
+const SAME_PLACE_M = 5;
 
 // --- Keeping the vector map painted while you drag -------------------------------
 //
@@ -134,7 +148,6 @@ export class MapView extends LitElement {
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
-	private arrowEl: HTMLElement | null = null;
 	private lastPixel: { px: number; py: number } | null = null;
 	private lastGps: { lat: number; lng: number; accuracy: number; heading: number | null } | null =
 		null;
@@ -144,8 +157,14 @@ export class MapView extends LitElement {
 	/** View the vector panes were last clipped around, for the mid-drag redraw. */
 	private clipCenter: L.LatLng | null = null;
 	private clipZoom = NaN;
+	/**
+	 * Whether the field has ever been framed while the container actually had a size.
+	 * `fitBounds` on a 0×0 container clamps to `minZoom` and stays there, so until this
+	 * is true the framing is a placeholder that has to be redone.
+	 */
+	private framed = false;
 
-	@state() private status = "Waiting for GPS…";
+	@state() private status = t.waitingForGps;
 	@state() private following = true;
 	@state() private offMap = false;
 	@state() private selectedMapId = initialMapId();
@@ -215,6 +234,18 @@ export class MapView extends LitElement {
 		this.map.on("dragstart", () => {
 			this.following = false;
 		});
+		// So does a pinch. Leaflet's `Draggable` ignores anything that is not a single
+		// touch, so a two-finger gesture never fires `dragstart` — without this, zooming
+		// in on the building ahead of you gets undone by the next fix panning back. Watch
+		// the second finger directly rather than `zoomstart`, which programmatic zooms
+		// (`fitBounds`, `recenter`) also fire.
+		this.map.getContainer().addEventListener(
+			"touchstart",
+			(event) => {
+				if (event.touches.length > 1) this.following = false;
+			},
+			{ passive: true },
+		);
 
 		this.accuracyCircle = L.circle(this.px2ll(0, 0), {
 			radius: 0,
@@ -285,6 +316,9 @@ export class MapView extends LitElement {
 		}
 
 		this.clearNavigation();
+		// Any pending retry belonged to the map we are leaving. Keeping it would leave the
+		// pill offering to reload a map that is no longer on screen.
+		this.vectorRetry = null;
 		this.mapWidth = definition.width;
 		this.mapHeight = definition.height;
 		this.transform = solveTransform(definition.controlPoints);
@@ -340,7 +374,7 @@ export class MapView extends LitElement {
 		this.renderPlayAreaMask(definition.playArea);
 		this.renderZones(definition);
 		this.renderHeadquarters(definition);
-		this.map.fitBounds(this.initialBounds(definition));
+		this.fitInitial(definition);
 		this.following = true;
 
 		if (this.lastGps) {
@@ -408,10 +442,10 @@ export class MapView extends LitElement {
 			// Clear a previous failure. The GPS status normally owns this pill, so only
 			// take it back when there is no fix yet to report.
 			this.vectorRetry = null;
-			if (!this.lastGps) this.status = "Waiting for GPS…";
+			if (!this.lastGps) this.status = t.waitingForGps;
 		} catch (err) {
 			console.error("[osm] failed to load vector map", err);
-			this.status = "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen";
+			this.status = t.mapLoadFailed;
 			this.vectorRetry = { definition, dataUrl };
 		}
 	}
@@ -446,7 +480,7 @@ export class MapView extends LitElement {
 		const pending = this.vectorRetry;
 		if (!pending) return;
 		this.vectorRetry = null;
-		this.status = "Karte wird geladen…";
+		this.status = t.mapLoading;
 		void this.loadVectorMap(pending.definition, pending.dataUrl);
 	}
 
@@ -518,16 +552,38 @@ export class MapView extends LitElement {
 	}
 
 	/**
+	 * Frame the field, recording whether the container had a size while doing it.
+	 * `Map.getBoundsZoom` divides by the container size, so fitting at 0×0 resolves to
+	 * `-Infinity` and clamps to `minZoom` — a "framing" that has to be redone later.
+	 */
+	private fitInitial(definition: MapDefinition) {
+		this.map.fitBounds(this.initialBounds(definition));
+		const size = this.map.getSize();
+		this.framed = size.x > 0 && size.y > 0;
+	}
+
+	/**
 	 * Tell Leaflet the container changed size, and re-frame the field if the user has
 	 * not taken over yet. Called by the ResizeObserver, and directly when a route
 	 * change reveals this element — Leaflet caches its container size, so a map that
 	 * was laid out at 0×0 stays at minimum zoom until something re-syncs it.
+	 *
+	 * The re-frame is gated on `framed`, not on "no fix yet". A fix normally arrives
+	 * while the overview is still up (geolocation starts at load, whatever the route),
+	 * and following it only ever calls `panTo` — which re-centres but never touches the
+	 * zoom. Gating on the fix therefore left every map opened from the overview stuck
+	 * at `minZoom`, showing the whole field as a speck.
 	 */
 	private resyncSize() {
 		if (!this.map) return;
 		this.map.invalidateSize({ animate: false });
-		if (this.following && !this.lastGps) {
-			this.map.fitBounds(this.initialBounds(getMapById(this.selectedMapId)));
+		if (!this.following || (this.framed && this.lastGps)) return;
+
+		this.fitInitial(getMapById(this.selectedMapId));
+		// A fix that landed while the container was still 0×0 was applied at the wrong
+		// zoom; now that the framing is real, re-centre on it.
+		if (this.lastGps && !this.offMap && this.lastPixel) {
+			this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py), { animate: false });
 		}
 	}
 
@@ -660,13 +716,33 @@ export class MapView extends LitElement {
 						`<span class="hq-name" style="color:${hq.color}">${hq.name}</span>`,
 					iconSize: [52, 52],
 					iconAnchor: [26, 26],
+					// Float labels just clear of the ring rather than out of its middle.
+					tooltipAnchor: [0, -18],
+					popupAnchor: [0, -18],
 				}),
 				interactive: true,
 			});
-			marker.bindTooltip(hq.name, { className: "poi-tooltip", direction: "top", offset: [0, -28] });
+			// Most emblems are painted straight onto a numbered building. Where that is the
+			// case the emblem *is* that PoI's marker — it carries the number and the route,
+			// and `syncPoiDots` leaves the dot off so there is one target, not two.
+			const poi = this.currentPointsOfInterest().find((candidate) => this.samePlace(hq, candidate));
+			if (poi) {
+				this.bindPoiInteractions(marker, poi);
+			} else {
+				marker.bindTooltip(hq.name, {
+					className: "poi-tooltip",
+					direction: "top",
+					offset: [0, -10],
+				});
+			}
 			marker.addTo(this.hqLayer);
 		}
 		if (this.toggles.hqs) this.hqLayer.addTo(this.map);
+	}
+
+	/** Whether two field features sit on the same spot — see `SAME_PLACE_M`. */
+	private samePlace(a: { lat: number; lng: number }, b: { lat: number; lng: number }): boolean {
+		return distanceMeters(a.lat, a.lng, b.lat, b.lng) <= SAME_PLACE_M;
 	}
 
 	/**
@@ -674,7 +750,10 @@ export class MapView extends LitElement {
 	 * the zones pane's SVG. Same lazy-SVG dance as the play-area hatch.
 	 */
 	private injectZonePatterns(zones: MapDefinition["zones"], attempt = 0) {
+		// Same `hasLayer` guard as the play-area hatch: no layer on the map, no pane SVG,
+		// so retrying for it would never terminate.
 		if (!zones || zones.length === 0 || !this.zonesLayer) return;
+		if (!this.map.hasLayer(this.zonesLayer)) return;
 		const svg = this.map.getPane("zones")?.querySelector("svg");
 		if (!svg) {
 			if (attempt < 40) requestAnimationFrame(() => this.injectZonePatterns(zones, attempt + 1));
@@ -739,6 +818,11 @@ export class MapView extends LitElement {
 			// Non-fatal — the toggle still applies for this session.
 		}
 		this.applyToggles();
+		// Two toggles reach into the PoI icons themselves: the id labels are baked into
+		// them, and hiding the emblems has to give the dots they stand in for back. Every
+		// other toggle just adds or removes a layer, so there is no reason to tear down
+		// and rebuild ~180 marker elements for it.
+		if (key === "poiIds" || key === "hqs") this.syncPoiDots();
 	}
 
 	/** Apply the current toggle states to the live layers. */
@@ -767,7 +851,6 @@ export class MapView extends LitElement {
 			if (this.toggles.hqs) this.hqLayer.addTo(this.map);
 			else this.map.removeLayer(this.hqLayer);
 		}
-		this.syncPoiDots();
 	}
 
 	/**
@@ -775,7 +858,12 @@ export class MapView extends LitElement {
 	 * that SVG lazily, so retry across a few frames until it exists.
 	 */
 	private injectHatchPattern(attempt = 0) {
-		if (!this.maskLayer) return;
+		// `hasLayer`, not just "the layer object exists": with the mask toggled off the
+		// layer is built but never added, so its pane never gets an <svg> and the retry
+		// below could never succeed. This handler runs on every `moveend` — including the
+		// synthetic ones `reclipIfPannedOut` fires several times per drag — so without
+		// this check panning piles up dead 40-frame retry chains for the whole session.
+		if (!this.maskLayer || !this.map.hasLayer(this.maskLayer)) return;
 		const svg = this.map.getPane("playarea-mask")?.querySelector("svg");
 		if (!svg) {
 			if (attempt < 40) requestAnimationFrame(() => this.injectHatchPattern(attempt + 1));
@@ -818,11 +906,23 @@ export class MapView extends LitElement {
 	}
 
 	private onPoiSelect(event: Event) {
-		this.selectedPoiId = (event.target as HTMLSelectElement).value;
-		if (!this.selectedPoiId) {
+		this.startNavigation((event.target as HTMLSelectElement).value);
+	}
+
+	/**
+	 * Start navigating to a PoI, whichever way the user asked for it: the select, the
+	 * "Navigate here" button in a dot's popup, or a double-click on the dot. Empty id
+	 * means the select's placeholder — that stops navigation.
+	 */
+	private startNavigation(poiId: string) {
+		this.selectedPoiId = poiId;
+		if (!poiId) {
 			this.clearNavigation();
 			return;
 		}
+		// The popup has done its job, and `fitUserAndPoi` is about to move the view out
+		// from under it.
+		this.map.closePopup();
 		this.showPoiMarker();
 		this.updateNavigation();
 		this.fitUserAndPoi();
@@ -863,7 +963,7 @@ export class MapView extends LitElement {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) {
 			this.navDistanceM = 0;
-			this.navHint = this.lastGps ? "" : "Waiting for GPS…";
+			this.navHint = this.lastGps ? "" : t.waitingForGps;
 			return;
 		}
 
@@ -871,27 +971,27 @@ export class MapView extends LitElement {
 		const userPixel = this.displayPixel(gpsPixel);
 		const poiPixel = this.transform.toPixel(poi.lat, poi.lng);
 
+		// Distance and bearing come from the GPS fix, never from `userPixel` — that one
+		// has already been swapped for the map centre when the fix falls off the canvas,
+		// which used to make the readout a constant (the centre-to-PoI distance) no matter
+		// how far away you actually were. Only where the route line is *drawn* falls back
+		// to the centre; the numbers are true anywhere on earth.
+		const distance = distanceMeters(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
+		const targetBearing = bearingDegrees(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
+		this.navDistanceM = distance;
+		this.navArrowDeg = this.transform.bearingToScreenDeg(targetBearing);
+
 		if (this.offMap) {
-			const deltaX = poiPixel.px - userPixel.px;
-			const deltaY = poiPixel.py - userPixel.py;
-			this.navDistanceM = this.transform.pixelsToMeters(Math.hypot(deltaX, deltaY));
-			this.navArrowDeg = this.screenArrowDeg(userPixel, poiPixel);
-			this.navHint = "Approximate — GPS is off this field";
+			// Worth saying, because the line on screen starts at the map centre rather than
+			// under your feet — but the distance and the arrow above are real.
+			this.navHint = t.navOffField;
+		} else if (distance <= ARRIVED_DISTANCE_M) {
+			this.navHint = t.navArrived;
+		} else if (this.lastGps.heading != null) {
+			const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
+			this.navHint = t.navHints[navigationHint(relative)];
 		} else {
-			const distance = distanceMeters(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
-			const targetBearing = bearingDegrees(this.lastGps.lat, this.lastGps.lng, poi.lat, poi.lng);
-
-			this.navDistanceM = distance;
-			this.navArrowDeg = this.transform.bearingToScreenDeg(targetBearing);
-
-			if (distance <= ARRIVED_DISTANCE_M) {
-				this.navHint = "You have arrived";
-			} else if (this.lastGps.heading != null) {
-				const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
-				this.navHint = navigationHint(relative);
-			} else {
-				this.navHint = "Enable compass for turn hints";
-			}
+			this.navHint = t.navEnableCompass;
 		}
 
 		const userLatLng = this.px2ll(userPixel.px, userPixel.py);
@@ -944,15 +1044,6 @@ export class MapView extends LitElement {
 		return this.isOffMapPixel(gpsPixel) ? this.mapCenterPixel() : gpsPixel;
 	}
 
-	private screenArrowDeg(
-		fromPixel: { px: number; py: number },
-		toPixel: { px: number; py: number },
-	) {
-		const deltaX = toPixel.px - fromPixel.px;
-		const deltaY = toPixel.py - fromPixel.py;
-		return (Math.atan2(deltaY, deltaX) * 180) / Math.PI + 90;
-	}
-
 	private makeIcon(rotationDeg = 0, showTriangle = false) {
 		const inner = showTriangle
 			? `<div class="pm-arrow" style="transform:rotate(${rotationDeg}deg)"></div>`
@@ -988,25 +1079,86 @@ export class MapView extends LitElement {
 	 * The wind turbines, drawn as a glyph standing on their coordinate: the icon is
 	 * anchored bottom-centre so the tower's base sits on the GPS position, the way
 	 * the mast does in the field. Screen-sized (not map-scaled) and never rotated —
-	 * it is a pictogram, not a footprint.
+	 * it is a pictogram, not a footprint. This replaces the dot rather than covering
+	 * it, so the glyph's box is also the tap target.
 	 */
-	private makeTurbineIcon() {
+	private makeTurbineIcon(idLabel?: string) {
 		const blade = (deg: number) =>
 			`<path d="M20 16 C18.3 10 17.7 5 19 0.8 C21.7 4.4 22.5 10 21.7 16 Z" transform="rotate(${deg} 20 16)" />`;
+		const label = idLabel ? `<span class="poi-dot-label">${idLabel}</span>` : "";
 		return L.divIcon({
 			className: "turbine-marker",
-			html: `<svg class="turbine-glyph" viewBox="0 0 40 56" width="30" height="42" aria-hidden="true">
+			html: `<div class="turbine-hit"><svg class="turbine-glyph" viewBox="0 0 40 56" width="30" height="42" aria-hidden="true">
 					<polygon points="17.7,56 22.3,56 20.9,17 19.1,17" />
 					${blade(0)}${blade(120)}${blade(240)}
 					<circle cx="20" cy="16" r="2.6" />
-				</svg>`,
+				</svg>${label}</div>`,
 			iconSize: [30, 42],
 			iconAnchor: [15, 42],
+			// Anchored at the base, so labels float above the whole mast.
+			tooltipAnchor: [0, -42],
+			popupAnchor: [0, -42],
 		});
 	}
 
 	private poiLabel(poi: LabeledPointOfInterest) {
 		return `${poi.id} · ${poi.name}`;
+	}
+
+	/**
+	 * What a tapped PoI dot shows: the same label the tooltip carries, plus the one
+	 * thing you actually want from a building on the ground — a route to it. Built as
+	 * DOM rather than a Lit template because it lives in Leaflet's popup pane, outside
+	 * this component's render.
+	 */
+	private makePoiPopup(marker: L.Marker, poi: LabeledPointOfInterest): HTMLElement {
+		// Leaflet re-reads the auto-pan padding right after building the content, so this
+		// is the moment to re-measure the chrome the popup has to stay clear of.
+		const popup = marker.getPopup();
+		if (popup) {
+			const { top, bottom } = this.chromeInsets();
+			popup.options.autoPanPaddingTopLeft = L.point(16, top);
+			popup.options.autoPanPaddingBottomRight = L.point(16, bottom);
+		}
+
+		const body = document.createElement("div");
+		body.className = "poi-popup-body";
+
+		const title = document.createElement("span");
+		title.className = "poi-popup-title";
+		title.textContent = this.poiLabel(poi);
+
+		const navigate = document.createElement("button");
+		navigate.type = "button";
+		navigate.className = "poi-popup-nav";
+		navigate.textContent = t.navigateHere;
+		navigate.addEventListener("click", () => this.startNavigation(poi.id));
+
+		body.append(title, navigate);
+		return body;
+	}
+
+	/**
+	 * How far the chrome intrudes on the map, top and bottom, with a margin. The top
+	 * rows come and go (compass prompt, nav card, a toast of any height) and the HUD
+	 * grows with a wrapped status line, so measure them instead of restating the CSS
+	 * row arithmetic here.
+	 */
+	private chromeInsets(): { top: number; bottom: number } {
+		const visibleBottom = (element: Element | null) =>
+			element instanceof HTMLElement && !element.hidden
+				? element.getBoundingClientRect().bottom
+				: 0;
+		const top = Math.max(
+			visibleBottom(this.querySelector(".poi-panel")),
+			visibleBottom(document.querySelector("#enable-compass")),
+			visibleBottom(document.querySelector("#toast")),
+		);
+		const hud = this.querySelector(".hud")?.getBoundingClientRect();
+		return {
+			top: Math.ceil(top) + 12,
+			bottom: Math.ceil(hud?.height ?? 0) + 12,
+		};
 	}
 
 	private clearPoiDots() {
@@ -1025,31 +1177,62 @@ export class MapView extends LitElement {
 		);
 		if (pointsOfInterest.length === 0) return;
 
+		// An emblem drawn on a building already marks it, and `renderHeadquarters` has
+		// given that marker the PoI's label and route — but only while the HQ layer is
+		// actually shown, so with the emblems toggled off the dots come back.
+		const headquarters = this.toggles.hqs
+			? (getMapById(this.selectedMapId).headquarters ?? [])
+			: [];
+
 		this.poiDotsLayer = L.layerGroup();
 		for (const poi of pointsOfInterest) {
+			if (headquarters.some((hq) => this.samePlace(hq, poi))) continue;
+
+			const idLabel = this.toggles.poiIds ? poi.id : undefined;
 			const pixel = this.transform.toPixel(poi.lat, poi.lng);
-			// The turbine stands on the dot: same position, glyph anchored at its base,
-			// non-interactive so the dot underneath keeps the tooltip and the hit area.
-			if (isWindTurbine(poi.id)) {
-				L.marker(this.px2ll(pixel.px, pixel.py), {
-					icon: this.makeTurbineIcon(),
-					interactive: false,
-					keyboard: false,
-				}).addTo(this.poiDotsLayer);
-			}
 			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
-				icon: this.makePoiDotIcon(this.toggles.poiIds ? poi.id : undefined),
+				// A turbine is recognisable on its own; a plain building is not, so it gets
+				// the dot. Either way it is one marker, and the drawn shape is the target.
+				icon: isWindTurbine(poi.id) ? this.makeTurbineIcon(idLabel) : this.makePoiDotIcon(idLabel),
 				interactive: true,
 			});
-			marker.bindTooltip(this.poiLabel(poi), {
-				className: "poi-tooltip",
-				direction: "top",
-				offset: [0, -10],
-				opacity: 1,
-			});
+			this.bindPoiInteractions(marker, poi);
 			marker.addTo(this.poiDotsLayer);
 		}
 		this.poiDotsLayer.addTo(this.map);
+	}
+
+	/**
+	 * Make a marker stand for a PoI: hover to name it, tap for the number and a route,
+	 * double-click to just go. Shared by the dots, the turbine glyphs and the faction
+	 * emblems that sit on a numbered building, so a PoI behaves the same however it
+	 * happens to be drawn. Icons place the labels through their own tooltip/popup
+	 * anchors; the offsets here are only the gap above whatever that anchor is.
+	 */
+	private bindPoiInteractions(marker: L.Marker, poi: LabeledPointOfInterest) {
+		marker.bindTooltip(this.poiLabel(poi), {
+			className: "poi-tooltip",
+			direction: "top",
+			offset: [0, -10],
+			opacity: 1,
+		});
+		// Content as a function so the popup is rebuilt — and its auto-pan padding
+		// re-measured — every time it opens.
+		marker.bindPopup(() => this.makePoiPopup(marker, poi), {
+			className: "poi-popup",
+			closeButton: false,
+			offset: [0, -6],
+		});
+		// Tooltip and popup say the same thing and would stack on top of each other:
+		// on a tap both open, on desktop a hover-while-open would put the tooltip over
+		// the popup. The popup is the one you can act on, so the tooltip stands down.
+		marker.on("popupopen", () => marker.closeTooltip());
+		marker.on("mouseover", () => {
+			if (marker.isPopupOpen()) marker.closeTooltip();
+		});
+		// Double-click skips the popup: two taps and you are navigating. Marker mouse
+		// events don't bubble, so this never reaches the map's dblclick zoom.
+		marker.on("dblclick", () => this.startNavigation(poi.id));
 	}
 
 	/** Called by the app whenever a new position/heading is available. */
@@ -1072,19 +1255,24 @@ export class MapView extends LitElement {
 
 		// Rebuild the icon only when the triangle/dot state changes; otherwise just
 		// rotate the existing arrow element (cheaper, and avoids marker flicker).
+		// The current state is read off the DOM — whether an arrow is present — so the
+		// no-heading case is covered too. Testing `showTriangle` alone re-ran `setIcon`
+		// on every single fix whenever there was no compass (iOS before the permission
+		// tap, Android without absolute orientation), tearing down and rebuilding the
+		// marker element ~1 Hz for the whole match.
 		const showTriangle = headingDeg != null;
 		const screenDegrees = headingDeg != null ? this.transform.bearingToScreenDeg(headingDeg) : 0;
-		this.arrowEl = this.marker.getElement()?.querySelector(".pm-arrow") ?? null;
-		if (showTriangle && this.arrowEl) {
-			this.arrowEl.style.transform = `rotate(${screenDegrees}deg)`;
-		} else {
+		const arrow = this.marker.getElement()?.querySelector<HTMLElement>(".pm-arrow") ?? null;
+		if (showTriangle !== (arrow != null)) {
 			this.marker.setIcon(this.makeIcon(screenDegrees, showTriangle));
+		} else if (arrow) {
+			arrow.style.transform = `rotate(${screenDegrees}deg)`;
 		}
 
 		if (this.selectedPoiId) this.updateNavigation();
 
 		if (this.offMap) {
-			this.status = "⚠ Off map — outside this field; position shown at map center";
+			this.status = t.offMap;
 		} else if (this.selectedPoiId) {
 			this.status = `${this.getSelectedPoi()?.name ?? "POI"} · ${this.navDistanceM.toFixed(0)} m`;
 		} else {
@@ -1101,7 +1289,7 @@ export class MapView extends LitElement {
 		// Off-map: re-following would pan into empty background, so snap back to the
 		// whole field instead — the warning already tells the user where they are.
 		if (this.offMap) {
-			this.map.fitBounds(this.initialBounds(getMapById(this.selectedMapId)));
+			this.fitInitial(getMapById(this.selectedMapId));
 		} else if (this.lastPixel) {
 			this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py));
 		}
@@ -1118,7 +1306,7 @@ export class MapView extends LitElement {
 					? html`
 							<div class="poi-panel">
 								<select class="poi-select" .value=${this.selectedPoiId} @change=${this.onPoiSelect}>
-									<option value="">Navigate to…</option>
+									<option value="">${t.navigateTo}</option>
 									${pointsOfInterest.map(
 										(poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `,
 									)}
@@ -1156,7 +1344,9 @@ export class MapView extends LitElement {
 				</div>
 				<div class="hud-controls">
 					<div class="hud-left">
-						<button class="home-btn" aria-label="Zur Übersicht" @click=${() => goHome()}>‹</button>
+						<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>
+							‹
+						</button>
 						${
 							MAPS.length > 1
 								? html`
@@ -1202,17 +1392,17 @@ export class MapView extends LitElement {
 					this.togglesOpen
 						? html`
 								<div class="toggles-panel">
-									${row("poiIds", "PoI numbers")} ${this.hasGrid ? row("grid", "Grid") : ""}
-									${this.hasMask ? row("mask", "Boundary mask") : ""}
-									${this.hasZones ? row("zones", "Zonen") : ""}
-									${this.hasHqs ? row("hqs", "Hauptquartiere") : ""}
+									${row("poiIds", t.layerPoiIds)} ${this.hasGrid ? row("grid", t.layerGrid) : ""}
+									${this.hasMask ? row("mask", t.layerMask) : ""}
+									${this.hasZones ? row("zones", t.layerZones) : ""}
+									${this.hasHqs ? row("hqs", t.layerHqs) : ""}
 								</div>
 							`
 						: ""
 				}
 				<button
 					class="toggle-btn ${this.togglesOpen ? "on" : ""}"
-					aria-label="Map layers"
+					aria-label=${t.layers}
 					@click=${() => (this.togglesOpen = !this.togglesOpen)}
 				>
 					▤

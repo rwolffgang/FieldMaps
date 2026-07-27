@@ -118,6 +118,27 @@ landing-view {
 	font-weight: 600;
 	color: var(--accent);
 }
+/* The site the whole app is about. Orange, because in this palette orange means
+   "a place on the ground" — and a pill rather than a sentence so it reads as a
+   fact about the app, not part of the pitch. */
+.landing-site {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	margin: 0.85rem 0 0;
+	padding: 0.3rem 0.7rem;
+	border: 1px solid color-mix(in srgb, var(--accent-warm) 34%, transparent);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--accent-warm) 10%, transparent);
+	font-size: 0.8125rem;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--accent-warm);
+}
+.landing-site-pin {
+	font-size: 0.875rem;
+	line-height: 1;
+}
 .landing-intro {
 	margin: 1rem 0 0;
 	font-size: 0.9375rem;
@@ -216,6 +237,15 @@ landing-view {
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 	color: #6b7f92;
+}
+/* Pulls up under the section label: the two belong together, and the heading's
+   own bottom margin is spacing for the card grid. */
+.landing-section-note {
+	margin: -0.5rem 0 0.9rem;
+	font-size: 0.8125rem;
+	line-height: 1.5;
+	color: #7d8fa1;
+	max-width: 38rem;
 }
 
 .event-grid {
@@ -397,6 +427,100 @@ landing-view {
 	font-size: 0.75rem;
 	line-height: 1.55;
 	color: #64788b;
+}
+
+/* The Impressum link. Legally it has to be easy to find, so it sits on its own
+   line under the fineprint rather than being buried in it — but it is still
+   footer material, not a call to action. */
+.landing-legal {
+	margin-top: 0.9rem !important;
+	font-size: 0.8125rem;
+}
+.landing-legal a {
+	color: #8698a9;
+	text-decoration: underline;
+	text-underline-offset: 0.2em;
+}
+.landing-legal a:hover,
+.landing-legal a:focus-visible {
+	color: #e6edf3;
+}
+
+/* ---------------------------------------------------------------------------
+   Legal page — Impressum and privacy notice at /?page=impressum.
+   Its own scroll container, like the landing page, for the same reason: body
+   stays overflow:hidden so the map can never scroll.
+   --------------------------------------------------------------------------- */
+legal-view {
+	position: fixed;
+	inset: 0;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	background: #0b0f14;
+	color: #e6edf3;
+}
+.legal {
+	max-width: 44rem;
+	margin: 0 auto;
+	padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem calc(3rem + env(safe-area-inset-bottom));
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	color: #9fb0c0;
+}
+.legal-back {
+	display: inline-block;
+	margin-bottom: 1.75rem;
+	color: var(--accent);
+	font-size: 0.875rem;
+	font-weight: 600;
+	text-decoration: none;
+}
+.legal-back:hover,
+.legal-back:focus-visible {
+	text-decoration: underline;
+}
+.legal-title {
+	margin: 0 0 1.5rem;
+	font-size: clamp(1.75rem, 6vw, 2.25rem);
+	font-weight: 800;
+	letter-spacing: -0.02em;
+	color: #e6edf3;
+}
+/* The privacy notice starts a second document on the same page; the rule makes
+   that break visible without a second navigation step. */
+.legal-title-second {
+	margin-top: 3rem;
+	padding-top: 2rem;
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.legal-section {
+	margin-bottom: 1.75rem;
+}
+.legal-section h2 {
+	margin: 0 0 0.5rem;
+	font-size: 0.9375rem;
+	font-weight: 700;
+	color: #e6edf3;
+}
+.legal-section p {
+	margin: 0 0 0.75rem;
+}
+.legal-section p:last-child {
+	margin-bottom: 0;
+}
+.legal-section a {
+	color: var(--accent);
+}
+.legal-address {
+	display: flex;
+	flex-direction: column;
+	font-style: normal;
+}
+/* An address line that has not been filled in yet. Loud on purpose: an Impressum
+   with a missing address is the one failure mode worth shouting about. */
+.legal-missing {
+	color: var(--accent-warm);
+	font-weight: 600;
 }
 
 /* Back to the overview, in the map HUD. */
@@ -591,10 +715,23 @@ landing-view {
 }
 
 /* Wind turbine glyph, standing on its PoI dot. */
+/* Wind turbine glyph. It replaces the PoI dot rather than standing on one, so its
+   box — not just the painted mast — is what you tap. */
 .turbine-marker {
 	background: none;
 	border: none;
-	pointer-events: none;
+}
+.turbine-hit {
+	position: relative;
+	width: 30px;
+	height: 42px;
+}
+/* The id belongs beside the base, where the coordinate is, not beside the blades. */
+.turbine-hit .poi-dot-label {
+	left: 27px;
+	top: auto;
+	bottom: 0;
+	transform: none;
 }
 .turbine-glyph {
 	display: block;
@@ -683,6 +820,51 @@ landing-view {
 }
 .leaflet-tooltip.poi-tooltip::before {
 	border-top-color: rgba(11, 15, 20, 0.92);
+}
+
+/* Tap a PoI dot and you get the same label the tooltip carries, plus the button
+   that starts navigation to it. Same dark chrome as the tooltip — it is the same
+   information, just the version you can act on. */
+.leaflet-popup.poi-popup .leaflet-popup-content-wrapper {
+	background: rgba(11, 15, 20, 0.92);
+	color: #e6edf3;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 10px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.leaflet-popup.poi-popup .leaflet-popup-content {
+	margin: 8px 10px;
+	font-size: 13px;
+	line-height: 1.3;
+}
+.leaflet-popup.poi-popup .leaflet-popup-tip {
+	background: rgba(11, 15, 20, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow: none;
+}
+.poi-popup-body {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+}
+.poi-popup-title {
+	font-weight: 600;
+	white-space: nowrap;
+}
+.poi-popup-nav {
+	font-family: inherit;
+	font-size: 13px;
+	font-weight: 700;
+	color: #0b0f14;
+	background: var(--accent-warm);
+	border: none;
+	border-radius: 999px;
+	padding: 7px 14px;
+	cursor: pointer;
+}
+.poi-popup-nav:active {
+	filter: brightness(0.9);
 }
 
 .pill {

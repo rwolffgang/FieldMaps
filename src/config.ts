@@ -127,12 +127,17 @@ export function getPointsOfInterestForMap(mapId: string): LabeledPointOfInterest
 	return labelPointsOfInterest(getMapById(mapId).poiNames);
 }
 
-/** Position smoothing: 0 = raw GPS (jumpy), 1 = frozen. ~0.4 is a good start. */
+/**
+ * Position smoothing: how much of each new fix is taken on board, in
+ * `smoothed += k * (raw - smoothed)`. So **1 = raw GPS (jumpy), 0 = frozen** at the
+ * first fix — lower means *more* smoothing, not less. ~0.4 is a good start.
+ */
 export const POSITION_SMOOTHING = 0.4;
 /** If a new fix jumps more than this many meters, snap instead of smoothing. */
 export const SNAP_DISTANCE_M = 25;
 
-/** Heading smoothing for the compass (low-pass on the angle). */
+/** Heading smoothing for the compass (low-pass on the angle). Same scale as above:
+ *  1 = raw magnetometer, 0 = frozen. */
 export const HEADING_SMOOTHING = 0.25;
 /** Above this ground speed (m/s) prefer GPS course over the (metal-noisy) compass. */
 export const GPS_HEADING_SPEED = 0.7;

@@ -6,7 +6,7 @@
 
 - [ ] **Rename the GitHub repository** from `rwolffgang/MahlwinkelMap` to match the Field Maps name. It is still the old name from when this only covered Mahlwinkel. Once renamed, update `REPO_URL` in `src/landing-view.ts` (the "Quellcode" link on the landing page) and the `origin` remote — GitHub redirects the old URL, but the visible link should be the real one.
 
-Offline-first PWA that shows the user's live GPS position on a pre-georeferenced airsoft field map. No tile server, no backend — everything is computed client-side from a hardcoded calibration. Maps are either a pre-rendered image or a custom vector map drawn live from bundled OpenStreetMap data (`scripts/fetch-osm.mjs` → `public/map_osm.geojson`, rendered by `src/osm-map.ts`).
+Offline-first PWA that shows the user's live GPS position on a pre-georeferenced airsoft field map. No tile server, no backend — everything is computed client-side from a hardcoded calibration. Every scenario now draws the **custom vector map**, rendered live from bundled OpenStreetMap data (`scripts/fetch-osm.mjs` → `public/map_osm.geojson`, rendered by `src/osm-map.ts`) in that event's theme. The app ships **no map imagery at all** — the retired photo bases live in `reference/legacy-map-images/`. A photo `base` is still supported (`kind: "image"`, see `src/scenarios/scenario.ts`) but nothing uses it; prefer a theme on the shared base.
 
 ## Stack
 
@@ -24,24 +24,25 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 
 ## The files a user edits
 
-- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (the shared OSM vector map, or a photo `image` with its own control points), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Optionally also `zones` (marked areas: safe zones, "Zivile Zone", …), `headquarters` (faction HQs drawn with their emblem from `/public/logos`), and `lines` (open frontlines). Copy a file, edit it, register it in `src/scenarios/index.ts`.
+- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (in practice always the shared OSM vector map plus a theme; a photo `image` with its own control points is still supported but unused), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Optionally also `zones` (marked areas: safe zones, "Zivile Zone", …), `headquarters` (faction HQs drawn with their emblem from `/public/logos`), and `lines` (open frontlines). Copy a file, edit it, register it in `src/scenarios/index.ts`.
 - `src/points-of-interest.ts` — the shared registry of physical PoI **coordinates** (same across all scenarios) plus the default label set.
 - `src/config.ts` — turns each scenario into a selectable map (resolving its base) and holds the smoothing tunables. Prefer editing scenario files over this.
 
 ## File map
 
 - `src/transform.ts` — **the core.** GPS → image pixel via a least-squares _similarity_ fit from the control points. Exposes `solveTransform(points)` returning `{ toPixel, metersToPixels, pixelsToMeters, bearingToScreenDeg, scale, rmsMeters }`.
-- `src/config.ts` — map definitions (photo + one OSM vector map per scenario) and tuning.
+- `src/config.ts` — map definitions (one OSM vector map per scenario, all on the shared canvas) and tuning.
 - `src/scenarios/` — per-scenario labels + play area; `index.ts` registers them.
 - `src/points-of-interest.ts` — shared PoI coordinates + default labels + `labelPointsOfInterest`.
 - `src/geo.ts` — `watch(onFix, onError)` wraps `watchPosition`, emits a `Fix { lat, lng, accuracy, heading, speed }`, applies light EMA smoothing with a snap-on-teleport.
 - `src/heading.ts` — compass. `watchHeading(onHeading)`, plus `needsPermission()` / `requestPermission()` for iOS. Circular-mean angle smoothing.
-- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay OR OSM vector base, coordinate grid, the out-of-bounds play-area mask (darken + diagonal hatch, injected SVG `<pattern>`), the scenario's zones/frontlines and HQ emblems, accuracy circle, position marker, follow/recenter, and the layer **toggles** (PoI id labels, grid, boundary mask, zones, HQs — persisted; each shown only when applicable). A `ResizeObserver` re-fits when the container gains size (0×0 cold start).
-- `src/landing-view.ts` — the `<landing-view>` overview at `/`: intro, the install card ("add to home screen", with the per-platform gesture — hidden by CSS under `display-mode: standalone`, where it would only describe what the user already did), event cards ordered by date, and the footer links (donations, `info@fieldmaps.app`, GitHub).
+- `src/map-view.ts` — the `<map-view>` Lit component wrapping Leaflet: image overlay OR OSM vector base, coordinate grid, the out-of-bounds play-area mask (darken + diagonal hatch, injected SVG `<pattern>`), the scenario's zones/frontlines and HQ emblems, accuracy circle, position marker, follow/recenter, and the layer **toggles** (PoI id labels, grid, boundary mask, zones, HQs — persisted; each shown only when applicable). A `ResizeObserver` re-fits when the container gains size (0×0 cold start). Navigation can be started three ways, all through `startNavigation`: the PoI select, the **"Navigate here" button** in a dot's popup, or a **double-click on the dot**. Hovering a dot still just labels it — the popup is the version you can act on, so it closes the tooltip while it is open, and its auto-pan padding is measured off the live chrome (`chromeInsets`) rather than restating the CSS row heights. **A PoI is drawn once, and whatever is drawn is the tap target** (`bindPoiInteractions` puts the same label/popup/double-click on all three): a turbine gets its glyph, a building with a faction emblem on it gets the emblem — the scenarios place several HQs exactly on a numbered building, so `samePlace` pairs them and the dot is left off. Emblems only stand in while the HQ layer is shown, which is why toggling it rebuilds the dots.
+- `src/landing-view.ts` — the `<landing-view>` overview at `/`: intro, the site chip and the note under the events heading (the app covers **one** field, the Mahlwinkel airfield — say so before someone installs it expecting their own event; the "Field Maps" name is deliberately site-neutral, the coverage is not), the install card ("add to home screen", with the per-platform gesture — hidden by CSS under `display-mode: standalone`, where it would only describe what the user already did), event cards ordered by date, and the footer links (donations, `robert@wolffgang.de`, GitHub, Impressum).
 - `src/brand.ts` — the two colours off the app icon (`BRAND_BLUE`, `BRAND_BLUE_DEEP`, `BRAND_ORANGE`). Leaflet needs colours as JS strings, the chrome takes them from CSS, so `styles.css` mirrors them as `--brand-*` / `--accent` / `--accent-warm` at the top of `:root`. Change one, change the other. Blue means "you and the app" (position dot, accuracy circle, active controls), orange means "a place on the ground" (PoIs, navigation, the install prompt); everything else stays neutral so those two keep their weight. Per-event map palettes (`accent`, the `osm-map` themes) are separate and stay per-event.
-- `src/router.ts` — the whole "router": read/write the `?map=` parameter, notify on change and on Back.
+- `src/legal-view.ts` — the `<legal-view>` legal page at `/?page=impressum`: Impressum (§ 5 DDG) and privacy notice, both languages, text in `i18n.ts`. **`OPERATOR` at the top of the file is the one thing that has to be right** — name, summonable postal address, contact email. Missing address lines render as loud orange placeholders rather than disappearing, because an Impressum with no address is the failure worth shouting about. Reachable offline like every other screen, which is why it is a route and not an external page.
+- `src/router.ts` — the whole "router": read/write the `?map=` and `?page=` parameters, notify on change and on Back.
 - `src/event-schedule.ts` — recurring month/day schedules, German date formatting, and the soonest-first comparator.
-- `src/main.ts` — wires geo + heading into the view, chooses heading source, wake lock, iOS compass button, and switches between the two screens on route change.
+- `src/main.ts` — wires geo + heading into the view, chooses heading source, wake lock, iOS compass button, and switches between the three screens on route change.
 - `src/transform.test.ts` — synthetic known-truth self-test. Not part of the build (`tsconfig` excludes `*.test.ts`).
 - `src/osm-map.ts` — renders an OpenStreetMap-derived GeoJSON (`public/map_osm.geojson`) as styled Leaflet vector layers (roads, paths, buildings, forest, water). Ships six **themes**, one per event's printed tactical map: `opt` (warm sepia), `m24` (cold dark satellite), `de` (near-black), `asd` (green surround), `lso` (cool blue-grey), `laf` (grey-green). A scenario's OSM base picks one. `buildOsmFrame` paints an opaque surround outside the grid rectangle so the map has a clean border and nothing renders past the edge. Projects each feature through the same GPS→pixel transform, so it lines up with the GPS dot and PoIs. Fully offline: the data is bundled and precached.
 - `reference/tactical-maps/` — the organiser's printed Taktikkarten, one per event, downloaded from `airsofthelden-events.com/<event>/taktikkarte`. **Source material, not app assets** — they live outside `public/` so they are not bundled or precached. Every PoI coordinate, play area, zone and HQ position in `src/` was read off these; keep them so the numbers can be re-derived or checked.
@@ -50,14 +51,15 @@ Deploy: `npm run build`, publish `dist/` over HTTPS (GitHub Pages is fine), inst
 
 ## Screens and URLs
 
-Two screens, one query parameter (`src/router.ts`):
+Three screens, two query parameters (`src/router.ts`):
 
 - `/` — the overview (`src/landing-view.ts`): what the app is, then one card per event.
 - `/?map=<id>` — that event's map, opened directly.
+- `/?page=impressum` — Impressum and privacy notice (`src/legal-view.ts`), linked from the overview's footer.
 
 A **query parameter**, not a path or a hash, so a bookmarked map resolves on any static host without rewrite rules — which matters because this ships as an offline PWA and a saved link has to open from the service worker cache with no server in reach. Room to extend later (`&poi=630`).
 
-Both `<landing-view>` and `<map-view>` stay in the DOM and `main.ts` toggles `hidden`, rather than tearing the map down: `map-view` already re-fits when its container gains size (it has to, for the 0×0 cold start), so returning to a map is instant. The map-only chrome (status toast, compass prompt, coordinate test input) follows the same switch via a `data-wanted` flag, so nothing that was hidden for its own reasons gets revealed by the route change.
+All three views stay in the DOM and `main.ts` toggles `hidden`, rather than tearing the map down: `map-view` already re-fits when its container gains size (it has to, for the 0×0 cold start), so returning to a map is instant. The map-only chrome (status toast, compass prompt, coordinate test input) follows the same switch via a `data-wanted` flag, so nothing that was hidden for its own reasons gets revealed by the route change.
 
 Event cards are real `<a href="?map=…">` elements with the click intercepted — long-press-to-copy, open-in-new-tab and bookmarking all keep working. That is the point of the screen.
 
@@ -105,7 +107,7 @@ Beware that the events renumber things: Dark Emergency 2026's "612 Fahrzeughalle
 - **iOS compass** needs `DeviceOrientationEvent.requestPermission()` behind a user tap — that's the "Enable compass" button, shown only when `needsPermission()` is true.
 - **Heading source:** `main.ts` prefers GPS course when moving faster than `GPS_HEADING_SPEED`, falling back to the magnetometer when stationary, because metal replicas and batteries deflect the compass.
 - **Tree cover** degrades GPS to 5–15 m; the accuracy circle is drawn deliberately so the user sees this. Don't over-smooth position (`POSITION_SMOOTHING`) to hide it — that just makes the dot lag reality.
-- **Precache size:** the map image is precached for offline use. If a large map exceeds the Workbox limit, raise `maximumFileSizeToCacheInBytes` in `vite.config.ts`.
+- **Precache size:** the map image is precached for offline use. If a large map exceeds the Workbox limit, raise `maximumFileSizeToCacheInBytes` in `vite.config.ts`. More important than the limit is the total: `globPatterns` sweeps up **every** image under `public/`, referenced or not, and a player installs the app on mobile data. Anything no scenario loads belongs in `reference/` (see `reference/legacy-map-images/`), and photo bases ship as WebP — `map_m24` alone was 2.2 MB as a PNG against 215 KB re-encoded.
 
 ## Conventions
 

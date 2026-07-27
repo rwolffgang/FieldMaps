@@ -42,14 +42,21 @@ export function relativeBearingDegrees(targetBearing: number, heading: number): 
 	return (((targetBearing - heading) % 360) + 360) % 360;
 }
 
+/**
+ * The turn hints the HUD can show. Keys, not sentences: this module stays free of
+ * display text so the same hint can be rendered in either language (see `i18n.ts`).
+ */
+export type NavigationHint =
+	"ahead" | "bearRight" | "turnRight" | "behind" | "turnLeft" | "bearLeft";
+
 /** Short turn hint from a relative bearing. */
-export function navigationHint(relativeDegrees: number): string {
-	if (relativeDegrees <= 25 || relativeDegrees >= 335) return "Straight ahead";
-	if (relativeDegrees <= 60) return "Bear right";
-	if (relativeDegrees <= 120) return "Turn right";
-	if (relativeDegrees <= 200) return "Behind you";
-	if (relativeDegrees <= 280) return "Turn left";
-	return "Bear left";
+export function navigationHint(relativeDegrees: number): NavigationHint {
+	if (relativeDegrees <= 25 || relativeDegrees >= 335) return "ahead";
+	if (relativeDegrees <= 60) return "bearRight";
+	if (relativeDegrees <= 120) return "turnRight";
+	if (relativeDegrees <= 200) return "behind";
+	if (relativeDegrees <= 280) return "turnLeft";
+	return "bearLeft";
 }
 
 /**

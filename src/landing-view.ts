@@ -12,7 +12,7 @@
 import { LitElement, html } from "lit";
 import { customElement } from "lit/decorators.js";
 import { mapsByDate, getPointsOfInterestForMap } from "./config.js";
-import { goToMap, mapUrl } from "./router.js";
+import { goToMap, goToLegal, mapUrl, LEGAL_URL } from "./router.js";
 import { daysUntil, formatSchedule, isRunning } from "./event-schedule.js";
 import { currentLang, strings } from "./i18n.js";
 
@@ -24,7 +24,7 @@ const APP_ICON = "/icons/icon-192.png";
 
 /** Feature requests. Prefilled subject so they are easy to triage in the inbox. */
 function featureMailto(subject: string) {
-	return "mailto:info@fieldmaps.app?subject=" + encodeURIComponent(subject);
+	return "mailto:robert@wolffgang.de?subject=" + encodeURIComponent(subject);
 }
 
 /** TODO: update once the repository is renamed (see AGENTS.md). */
@@ -45,6 +45,13 @@ export class LandingView extends LitElement {
 		goToMap(id);
 	}
 
+	private openLegal(event: MouseEvent) {
+		if (event.defaultPrevented || event.button !== 0) return;
+		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		event.preventDefault();
+		goToLegal();
+	}
+
 	render() {
 		const t = strings();
 		const lang = currentLang();
@@ -57,6 +64,11 @@ export class LandingView extends LitElement {
 						<h1 class="landing-title">Field Maps</h1>
 					</div>
 					<p class="landing-tagline">${t.tagline}</p>
+					<!-- The app covers one field and one field only. Say so above the fold,
+					     before someone installs it expecting their own event. -->
+					<p class="landing-site">
+						<span class="landing-site-pin" aria-hidden="true">📍</span>${t.site}
+					</p>
 					<p class="landing-intro">${t.intro}</p>
 				</header>
 
@@ -79,6 +91,7 @@ export class LandingView extends LitElement {
 				</aside>
 
 				<h2 class="landing-section">${t.sectionEvents}</h2>
+				<p class="landing-section-note">${t.sectionEventsNote}</p>
 				<ul class="event-grid">
 					${(() => {
 						const ordered = mapsByDate();
@@ -149,7 +162,7 @@ export class LandingView extends LitElement {
 							<span class="action-icon" aria-hidden="true">✉</span>
 							<span class="action-text">
 								<span class="action-label">${t.featureLabel}</span>
-								<span class="action-sub">info@fieldmaps.app</span>
+								<span class="action-sub">robert@wolffgang.de</span>
 							</span>
 						</a>
 						<a class="action" href=${REPO_URL} target="_blank" rel="noopener">
@@ -162,6 +175,15 @@ export class LandingView extends LitElement {
 					</div>
 
 					<p class="landing-fineprint">${t.fineprint}</p>
+
+					<!-- § 5 DDG: the Impressum has to be easy to spot and reachable from
+					     anywhere in the app. Its own link, in the footer where people look
+					     for it, and a real href so it can be opened in a tab or shared. -->
+					<p class="landing-legal">
+						<a href=${LEGAL_URL} @click=${(e: MouseEvent) => this.openLegal(e)}
+							>${t.legal.linkLabel}</a
+						>
+					</p>
 				</footer>
 			</div>
 		`;

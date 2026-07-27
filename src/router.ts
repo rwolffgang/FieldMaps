@@ -16,6 +16,27 @@ import { MAPS } from "./config.js";
 
 const MAP_PARAM = "map";
 
+// The legal page rides on the same idea, on its own parameter: /?page=impressum.
+// § 5 DDG wants it permanently available, which here means it has to resolve from
+// the service worker cache like everything else — so, again, no path rewriting.
+const PAGE_PARAM = "page";
+const LEGAL_PAGE = "impressum";
+
+/** The shareable URL of the Impressum / privacy page. */
+export const LEGAL_URL = `?${PAGE_PARAM}=${LEGAL_PAGE}`;
+
+/** True when the URL asks for the legal page. */
+export function routedLegal(): boolean {
+	return new URLSearchParams(location.search).get(PAGE_PARAM) === LEGAL_PAGE;
+}
+
+/** Open the legal page, adding a history entry so Back returns where you were. */
+export function goToLegal() {
+	if (routedLegal()) return;
+	history.pushState({ [PAGE_PARAM]: LEGAL_PAGE }, "", LEGAL_URL);
+	notify();
+}
+
 /** The map id in the current URL, or null for the landing page. Unknown ids are null. */
 export function routedMapId(): string | null {
 	const id = new URLSearchParams(location.search).get(MAP_PARAM);
@@ -34,9 +55,9 @@ export function goToMap(id: string) {
 	notify();
 }
 
-/** Return to the overview. */
+/** Return to the overview, from a map or from the legal page. */
 export function goHome() {
-	if (routedMapId() === null) return;
+	if (routedMapId() === null && !routedLegal()) return;
 	history.pushState({}, "", location.pathname);
 	notify();
 }
