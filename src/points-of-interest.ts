@@ -245,3 +245,16 @@ export function labelPointsOfInterest(poiNames: Record<string, string>): Labeled
 		return name == null ? [] : [{ ...poi, name }];
 	});
 }
+
+/**
+ * Order for a list a player scans by eye: the numbered buildings in ascending
+ * numeric order, then the wind turbines (which have names, not numbers) grouped
+ * at the end, alphabetically.
+ */
+export function comparePointsOfInterest(a: PointOfInterest, b: PointOfInterest): number {
+	const aTurbine = isWindTurbine(a.id);
+	const bTurbine = isWindTurbine(b.id);
+	if (aTurbine !== bTurbine) return aTurbine ? 1 : -1;
+	if (aTurbine) return a.id.localeCompare(b.id);
+	return Number(a.id) - Number(b.id);
+}

@@ -23,9 +23,22 @@
 	--top-row-1-h: 36px;
 	--compass-h: 40px;
 	--nav-card-h: 62px;
-	--top-row-2: calc(var(--top-inset) + var(--top-row-1-h) + var(--top-row-gap));
+	--grid-axis-h: 16px;
+	--stack-grid-axis: 0px;
+	--top-row-2: calc(
+		var(--top-inset) + var(--stack-grid-axis) + var(--top-row-1-h) + var(--top-row-gap)
+	);
 	--stack-compass: 0px;
 	--stack-nav: 0px;
+}
+/* The grid's column letters take a row of their own above everything else, rather
+   than sharing the top edge with the PoI select — a letter parked behind that pill
+   for the whole match is a letter you never get to read. Declared on the same
+   element as the row arithmetic above, because a custom property resolves its
+   var()s where it is declared: an override on `body` would never reach
+   `--top-row-2`. */
+:root:has(map-view:not([hidden]) .grid-axis-x) {
+	--stack-grid-axis: calc(var(--grid-axis-h) + var(--top-row-gap));
 }
 body:has(#enable-compass:not([hidden])) {
 	--stack-compass: calc(var(--compass-h) + var(--top-row-gap));
@@ -599,7 +612,7 @@ legal-view {
 /* Points of interest — top left */
 .poi-panel {
 	position: fixed;
-	top: var(--top-inset);
+	top: calc(var(--top-inset) + var(--stack-grid-axis));
 	left: 12px;
 	z-index: 1000;
 	display: flex;
@@ -663,10 +676,35 @@ legal-view {
 	filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
 }
 .nav-info {
+	flex: 1;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	min-width: 0;
+}
+/* The one-tap way out of navigation. The select's placeholder does the same, but
+   that is two taps and a scroll past sixty buildings. */
+.nav-stop {
+	flex-shrink: 0;
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	background: rgba(255, 255, 255, 0.06);
+	color: #8b98a5;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 50%;
+	font-size: 20px;
+	line-height: 1;
+	font-family: inherit;
+	cursor: pointer;
+}
+.nav-stop:hover,
+.nav-stop:focus-visible {
+	background: rgba(255, 255, 255, 0.12);
+	color: #e6edf3;
+	outline: none;
 }
 .nav-distance {
 	font-size: 18px;
@@ -893,6 +931,93 @@ legal-view {
 	border-color: rgba(255, 120, 120, 0.5);
 	cursor: pointer;
 }
+/* ---------------------------------------------------------------------------
+   Grid axis labels — the coordinate grid's column letters and row numbers, held
+   against the top and left edges of the screen while the squares they name scroll
+   underneath, the way a table keeps its headers in view. Same bare white-on-shadow
+   treatment as the scale bar: this is map furniture, not another control, and it
+   has to stay readable over the pale themes as well as the near-black ones.
+
+   Both strips are `position: fixed` boxes that clip their contents, so a label can
+   never spill past the edge it belongs to, and JS only has to move it along one
+   axis (`updateGridAxis`). The numbers start below the letters row — in a table the
+   corner belongs to the column headers.
+   --------------------------------------------------------------------------- */
+.grid-axis {
+	position: fixed;
+	/* Above the map panes (Leaflet tops out at 700), below the chrome (1000): a
+	   letter passing behind the PoI pill should lose, not cover it. */
+	z-index: 900;
+	overflow: hidden;
+	pointer-events: none;
+}
+.grid-axis-x {
+	top: var(--top-inset);
+	left: 0;
+	right: 0;
+	height: var(--grid-axis-h);
+}
+.grid-axis-y {
+	top: calc(var(--top-inset) + var(--stack-grid-axis));
+	bottom: 0;
+	left: 0;
+	width: 20px;
+}
+.grid-axis-label {
+	position: absolute;
+	top: 0;
+	left: 0;
+	/* Set by `updateGridAxis`; until then the label sits at the strip's origin. */
+	color: #f2f6fa;
+	font-size: 12px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.02em;
+	opacity: 0.9;
+	text-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.85),
+		0 0 3px rgba(0, 0, 0, 0.6);
+}
+.grid-axis-x .grid-axis-label {
+	line-height: var(--grid-axis-h);
+}
+.grid-axis-y .grid-axis-label {
+	left: 4px;
+	line-height: 1;
+}
+
+/* Scale bar — its own row in the HUD, right-aligned, sitting just above the
+   recenter and layer buttons. Deliberately *not* a pill like the rest of the
+   chrome: every mapping app draws this as a bare bracketed line over the map,
+   and that is what makes it read as a scale rather than as another control.
+   The dark shadow under white keeps it legible on the pale themes too. */
+.scale {
+	align-self: flex-end;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 3px;
+	pointer-events: none;
+}
+.scale-label {
+	color: #f2f6fa;
+	font-size: 12px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.01em;
+	text-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.85),
+		0 0 3px rgba(0, 0, 0, 0.6);
+}
+.scale-bar {
+	/* Width is set by `updateScale`; 0 until the first fix of the zoom arrives. */
+	height: 7px;
+	border: 2px solid #f2f6fa;
+	border-top: none;
+	border-radius: 0 0 2px 2px;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+
 .hud-right {
 	display: flex;
 	align-items: flex-end;
@@ -1036,7 +1161,7 @@ legal-view {
 /* Testing aid: paste "lat, lng" from Google Maps. */
 #test-coords {
 	position: fixed;
-	top: var(--top-inset);
+	top: calc(var(--top-inset) + var(--stack-grid-axis));
 	right: 12px;
 	left: auto;
 	z-index: 1000;

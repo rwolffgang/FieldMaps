@@ -125,10 +125,12 @@ interface Strings {
 	backToOverview: string;
 	navigateTo: string;
 	navigateHere: string;
+	navStop: string;
 	navArrived: string;
 	navEnableCompass: string;
 	navOffField: string;
 	navHints: Record<NavigationHint, string>;
+	scale: string;
 	layers: string;
 	layerPoiIds: string;
 	layerGrid: string;
@@ -184,6 +186,7 @@ const STRINGS: Record<Lang, Strings> = {
 		backToOverview: "Zur Übersicht",
 		navigateTo: "Navigieren zu…",
 		navigateHere: "Hierhin navigieren",
+		navStop: "Navigation beenden",
 		navArrived: "Du bist da",
 		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
 		navOffField: "Du stehst außerhalb dieses Spielfelds",
@@ -195,6 +198,7 @@ const STRINGS: Record<Lang, Strings> = {
 			turnLeft: "Links abbiegen",
 			bearLeft: "Halb links",
 		},
+		scale: "Maßstab",
 		layers: "Kartenebenen",
 		layerPoiIds: "PoI-Nummern",
 		layerGrid: "Gitternetz",
@@ -368,6 +372,7 @@ const STRINGS: Record<Lang, Strings> = {
 		backToOverview: "Back to the overview",
 		navigateTo: "Navigate to…",
 		navigateHere: "Navigate here",
+		navStop: "End navigation",
 		navArrived: "You have arrived",
 		navEnableCompass: "Enable compass for turn hints",
 		navOffField: "You are outside this field",
@@ -379,6 +384,7 @@ const STRINGS: Record<Lang, Strings> = {
 			turnLeft: "Turn left",
 			bearLeft: "Bear left",
 		},
+		scale: "Scale",
 		layers: "Map layers",
 		layerPoiIds: "PoI numbers",
 		layerGrid: "Grid",

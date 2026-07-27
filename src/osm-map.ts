@@ -452,6 +452,26 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 	return group;
 }
 
+/**
+ * Grid spacing in metres — the 100 m squares the printed maps use (LIGHT-SIM's is a
+ * real UTM zone 32N grid at that pitch, see `src/scenarios/light-sim.ts`), and the
+ * step the scale bar reads against.
+ */
+export const GRID_STEP_M = 100;
+
+/**
+ * Name of a grid column, counting from the canvas's left edge: A…Z, then AA, AB —
+ * spreadsheet lettering, so the scheme cannot run out however wide the field gets.
+ * Rows are simply numbered from the top edge, matching the pixel convention.
+ */
+export function gridColumnLabel(index: number): string {
+	let label = "";
+	for (let n = index; n >= 0; n = Math.floor(n / 26) - 1) {
+		label = String.fromCharCode(65 + (n % 26)) + label;
+	}
+	return label;
+}
+
 export interface BuildGridOptions {
 	/** Canvas pixel -> Leaflet LatLng. */
 	pixelProject: PixelProjectFn;

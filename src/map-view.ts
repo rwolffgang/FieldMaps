@@ -12,13 +12,15 @@ import {
 	type MapDefinition,
 	type LabeledPointOfInterest,
 } from "./config.js";
-import { isWindTurbine } from "./points-of-interest.js";
+import { comparePointsOfInterest, isWindTurbine } from "./points-of-interest.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
 	buildOsmLayer,
 	buildOsmGrid,
 	buildOsmFrame,
+	gridColumnLabel,
 	osmSurroundColor,
+	GRID_STEP_M,
 	type OsmFeatureCollection,
 } from "./osm-map.js";
 import { goHome, goToMap, routedMapId } from "./router.js";
@@ -41,6 +43,21 @@ const ARRIVED_DISTANCE_M = 8;
  * ~10 m, so anything in between separates the two cases.
  */
 const SAME_PLACE_M = 5;
+
+/**
+ * Longest the scale bar may get, in screen pixels. The bar is then drawn at the
+ * nicest round distance that still fits, so its real length is anywhere between
+ * 40% and 100% of this — which is why it stays well clear of the recenter button
+ * beneath it even at its widest.
+ */
+const SCALE_MAX_PX = 110;
+
+/**
+ * How much of a grid square has to be on screen before its axis label is drawn, in
+ * screen pixels. Below that the square is a sliver at the edge of the display and
+ * its letter would sit on top of the neighbour's.
+ */
+const GRID_AXIS_MIN_PX = 20;
 
 // --- Keeping the vector map painted while you drag -------------------------------
 //
@@ -131,6 +148,45 @@ function polygonCenter(ring: L.LatLngExpression[]): L.LatLngExpression {
 	return [lat / ring.length, lng / ring.length];
 }
 
+/**
+ * The roundest distance that still fits in `maxMeters` — 1, 2 or 5 times a power
+ * of ten, the sequence every mapping app's scale bar steps through. Never returns
+ * more than it was given, so the bar always fits its budget.
+ */
+function niceDistance(maxMeters: number): number {
+	const decade = 10 ** Math.floor(Math.log10(maxMeters));
+	for (const step of [5, 2]) {
+		if (step * decade <= maxMeters) return step * decade;
+	}
+	return decade;
+}
+
+/** A scale-bar distance in metres, written the way it is read: `500 m`, `2 km`. */
+function formatScaleDistance(meters: number): string {
+	// The 1-2-5 steps make every kilometre value a whole number, so no decimals
+	// (and no locale-dependent decimal separator) are ever needed here.
+	return meters >= 1000 ? `${meters / 1000} km` : `${meters} m`;
+}
+
+/**
+ * Give an axis strip exactly `count` label elements, reusing the ones already there.
+ * The strips are written by hand rather than through Lit because they are repositioned
+ * on every frame of a drag — see `updateGridAxis`.
+ */
+function fillAxisStrip(strip: HTMLElement, count: number, label: (index: number) => string) {
+	while (strip.childElementCount > count) strip.lastElementChild?.remove();
+	while (strip.childElementCount < count) {
+		const span = document.createElement("span");
+		span.className = "grid-axis-label";
+		strip.appendChild(span);
+	}
+	for (let i = 0; i < count; i++) {
+		const element = strip.children[i] as HTMLElement;
+		const text = label(i);
+		if (element.textContent !== text) element.textContent = text;
+	}
+}
+
 function loadStoredToggles(): Toggles {
 	try {
 		const raw = localStorage.getItem(TOGGLES_KEY);
@@ -156,6 +212,8 @@ export class MapView extends LitElement {
 	private vectorLayer: L.LayerGroup | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
 	private gridLayer: L.LayerGroup | null = null;
+	/** Grid spacing in canvas pixels, 0 while no grid is drawn. Also sizes the axis labels. */
+	private gridStepPx = 0;
 	private frameLayer: L.LayerGroup | null = null;
 	private maskLayer: L.LayerGroup | null = null;
 	private zonesLayer: L.LayerGroup | null = null;
@@ -254,6 +312,15 @@ export class MapView extends LitElement {
 			this.clipCenter = this.map.getCenter();
 			this.clipZoom = this.map.getZoom();
 		});
+
+		// Leaflet fires `zoom` on every frame of a pinch and once per animated zoom, so
+		// the bar tracks the gesture rather than snapping to its result.
+		this.map.on("zoom zoomend", () => this.updateScale());
+
+		// The axis labels ride the map, so they follow every frame of a drag or a pinch
+		// rather than catching up when it ends — a label that lagged the squares under it
+		// would be worse than none.
+		this.map.on("move zoom moveend zoomend", () => this.updateGridAxis());
 
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
@@ -377,6 +444,10 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.gridLayer);
 			this.gridLayer = null;
 		}
+		// Emptied here, not when the new grid arrives: the vector load is async, and a
+		// stale set of letters over the map being loaded would be pointing at nothing.
+		this.gridStepPx = 0;
+		this.syncGridAxis();
 		if (this.frameLayer) {
 			this.map.removeLayer(this.frameLayer);
 			this.frameLayer = null;
@@ -413,6 +484,8 @@ export class MapView extends LitElement {
 		this.renderZones(definition);
 		this.renderHeadquarters(definition);
 		this.fitInitial(definition);
+		// New calibration, and usually a new zoom — both feed the scale bar.
+		this.updateScale();
 		this.following = true;
 
 		if (this.lastGps) {
@@ -457,16 +530,20 @@ export class MapView extends LitElement {
 
 			// Coordinate grid as its own toggleable layer (100 m, matching the scale bar).
 			if (this.gridLayer) this.map.removeLayer(this.gridLayer);
+			this.gridStepPx = this.transform.metersToPixels(GRID_STEP_M);
 			this.gridLayer = buildOsmGrid({
 				pixelProject,
 				width: this.mapWidth,
 				height: this.mapHeight,
-				stepPx: this.transform.metersToPixels(100),
+				stepPx: this.gridStepPx,
 				theme,
 				pane: "osm-grid",
 				renderer: this.canvasRenderers["osm-grid"],
 			});
 			if (this.toggles.grid) this.gridLayer.addTo(this.map);
+			// The squares are only half of the grid; the letters and numbers naming them
+			// are drawn as chrome, and this is the size they are counted off.
+			this.syncGridAxis();
 
 			// Clean border: opaque surround that clips the map to the grid rectangle.
 			if (this.frameLayer) this.map.removeLayer(this.frameLayer);
@@ -621,6 +698,8 @@ export class MapView extends LitElement {
 		if (!this.following || (this.framed && this.lastGps)) return;
 
 		this.fitInitial(getMapById(this.selectedMapId));
+		// The 0×0 framing was at `minZoom`; this one is real, so the bar has to follow.
+		this.updateScale();
 		// A fix that landed while the container was still 0×0 was applied at the wrong
 		// zoom; now that the framing is real, re-centre on it.
 		if (this.lastGps && !this.offMap && this.lastPixel) {
@@ -839,6 +918,13 @@ export class MapView extends LitElement {
 	/** Whether the current map can show the grid / mask toggles. */
 	private get hasGrid(): boolean {
 		return getMapById(this.selectedMapId).vectorData != null;
+	}
+	/**
+	 * The axis labels name the squares of the grid, so they come and go with it: with
+	 * the grid off there is nothing on screen for a letter to refer to.
+	 */
+	private get showGridAxis(): boolean {
+		return this.hasGrid && this.toggles.grid;
 	}
 	private get hasMask(): boolean {
 		return (getMapById(this.selectedMapId).playArea?.length ?? 0) >= 3;
@@ -1325,6 +1411,144 @@ export class MapView extends LitElement {
 		if (this.following && !this.offMap) this.map.panTo(latLng, { animate: true });
 	}
 
+	/**
+	 * Redraw the scale bar for the current zoom.
+	 *
+	 * There is no per-latitude distortion to correct for the way there is on a Web
+	 * Mercator map: the whole canvas is one uniform-scale similarity fit, so how much
+	 * ground a screen pixel covers depends on the zoom alone and the bar reads the
+	 * same wherever you have panned to.
+	 *
+	 * Written straight into the DOM rather than through Lit state, because this runs
+	 * on every frame of a pinch: a re-render would rebuild the PoI `<option>` list
+	 * (~180 elements) at that rate, which is exactly the per-frame work the vector
+	 * panes were moved to canvas to avoid.
+	 */
+	private updateScale() {
+		if (!this.map || !this.transform) return;
+		const scale = this.querySelector<HTMLElement>(".scale");
+		const bar = scale?.querySelector<HTMLElement>(".scale-bar");
+		const label = scale?.querySelector<HTMLElement>(".scale-label");
+		if (!scale || !bar || !label) return;
+
+		// Through the CRS rather than 2**zoom by hand, so this follows the projection.
+		const screenPerCanvasPx = this.map.getZoomScale(this.map.getZoom(), 0);
+		const metersPerScreenPx = this.transform.pixelsToMeters(1) / screenPerCanvasPx;
+		if (!Number.isFinite(metersPerScreenPx) || metersPerScreenPx <= 0) return;
+
+		const meters = niceDistance(metersPerScreenPx * SCALE_MAX_PX);
+		const text = formatScaleDistance(meters);
+		bar.style.width = `${Math.round(meters / metersPerScreenPx)}px`;
+		if (label.textContent !== text) {
+			label.textContent = text;
+			scale.setAttribute("aria-label", `${t.scale}: ${text}`);
+		}
+	}
+
+	/**
+	 * Build (or rebuild) the axis label elements for the current grid, then place them.
+	 * How many there are depends on the canvas and the grid step alone, so this runs on
+	 * a map load or a toggle — the per-frame work is `updateGridAxis`.
+	 */
+	private syncGridAxis() {
+		const columns = this.querySelector<HTMLElement>(".grid-axis-x");
+		const rows = this.querySelector<HTMLElement>(".grid-axis-y");
+		if (!columns || !rows) return;
+
+		const count = (extent: number) =>
+			this.gridStepPx > 0 ? Math.ceil(extent / this.gridStepPx) : 0;
+		fillAxisStrip(columns, count(this.mapWidth), gridColumnLabel);
+		fillAxisStrip(rows, count(this.mapHeight), (index) => String(index + 1));
+		this.updateGridAxis();
+	}
+
+	/**
+	 * Slide the grid's column letters and row numbers along the edges of the screen to
+	 * wherever their squares currently are — the map's own sticky table header.
+	 *
+	 * Written straight into the DOM for the same reason the scale bar is: this runs on
+	 * every frame of a drag, and a Lit re-render would rebuild the PoI `<option>` list
+	 * at that rate.
+	 */
+	private updateGridAxis() {
+		if (!this.map || this.gridStepPx <= 0) return;
+		const columns = this.querySelector<HTMLElement>(".grid-axis-x");
+		const rows = this.querySelector<HTMLElement>(".grid-axis-y");
+		if (!columns || !rows) return;
+
+		// Canvas pixels reach the screen through a scale and an offset — CRS.Simple, and
+		// a similarity fit before it — so two projected points describe the whole mapping
+		// and no per-line projection is needed on a frame that has to be cheap.
+		//
+		// Take the two *opposite corners* of the canvas as those points. Leaflet rounds
+		// container points to whole pixels, so a short baseline measures the scale as the
+		// ratio of two rounded numbers: one canvas pixel apart, a zoomed-out map reads
+		// back as 1 screen pixel per canvas pixel and every label lands in the wrong
+		// square. Across the whole field that same half-pixel is a rounding error of one
+		// part in two thousand.
+		const origin = this.map.latLngToContainerPoint(this.px2ll(0, 0));
+		const far = this.map.latLngToContainerPoint(this.px2ll(this.mapWidth, this.mapHeight));
+		const scaleX = (far.x - origin.x) / this.mapWidth;
+		const scaleY = (far.y - origin.y) / this.mapHeight;
+		const container = this.map.getContainer().getBoundingClientRect();
+		// The strips are `position: fixed`, so their own boxes give both the range a label
+		// may occupy and the origin its offset is measured from. Reading them here keeps
+		// the layout (safe areas, the row the letters sit in) in CSS where it belongs.
+		const columnsBox = columns.getBoundingClientRect();
+		const rowsBox = rows.getBoundingClientRect();
+
+		this.placeAxisLabels(columns, this.mapWidth, columnsBox.left, columnsBox.right, "x", (px) => {
+			return container.left + origin.x + px * scaleX;
+		});
+		this.placeAxisLabels(rows, this.mapHeight, rowsBox.top, rowsBox.bottom, "y", (py) => {
+			return container.top + origin.y + py * scaleY;
+		});
+	}
+
+	/**
+	 * Put each label in the middle of *the visible part* of its square, dropping the ones
+	 * whose square is off screen or down to a sliver. That is what makes the strips read
+	 * like sticky headers: a square running off the edge keeps its label, which slides
+	 * along the border until the square itself is gone.
+	 */
+	private placeAxisLabels(
+		strip: HTMLElement,
+		extentPx: number,
+		min: number,
+		max: number,
+		axis: "x" | "y",
+		project: (canvasPx: number) => number,
+	) {
+		for (let i = 0; i < strip.childElementCount; i++) {
+			const label = strip.children[i] as HTMLElement;
+			// The last square is clipped by the canvas edge, not by the grid step.
+			const from = project(i * this.gridStepPx);
+			const to = project(Math.min((i + 1) * this.gridStepPx, extentPx));
+			const start = Math.max(from, min);
+			const end = Math.min(to, max);
+			if (end - start < GRID_AXIS_MIN_PX) {
+				label.style.display = "none";
+				continue;
+			}
+			const center = Math.round((start + end) / 2 - min);
+			label.style.display = "";
+			label.style.transform =
+				axis === "x"
+					? `translate(calc(${center}px - 50%), 0)`
+					: `translate(0, calc(${center}px - 50%))`;
+		}
+	}
+
+	/**
+	 * A render can have just created the axis strips (the grid toggle, or a map switch),
+	 * and Lit only ever gives them back empty — the labels inside are ours. Refilling
+	 * them is idempotent and costs a walk over a few dozen spans, so it can simply run
+	 * after every render rather than trying to guess which ones mattered.
+	 */
+	updated() {
+		this.syncGridAxis();
+	}
+
 	private recenter() {
 		this.following = true;
 		// Off-map: re-following would pan into empty background, so snap back to the
@@ -1343,14 +1567,25 @@ export class MapView extends LitElement {
 		return html`
 			<div id="map"></div>
 			${
+				this.showGridAxis
+					? html`
+							<!-- The grid's column letters and row numbers, pinned to the top and left
+							     edges. Filled and positioned by \`syncGridAxis\` / \`updateGridAxis\`,
+							     so this markup stays empty and static. -->
+							<div class="grid-axis grid-axis-x" aria-hidden="true"></div>
+							<div class="grid-axis grid-axis-y" aria-hidden="true"></div>
+						`
+					: ""
+			}
+			${
 				pointsOfInterest.length > 0
 					? html`
 							<div class="poi-panel">
 								<select class="poi-select" .value=${this.selectedPoiId} @change=${this.onPoiSelect}>
 									<option value="">${t.navigateTo}</option>
-									${pointsOfInterest.map(
-										(poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `,
-									)}
+									${[...pointsOfInterest]
+										.sort(comparePointsOfInterest)
+										.map((poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `)}
 								</select>
 								${
 									selectedPoi
@@ -1364,6 +1599,15 @@ export class MapView extends LitElement {
 														<span class="nav-distance">${this.navDistanceM.toFixed(0)} m</span>
 														<span class="nav-hint">${this.navHint}</span>
 													</div>
+													<button
+														type="button"
+														class="nav-stop"
+														title=${t.navStop}
+														aria-label=${t.navStop}
+														@click=${() => this.clearNavigation()}
+													>
+														×
+													</button>
 												</div>
 											`
 										: ""
@@ -1382,6 +1626,12 @@ export class MapView extends LitElement {
 						@click=${() => this.retryVectorMap()}
 						>${this.status}</span
 					>
+				</div>
+				<!-- Scale bar, lower right above the controls. Its contents are written by
+				     updateScale() on every zoom, so keep this markup static. -->
+				<div class="scale" role="img" aria-label=${t.scale}>
+					<span class="scale-label"></span>
+					<span class="scale-bar"></span>
 				</div>
 				<div class="hud-controls">
 					<div class="hud-left">

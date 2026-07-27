@@ -8,7 +8,7 @@ export default defineConfig({
 	base: "./",
 	preview: {
 		host: true,
-		port: 4173,
+		port: 5100,
 		// Localtunnel uses random *.loca.lt subdomains; allow the whole domain.
 		allowedHosts: [".loca.lt"],
 	},
