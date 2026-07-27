@@ -1,5 +1,6 @@
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { guard } from "lit/directives/guard.js";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { solveTransform, type Transform } from "./transform.js";
@@ -15,14 +16,19 @@ import {
 import { comparePointsOfInterest, isWindTurbine } from "./points-of-interest.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
-	buildOsmLayer,
-	buildOsmGrid,
-	buildOsmFrame,
+	bakeOsm,
+	bakeShape,
 	gridColumnLabel,
 	osmSurroundColor,
 	GRID_STEP_M,
+	type BakedGeometry,
+	type BakedLine,
+	type BakedShape,
+	type BakedZone,
 	type OsmFeatureCollection,
+	type TileScene,
 } from "./osm-map.js";
+import { BasemapLayer } from "./basemap-layer.js";
 import { goHome, goToMap, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
 import { strings } from "./i18n.js";
@@ -59,50 +65,29 @@ const SCALE_MAX_PX = 110;
  */
 const GRID_AXIS_MIN_PX = 20;
 
-// --- Keeping the vector map painted while you drag -------------------------------
+// --- What is a layer here, and what is not ---------------------------------------
 //
-// Leaflet re-clips vector layers on `moveend` only: mid-drag it just slides the SVG
-// panes, so once the pan leaves the drawn area the map is blank until you let go.
-// Two knobs fix that together — a buffer around the viewport, plus a redraw during
-// the drag once that buffer is nearly used up.
+// Everything on this map that does not move — terrain, grid, out-of-bounds mask,
+// zones, frontlines, border — is painted into the basemap's tiles (see
+// `src/basemap-layer.ts`), NOT added as a Leaflet layer. A tile is rasterized once
+// and afterwards only translated, so a drag costs a CSS transform and nothing else.
 //
-// RENDER_BUFFER is Leaflet's renderer `padding`: how far past the viewport, as a
-// fraction of it per side, stays drawn (its default is 0.1). It has to stay small.
-// The panes are *painted* at that size, at device pixel ratio, so a buffer wide
-// enough to cover a whole gesture on its own (padding 1 = nine viewports per pane)
-// stalls the first frame of a drag for a few hundred milliseconds.
+// Leaflet layers are reserved for the things that move: the position marker and its
+// accuracy circle, the navigation route, the PoI dots and turbine glyphs, the faction
+// emblems, the zone labels. That leaves two vector paths on the map, which is why the
+// renderer buffering this file used to carry — a padded canvas per pane plus a
+// synthetic `moveend` fired several times per drag to repaint them — is gone.
 //
-// RECLIP_FRACTION is how much of the buffer a pan may eat before we redraw instead of
-// waiting for the drop. Leaflet already does this for tile layers — GridLayer re-runs
-// its `moveend` work on `move`, throttled — the vector renderers just never got the
-// equivalent. Each redraw costs exactly one drop-redraw, a handful of times per drag.
-//
-// Tune them against each other: if a drag ever feels heavy, shrink RENDER_BUFFER
-// (less to paint per redraw) and raise RECLIP_FRACTION (fewer redraws); if the leading
-// edge flashes blank on a fast flick, do the opposite.
-const RENDER_BUFFER = 0.2;
-const RECLIP_FRACTION = 0.5;
+// Add something static and it belongs in `paintTile`. Add something that follows the
+// user and it belongs here.
 
-// Set on `Renderer` itself rather than passed as the map's `renderer` option: every
-// layer here draws into a custom pane, and Leaflet builds those pane renderers itself
-// (`Map._createRenderer`), passing only the pane name — map-level renderer options
-// never reach them.
-L.Renderer.mergeOptions({ padding: RENDER_BUFFER });
-
-// --- Why the terrain draws to <canvas> and the masks stay SVG --------------------
-//
-// The OSM base is ~380 separate paths. As SVG that is 380 DOM elements the browser
-// has to style, lay out and rasterize on every redraw, in a full-viewport layer at
-// device pixel ratio — and a redraw happens several times per drag, not just on drop.
-// Measured on a 1280×720 desktop at DPR 2 that was ~36 Mpx of vector rasterization
-// per redraw across five stacked layers, which is what made dragging crawl. The JS
-// was never the problem (~2.7 ms); the rasterization it triggers was.
-//
-// Canvas collapses each of those panes into one bitmap and one draw call per shape,
-// with no DOM behind it. The mask and zone panes stay SVG on purpose: their hatching
-// is an injected SVG `<pattern>` referenced from CSS, which canvas cannot express —
-// and they are only a handful of paths each, so they were never the expensive part.
-const CANVAS_PANES = ["osm-basemap", "osm-grid", "osm-frame"] as const;
+/**
+ * Maximum zoom, in screen pixels per canvas pixel — and the canvas is very nearly one
+ * pixel per metre, so this is 4 px/m: about a hundred metres of ground across a phone
+ * screen. Beyond that there is no more detail in the OSM data to show, and every extra
+ * level doubles what the basemap has to rasterize.
+ */
+const MAX_ZOOM = 2;
 
 /**
  * Which map to show on first paint. The URL wins — a bookmarked `?map=…` must open
@@ -169,19 +154,60 @@ function formatScaleDistance(meters: number): string {
 }
 
 /**
- * Give an axis strip exactly `count` label elements, reusing the ones already there.
- * The strips are written by hand rather than through Lit because they are repositioned
- * on every frame of a drag — see `updateGridAxis`.
+ * What `placeAxis` remembers between frames, so a drag can get away with translating
+ * the strip: where the strip's own box is, what zoom the labels inside were laid out
+ * for, and which of them are currently displaced from that layout.
+ */
+interface AxisCache {
+	/** The strip's box along its own axis, in viewport coordinates. NaN = re-measure. */
+	min: number;
+	max: number;
+	/** Screen pixels per canvas pixel the label offsets were written for. */
+	scale: number;
+	/** The track translation currently written, to skip a no-op frame. */
+	offset: number;
+	adjusted: HTMLElement[];
+}
+
+function freshAxis(): AxisCache {
+	return { min: NaN, max: NaN, scale: NaN, offset: NaN, adjusted: [] };
+}
+
+/**
+ * The element inside a strip that actually carries the labels — and the pan.
+ *
+ * The strip is what the screen sees: fixed to an edge and `overflow: hidden`, so a
+ * label whose square has scrolled away is clipped instead of being hidden by hand. The
+ * track is what moves. They have to be two elements: a clip travels with its own
+ * element's transform, so translating the strip would drag its clipping rectangle off
+ * the screen along with everything in it.
+ */
+function axisTrack(strip: HTMLElement): HTMLElement {
+	const existing = strip.firstElementChild;
+	if (existing instanceof HTMLElement && existing.classList.contains("grid-axis-track")) {
+		return existing;
+	}
+	const track = document.createElement("div");
+	track.className = "grid-axis-track";
+	strip.replaceChildren(track);
+	return track;
+}
+
+/**
+ * Give an axis track exactly `count` label elements, reusing the ones already there.
+ * They are written by hand rather than through Lit because they are repositioned on
+ * every frame of a drag — see `updateGridAxis`.
  */
 function fillAxisStrip(strip: HTMLElement, count: number, label: (index: number) => string) {
-	while (strip.childElementCount > count) strip.lastElementChild?.remove();
-	while (strip.childElementCount < count) {
+	const track = axisTrack(strip);
+	while (track.childElementCount > count) track.lastElementChild?.remove();
+	while (track.childElementCount < count) {
 		const span = document.createElement("span");
 		span.className = "grid-axis-label";
-		strip.appendChild(span);
+		track.appendChild(span);
 	}
 	for (let i = 0; i < count; i++) {
-		const element = strip.children[i] as HTMLElement;
+		const element = track.children[i] as HTMLElement;
 		const text = label(i);
 		if (element.textContent !== text) element.textContent = text;
 	}
@@ -209,14 +235,26 @@ export class MapView extends LitElement {
 	private marker!: L.Marker;
 	private accuracyCircle!: L.Circle;
 	private imageOverlay: L.ImageOverlay | null = null;
-	private vectorLayer: L.LayerGroup | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
-	private gridLayer: L.LayerGroup | null = null;
 	/** Grid spacing in canvas pixels, 0 while no grid is drawn. Also sizes the axis labels. */
 	private gridStepPx = 0;
-	private frameLayer: L.LayerGroup | null = null;
-	private maskLayer: L.LayerGroup | null = null;
-	private zonesLayer: L.LayerGroup | null = null;
+	/** Sticky axis labels: per-strip layout state, and the frame they are placed on. */
+	private axisX = freshAxis();
+	private axisY = freshAxis();
+	private axisSignature = "";
+	private gridAxisFrame = 0;
+	/** The tiled basemap: terrain, grid, mask, zones, border. Built on the first OSM map. */
+	private basemap: BasemapLayer | null = null;
+	/** The baked geometry behind it, kept so a toggle can rebuild the scene without re-baking. */
+	private baked: {
+		/** Null until the OSM data lands, and for good on a photo map. */
+		osm: BakedGeometry | null;
+		playArea: BakedShape | null;
+		zones: BakedZone[];
+		lines: BakedLine[];
+	} | null = null;
+	/** The zones' names. The zones themselves are painted into the basemap. */
+	private zoneLabelsLayer: L.LayerGroup | null = null;
 	private hqLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
@@ -227,17 +265,12 @@ export class MapView extends LitElement {
 	private mapWidth = 0;
 	private mapHeight = 0;
 	private resizeObserver: ResizeObserver | null = null;
-	/** View the vector panes were last clipped around, for the mid-drag redraw. */
-	private clipCenter: L.LatLng | null = null;
-	private clipZoom = NaN;
 	/**
 	 * Whether the field has ever been framed while the container actually had a size.
 	 * `fitBounds` on a 0×0 container clamps to `minZoom` and stays there, so until this
 	 * is true the framing is a placeholder that has to be redone.
 	 */
 	private framed = false;
-	/** Canvas renderers for the terrain panes, keyed by pane name (see CANVAS_PANES). */
-	private canvasRenderers: Partial<Record<(typeof CANVAS_PANES)[number], L.Canvas>> = {};
 
 	@state() private status = t.waitingForGps;
 	@state() private following = true;
@@ -256,62 +289,31 @@ export class MapView extends LitElement {
 		this.map = L.map(this.querySelector("#map") as HTMLElement, {
 			crs: L.CRS.Simple,
 			minZoom: -4,
-			maxZoom: 4,
+			maxZoom: MAX_ZOOM,
 			zoomControl: false,
 			attributionControl: false,
 			// Fractional zoom. With Leaflet's default snap of 1, `fitBounds` rounds *down*
 			// to a whole power of two, so a field only slightly wider than the screen opens
-			// at half scale and wastes half the display. The field is a fixed-size canvas,
-			// not a tile pyramid, so there is no reason to quantise its zoom at all.
+			// at half scale and wastes half the display. The basemap's tiles absorb the
+			// difference (see MAX_OVERSAMPLE in basemap-layer.ts), so there is still no
+			// reason to quantise the zoom.
 			zoomSnap: 0,
+			// The basemap draws its own opaque surround, so a tile has nothing to fade in
+			// from — and a fade is a compositing pass per tile on exactly the frames a drag
+			// needs for itself.
+			fadeAnimation: false,
 		});
 
-		// Basemap pane for the OSM vector map: below overlayPane (400) so the accuracy
-		// circle, nav route, and markers all draw on top of it.
-		this.map.createPane("osm-basemap");
-		this.map.getPane("osm-basemap")!.style.zIndex = "250";
+		// A photo base goes below the basemap's tiles (tilePane is 200), so the mask and
+		// the zones the tiles paint land on top of the imagery. Nothing ships a photo base
+		// today, but the option is documented and this is what keeps it whole.
+		this.map.createPane("photo-base");
+		this.map.getPane("photo-base")!.style.zIndex = "190";
 
-		// Coordinate grid sits just above the terrain (like the printed map's grid),
-		// below the mask so out-of-bounds grid is dimmed too.
-		this.map.createPane("osm-grid");
-		this.map.getPane("osm-grid")!.style.zIndex = "260";
-
-		// Frame: opaque surround that clips the map to the grid rectangle. It sits above
-		// the mask and the zones too — a play area or a safe zone can legitimately run
-		// past the canvas edge (Dark Emergency's does), and nothing may render there.
-		this.map.createPane("osm-frame");
-		this.map.getPane("osm-frame")!.style.zIndex = "340";
-
-		// Out-of-bounds mask sits above the basemap (300) but below the overlay pane
-		// (400), so it dims the terrain while the GPS dot, route, and PoIs stay clear.
-		this.map.createPane("playarea-mask");
-		this.map.getPane("playarea-mask")!.style.zIndex = "300";
-
-		// Marked areas + frontlines from the printed map: above the mask (so a safe
-		// zone stays legible) but still below the overlay pane and its markers.
-		this.map.createPane("zones");
-		this.map.getPane("zones")!.style.zIndex = "320";
-
-		// One canvas renderer per terrain pane (see CANVAS_PANES). Built once and reused
-		// across map switches: the renderer owns the pane's <canvas>, so recreating it per
-		// load would leak a canvas each time.
-		for (const pane of CANVAS_PANES) {
-			this.canvasRenderers[pane] = L.canvas({ pane, padding: RENDER_BUFFER });
-		}
-
-		// Leaflet builds the mask pane's SVG lazily during a render; (re)inject the
-		// hatch pattern whenever the map renders. Idempotent, so it's safe to repeat.
-		this.map.on("load zoomend moveend", () => this.injectHatchPattern());
-
-		// Redraw while the view is still moving, before the pan runs off the drawn
-		// buffer (see RENDER_BUFFER). Covers drags, inertia flings and animated pans.
-		this.map.on("move", () => this.reclipIfPannedOut());
-		// Whatever ended the move (a real moveend, or our own) leaves the panes freshly
-		// clipped around this view: that is the point the next pan is measured from.
-		this.map.on("moveend zoomend", () => {
-			this.clipCenter = this.map.getCenter();
-			this.clipZoom = this.map.getZoom();
-		});
+		// Zone names: above the tiles, below the overlay pane (400) and its markers — the
+		// stacking the zones had when they were a vector layer of their own.
+		this.map.createPane("zone-labels");
+		this.map.getPane("zone-labels")!.style.zIndex = "320";
 
 		// Leaflet fires `zoom` on every frame of a pinch and once per animated zoom, so
 		// the bar tracks the gesture rather than snapping to its result.
@@ -319,8 +321,8 @@ export class MapView extends LitElement {
 
 		// The axis labels ride the map, so they follow every frame of a drag or a pinch
 		// rather than catching up when it ends — a label that lagged the squares under it
-		// would be worse than none.
-		this.map.on("move zoom moveend zoomend", () => this.updateGridAxis());
+		// would be worse than none. Coalesced into one frame's work; see `updateGridAxis`.
+		this.map.on("move zoom moveend zoomend", () => this.scheduleGridAxis());
 
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
@@ -370,40 +372,6 @@ export class MapView extends LitElement {
 		window.addEventListener("online", () => this.retryVectorMap());
 	}
 
-	/**
-	 * Re-clip the vector panes while the view is still moving, once the pan has eaten
-	 * RECLIP_FRACTION of the drawn buffer — otherwise the leading edge would stay blank
-	 * until the move ends. `moveend` is the event the renderers redraw on, so firing it
-	 * is the redraw; everything else listening to it here is idempotent. Zoom is the
-	 * exception: Leaflet scales the panes during a pinch and redraws them at the end,
-	 * so any pan measured across a zoom change is left to that redraw. Bail out on it
-	 * rather than redrawing — a pinch fires `move` every frame, and repainting every
-	 * vector pane per frame stalls the gesture so badly that the base map looks frozen
-	 * until the fingers lift while the markers, which are cheap, keep up.
-	 *
-	 * The budget is per axis. Leaflet's padding is a fraction of each dimension, so a
-	 * 1280×720 viewport keeps 256 px of buffer either side but only 144 px above and
-	 * below; measuring one diagonal distance against the *smaller* of the two spent the
-	 * generous horizontal buffer at the vertical rate, and horizontal is the direction
-	 * people actually drag. That alone roughly halves the redraws on a sideways pan
-	 * (128 px of travel instead of 72) while leaving each axis exactly as much margin
-	 * against a blank leading edge as it had before — which is why RECLIP_FRACTION
-	 * itself stays at 0.5. Now that a redraw is cheap there is little to win by raising
-	 * it, and a flick that outruns the buffer is a visible regression.
-	 */
-	private reclipIfPannedOut() {
-		const zoom = this.map.getZoom();
-		if (!this.clipCenter || this.clipZoom !== zoom) return;
-		const size = this.map.getSize();
-		const from = this.map.project(this.clipCenter, zoom);
-		const to = this.map.project(this.map.getCenter(), zoom);
-		const spent = RECLIP_FRACTION * RENDER_BUFFER;
-		if (Math.abs(to.x - from.x) < spent * size.x && Math.abs(to.y - from.y) < spent * size.y) {
-			return;
-		}
-		this.map.fire("moveend");
-	}
-
 	private currentPointsOfInterest(): LabeledPointOfInterest[] {
 		return getPointsOfInterestForMap(this.selectedMapId);
 	}
@@ -436,29 +404,17 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.imageOverlay);
 			this.imageOverlay = null;
 		}
-		if (this.vectorLayer) {
-			this.map.removeLayer(this.vectorLayer);
-			this.vectorLayer = null;
-		}
-		if (this.gridLayer) {
-			this.map.removeLayer(this.gridLayer);
-			this.gridLayer = null;
-		}
-		// Emptied here, not when the new grid arrives: the vector load is async, and a
-		// stale set of letters over the map being loaded would be pointing at nothing.
+		// The basemap survives a map switch — it is one layer holding one tile cache, and
+		// `setScene` repaints it — but its geometry does not, and neither do the letters
+		// naming the grid squares. Both are cleared here rather than when the new map's
+		// data arrives: that load is async, and a stale set of letters over the map being
+		// loaded would be pointing at nothing.
+		this.baked = null;
 		this.gridStepPx = 0;
 		this.syncGridAxis();
-		if (this.frameLayer) {
-			this.map.removeLayer(this.frameLayer);
-			this.frameLayer = null;
-		}
-		if (this.maskLayer) {
-			this.map.removeLayer(this.maskLayer);
-			this.maskLayer = null;
-		}
-		if (this.zonesLayer) {
-			this.map.removeLayer(this.zonesLayer);
-			this.zonesLayer = null;
+		if (this.basemap) {
+			this.map.removeLayer(this.basemap);
+			this.basemap = null;
 		}
 		if (this.hqLayer) {
 			this.map.removeLayer(this.hqLayer);
@@ -470,18 +426,30 @@ export class MapView extends LitElement {
 			[this.mapHeight, this.mapWidth],
 		];
 
-		// Match the container to the theme's surround, so whatever is not painted yet
-		// (outside the field, or a fling past the clip area) blends into the border.
+		// Match the container to the theme's surround, so everything past the edge of the
+		// field — where the basemap deliberately puts no tiles at all — is the border colour.
 		const container = this.map.getContainer();
 		container.style.background = definition.vectorData ? osmSurroundColor(definition.theme) : "";
+
+		// The overlays traced off the printed map are bakeable straight away; the OSM base
+		// has to be fetched first and arrives through `loadVectorMap`.
+		this.baked = {
+			osm: null,
+			playArea: this.bakePlayArea(definition.playArea),
+			...this.bakeZones(definition),
+		};
 
 		if (definition.vectorData) {
 			void this.loadVectorMap(definition, definition.vectorData);
 		} else if (definition.image) {
-			this.imageOverlay = L.imageOverlay(definition.image, bounds).addTo(this.map);
+			// Below the basemap's tiles (see the `photo-base` pane), so the mask and the
+			// zones still paint over a photo map the way they do over the vector one.
+			this.imageOverlay = L.imageOverlay(definition.image, bounds, { pane: "photo-base" }).addTo(
+				this.map,
+			);
 		}
-		this.renderPlayAreaMask(definition.playArea);
-		this.renderZones(definition);
+		this.syncBasemap(definition);
+		this.renderZoneLabels();
 		this.renderHeadquarters(definition);
 		this.fitInitial(definition);
 		// New calibration, and usually a new zoom — both feed the scale bar.
@@ -496,7 +464,7 @@ export class MapView extends LitElement {
 	}
 
 	/**
-	 * Fetch (once) and draw the bundled OSM GeoJSON as styled vector layers. The
+	 * Fetch (once) and bake the bundled OSM GeoJSON, then hand it to the basemap. The
 	 * file is precached by the service worker, so this resolves from cache offline.
 	 */
 	private async loadVectorMap(definition: MapDefinition, dataUrl: string) {
@@ -508,54 +476,17 @@ export class MapView extends LitElement {
 			}
 
 			// Guard against a map switch while the fetch was in flight.
-			if (this.selectedMapId !== definition.id || !this.transform) return;
+			if (this.selectedMapId !== definition.id || !this.transform || !this.baked) return;
 
-			const theme = definition.theme ?? "opt";
-			const pixelProject = (px: number, py: number) => this.px2ll(px, py);
+			// Projected once, here, into canvas pixels. GeoJSON hands over (lng, lat).
+			this.baked.osm = bakeOsm(data, (lng, lat) => this.transform.toPixel(lat, lng));
 
-			if (this.vectorLayer) this.map.removeLayer(this.vectorLayer);
-			this.vectorLayer = buildOsmLayer(data, {
-				project: (lng, lat) => {
-					const { px, py } = this.transform.toPixel(lat, lng);
-					return this.px2ll(px, py);
-				},
-				pixelProject,
-				width: this.mapWidth,
-				height: this.mapHeight,
-				theme,
-				pane: "osm-basemap",
-				renderer: this.canvasRenderers["osm-basemap"],
-			});
-			this.vectorLayer.addTo(this.map);
-
-			// Coordinate grid as its own toggleable layer (100 m, matching the scale bar).
-			if (this.gridLayer) this.map.removeLayer(this.gridLayer);
+			// The coordinate grid (100 m, matching the scale bar) is painted with the
+			// terrain now, but the letters and numbers naming its squares are chrome, and
+			// this is the size they are counted off.
 			this.gridStepPx = this.transform.metersToPixels(GRID_STEP_M);
-			this.gridLayer = buildOsmGrid({
-				pixelProject,
-				width: this.mapWidth,
-				height: this.mapHeight,
-				stepPx: this.gridStepPx,
-				theme,
-				pane: "osm-grid",
-				renderer: this.canvasRenderers["osm-grid"],
-			});
-			if (this.toggles.grid) this.gridLayer.addTo(this.map);
-			// The squares are only half of the grid; the letters and numbers naming them
-			// are drawn as chrome, and this is the size they are counted off.
 			this.syncGridAxis();
-
-			// Clean border: opaque surround that clips the map to the grid rectangle.
-			if (this.frameLayer) this.map.removeLayer(this.frameLayer);
-			this.frameLayer = buildOsmFrame({
-				pixelProject,
-				width: this.mapWidth,
-				height: this.mapHeight,
-				theme,
-				pane: "osm-frame",
-				renderer: this.canvasRenderers["osm-frame"],
-			});
-			this.frameLayer.addTo(this.map);
+			this.syncBasemap(definition);
 
 			// Clear a previous failure. The GPS status normally owns this pill, so only
 			// take it back when there is no fix yet to report.
@@ -603,70 +534,49 @@ export class MapView extends LitElement {
 	}
 
 	/**
-	 * Cover everything OUTSIDE the play-area polygon with a darken + diagonal-hatch
-	 * texture, and outline the boundary. Emulates the printed maps, where the area
-	 * beyond the active field is masked out. No polygon (or fewer than 3 points)
-	 * means "whole field" — nothing is drawn.
+	 * Bake the play-area boundary. Everything outside it is covered by the darken +
+	 * diagonal-hatch texture `paintTile` draws, emulating the printed maps. No polygon
+	 * (or fewer than 3 points) means "whole field" — nothing is masked.
 	 */
-	private renderPlayAreaMask(playArea: [number, number][] | undefined) {
-		if (this.maskLayer) {
-			this.map.removeLayer(this.maskLayer);
-			this.maskLayer = null;
+	private bakePlayArea(playArea: [number, number][] | undefined): BakedShape | null {
+		if (!playArea || playArea.length < 3 || !this.transform) return null;
+		return bakeShape(playArea, (lat, lng) => this.transform.toPixel(lat, lng));
+	}
+
+	/**
+	 * Hand the basemap everything it paints: the baked geometry plus the toggles that
+	 * decide which of it is on. Called on a map load, when the OSM data lands, and on
+	 * every layer toggle — a repaint of the live tiles, not a rebuild of the layer.
+	 */
+	private syncBasemap(definition = getMapById(this.selectedMapId)) {
+		const baked = this.baked;
+		const nothingToPaint =
+			!baked ||
+			(!baked.osm && !baked.playArea && baked.zones.length === 0 && baked.lines.length === 0);
+		if (nothingToPaint) {
+			if (this.basemap) {
+				this.map.removeLayer(this.basemap);
+				this.basemap = null;
+			}
+			return;
 		}
-		if (!playArea || playArea.length < 3 || !this.transform) return;
 
-		// Play-area ring in Leaflet coords (GPS -> pixel -> CRS.Simple latLng).
-		const hole = playArea.map(([lat, lng]) => {
-			const { px, py } = this.transform.toPixel(lat, lng);
-			return this.px2ll(px, py);
-		});
+		const scene: TileScene = {
+			terrain: baked.osm,
+			theme: definition.theme ?? "opt",
+			width: this.mapWidth,
+			height: this.mapHeight,
+			gridStepPx: this.gridStepPx,
+			playArea: baked.playArea,
+			zones: baked.zones,
+			lines: baked.lines,
+			showGrid: this.toggles.grid,
+			showMask: this.toggles.mask,
+			showZones: this.toggles.zones,
+		};
 
-		// The mask covers the play-area's complement WITHIN the map rectangle; beyond
-		// the rectangle the frame provides the border. The play-area ring is a hole.
-		const outer: L.LatLngExpression[] = [
-			this.px2ll(0, 0),
-			this.px2ll(this.mapWidth, 0),
-			this.px2ll(this.mapWidth, this.mapHeight),
-			this.px2ll(0, this.mapHeight),
-		];
-
-		this.maskLayer = L.layerGroup();
-
-		// 1) Darken (reliable flat fill, also the fallback if the pattern is missing).
-		L.polygon([outer, hole], {
-			pane: "playarea-mask",
-			stroke: false,
-			fill: true,
-			fillColor: "#05070a",
-			fillOpacity: 0.55,
-			interactive: false,
-		}).addTo(this.maskLayer);
-
-		// 2) Diagonal hatch on top (transparent-background SVG pattern, via CSS class).
-		L.polygon([outer, hole], {
-			pane: "playarea-mask",
-			className: "playarea-hatch",
-			stroke: false,
-			fill: true,
-			fillOpacity: 1,
-			interactive: false,
-		}).addTo(this.maskLayer);
-
-		// 3) Boundary outline so the play-area edge is legible.
-		L.polygon(hole, {
-			pane: "playarea-mask",
-			color: "#e8c24d",
-			weight: 2,
-			dashArray: "10 6",
-			opacity: 0.9,
-			fill: false,
-			interactive: false,
-		}).addTo(this.maskLayer);
-
-		if (this.toggles.mask) {
-			this.maskLayer.addTo(this.map);
-			this.injectHatchPattern();
-		}
+		if (this.basemap) this.basemap.setScene(scene, this.mapHeight);
+		else this.basemap = new BasemapLayer(scene, this.mapHeight).addTo(this.map);
 	}
 
 	/**
@@ -695,6 +605,12 @@ export class MapView extends LitElement {
 	private resyncSize() {
 		if (!this.map) return;
 		this.map.invalidateSize({ animate: false });
+		// The strips are as wide as the screen, so their measured boxes are stale — and on
+		// the 0×0 cold start the ones on record are a zero-width placeholder. Place them
+		// now rather than on the next frame: a pending animation frame does not run while
+		// this element is still hidden.
+		this.invalidateGridAxis();
+		this.updateGridAxis();
 		if (!this.following || (this.framed && this.lastGps)) return;
 
 		this.fitInitial(getMapById(this.selectedMapId));
@@ -735,84 +651,54 @@ export class MapView extends LitElement {
 	}
 
 	/**
-	 * Draw the marked areas and frontlines traced off the event's printed map: the
-	 * hatched safe zones, the "Zivile Zone" wash, the faction boundary lines. Each
-	 * zone gets its own SVG hatch pattern, keyed by zone id, so the stripes take the
-	 * zone's colour.
+	 * Bake the marked areas and frontlines traced off the event's printed map: the
+	 * hatched safe zones, the "Zivile Zone" wash, the faction boundary lines. The
+	 * shapes are painted by `paintTile`; only their names stay markers, because text
+	 * has to stay upright and screen-sized whatever the map does under it.
 	 */
-	private renderZones(definition: MapDefinition) {
-		if (this.zonesLayer) {
-			this.map.removeLayer(this.zonesLayer);
-			this.zonesLayer = null;
+	private bakeZones(definition: MapDefinition): { zones: BakedZone[]; lines: BakedLine[] } {
+		if (!this.transform) return { zones: [], lines: [] };
+		const project: (lat: number, lng: number) => { px: number; py: number } = (lat, lng) =>
+			this.transform.toPixel(lat, lng);
+
+		return {
+			zones: (definition.zones ?? [])
+				.filter((zone) => zone.points.length >= 3)
+				.map((zone) => ({
+					shape: bakeShape(zone.points, project),
+					color: zone.color,
+					style: zone.style ?? "hatch",
+				})),
+			lines: (definition.lines ?? [])
+				.filter((line) => line.points.length >= 2)
+				.map((line) => ({ shape: bakeShape(line.points, project), color: line.color })),
+		};
+	}
+
+	/** The zones' names, at the centre of each zone. Toggled with the zones themselves. */
+	private renderZoneLabels() {
+		if (this.zoneLabelsLayer) {
+			this.map.removeLayer(this.zoneLabelsLayer);
+			this.zoneLabelsLayer = null;
 		}
-		const zones = definition.zones ?? [];
-		const lines = definition.lines ?? [];
-		if ((zones.length === 0 && lines.length === 0) || !this.transform) return;
+		const definition = getMapById(this.selectedMapId);
+		const zones = (definition.zones ?? []).filter((zone) => zone.points.length >= 3);
+		if (zones.length === 0 || !this.transform) return;
 
-		this.zonesLayer = L.layerGroup();
-
+		this.zoneLabelsLayer = L.layerGroup();
 		for (const zone of zones) {
-			if (zone.points.length < 3) continue;
-			const ring = this.ring(zone.points);
-			const style = zone.style ?? "hatch";
-
-			if (style !== "outline") {
-				L.polygon(ring, {
-					pane: "zones",
-					stroke: false,
-					fill: true,
-					fillColor: zone.color,
-					fillOpacity: style === "fill" ? 0.22 : 0.1,
-					interactive: false,
-				}).addTo(this.zonesLayer);
-			}
-			if (style === "hatch") {
-				L.polygon(ring, {
-					pane: "zones",
-					className: `zone-hatch zone-hatch-${zone.id}`,
-					stroke: false,
-					fill: true,
-					fillOpacity: 1,
-					interactive: false,
-				}).addTo(this.zonesLayer);
-			}
-			L.polygon(ring, {
-				pane: "zones",
-				color: zone.color,
-				weight: 2,
-				dashArray: "8 5",
-				opacity: 0.95,
-				fill: false,
-				interactive: false,
-			}).addTo(this.zonesLayer);
-
-			L.marker(polygonCenter(ring), {
-				pane: "zones",
+			const center = polygonCenter(this.ring(zone.points));
+			L.marker(center, {
+				pane: "zone-labels",
 				icon: L.divIcon({
 					className: "zone-label-marker",
 					html: `<span class="zone-label" style="color:${zone.color}">${zone.name}</span>`,
 					iconSize: [0, 0],
 				}),
 				interactive: false,
-			}).addTo(this.zonesLayer);
+			}).addTo(this.zoneLabelsLayer);
 		}
-
-		for (const line of lines) {
-			if (line.points.length < 2) continue;
-			L.polyline(this.ring(line.points), {
-				pane: "zones",
-				color: line.color,
-				weight: 4,
-				dashArray: "14 9",
-				opacity: 0.95,
-				interactive: false,
-			}).addTo(this.zonesLayer);
-		}
-
-		if (this.toggles.zones) {
-			this.zonesLayer.addTo(this.map);
-			this.injectZonePatterns(zones);
-		}
+		if (this.toggles.zones) this.zoneLabelsLayer.addTo(this.map);
 	}
 
 	/** Faction headquarters, drawn as their emblem in a coloured ring. */
@@ -865,56 +751,6 @@ export class MapView extends LitElement {
 		return distanceMeters(a.lat, a.lng, b.lat, b.lng) <= SAME_PLACE_M;
 	}
 
-	/**
-	 * Give every zone a diagonal-stripe <pattern> in its own colour, injected into
-	 * the zones pane's SVG. Same lazy-SVG dance as the play-area hatch.
-	 */
-	private injectZonePatterns(zones: MapDefinition["zones"], attempt = 0) {
-		// Same `hasLayer` guard as the play-area hatch: no layer on the map, no pane SVG,
-		// so retrying for it would never terminate.
-		if (!zones || zones.length === 0 || !this.zonesLayer) return;
-		if (!this.map.hasLayer(this.zonesLayer)) return;
-		const svg = this.map.getPane("zones")?.querySelector("svg");
-		if (!svg) {
-			if (attempt < 40) requestAnimationFrame(() => this.injectZonePatterns(zones, attempt + 1));
-			return;
-		}
-		const NS = "http://www.w3.org/2000/svg";
-		let defs = svg.querySelector("defs");
-		if (!defs) {
-			defs = document.createElementNS(NS, "defs");
-			svg.insertBefore(defs, svg.firstChild);
-		}
-		for (const zone of zones) {
-			const id = `zone-hatch-${zone.id}`;
-			if (svg.querySelector(`#${CSS.escape(id)}`)) continue;
-			const pattern = document.createElementNS(NS, "pattern");
-			pattern.setAttribute("id", id);
-			pattern.setAttribute("patternUnits", "userSpaceOnUse");
-			pattern.setAttribute("width", "10");
-			pattern.setAttribute("height", "10");
-			pattern.setAttribute("patternTransform", "rotate(45)");
-			const stripe = document.createElementNS(NS, "rect");
-			stripe.setAttribute("width", "3.5");
-			stripe.setAttribute("height", "10");
-			stripe.setAttribute("fill", zone.color);
-			stripe.setAttribute("fill-opacity", "0.55");
-			pattern.appendChild(stripe);
-			defs.appendChild(pattern);
-		}
-		// Point each zone polygon at its own pattern (CSS can't hold a per-zone url()).
-		for (const zone of zones) {
-			for (const el of this.querySelectorAll_(`.zone-hatch-${zone.id}`)) {
-				el.setAttribute("fill", `url(#zone-hatch-${zone.id})`);
-			}
-		}
-	}
-
-	private querySelectorAll_(selector: string): SVGElement[] {
-		const pane = this.map.getPane("zones");
-		return pane ? Array.from(pane.querySelectorAll<SVGElement>(selector)) : [];
-	}
-
 	/** Whether the current map can show the grid / mask toggles. */
 	private get hasGrid(): boolean {
 		return getMapById(this.selectedMapId).vectorData != null;
@@ -947,72 +783,24 @@ export class MapView extends LitElement {
 		this.applyToggles();
 		// Two toggles reach into the PoI icons themselves: the id labels are baked into
 		// them, and hiding the emblems has to give the dots they stand in for back. Every
-		// other toggle just adds or removes a layer, so there is no reason to tear down
-		// and rebuild ~180 marker elements for it.
+		// other toggle is either a basemap repaint or one layer coming and going, so there
+		// is no reason to tear down and rebuild ~80 marker elements for it.
 		if (key === "poiIds" || key === "hqs") this.syncPoiDots();
 	}
 
 	/** Apply the current toggle states to the live layers. */
 	private applyToggles() {
-		if (this.gridLayer) {
-			if (this.toggles.grid) this.gridLayer.addTo(this.map);
-			else this.map.removeLayer(this.gridLayer);
-		}
-		if (this.maskLayer) {
-			if (this.toggles.mask) {
-				this.maskLayer.addTo(this.map);
-				this.injectHatchPattern();
-			} else {
-				this.map.removeLayer(this.maskLayer);
-			}
-		}
-		if (this.zonesLayer) {
-			if (this.toggles.zones) {
-				this.zonesLayer.addTo(this.map);
-				this.injectZonePatterns(getMapById(this.selectedMapId).zones);
-			} else {
-				this.map.removeLayer(this.zonesLayer);
-			}
+		// Grid, mask and zones are painted into the basemap, so switching one on is a
+		// repaint of the tiles that are already on screen — not a layer being built.
+		this.syncBasemap();
+		if (this.zoneLabelsLayer) {
+			if (this.toggles.zones) this.zoneLabelsLayer.addTo(this.map);
+			else this.map.removeLayer(this.zoneLabelsLayer);
 		}
 		if (this.hqLayer) {
 			if (this.toggles.hqs) this.hqLayer.addTo(this.map);
 			else this.map.removeLayer(this.hqLayer);
 		}
-	}
-
-	/**
-	 * Inject the diagonal-hatch <pattern> into the mask pane's SVG. Leaflet creates
-	 * that SVG lazily, so retry across a few frames until it exists.
-	 */
-	private injectHatchPattern(attempt = 0) {
-		// `hasLayer`, not just "the layer object exists": with the mask toggled off the
-		// layer is built but never added, so its pane never gets an <svg> and the retry
-		// below could never succeed. This handler runs on every `moveend` — including the
-		// synthetic ones `reclipIfPannedOut` fires several times per drag — so without
-		// this check panning piles up dead 40-frame retry chains for the whole session.
-		if (!this.maskLayer || !this.map.hasLayer(this.maskLayer)) return;
-		const svg = this.map.getPane("playarea-mask")?.querySelector("svg");
-		if (!svg) {
-			if (attempt < 40) requestAnimationFrame(() => this.injectHatchPattern(attempt + 1));
-			return;
-		}
-		if (svg.querySelector("#playarea-hatch")) return;
-		const NS = "http://www.w3.org/2000/svg";
-		const defs = document.createElementNS(NS, "defs");
-		const pattern = document.createElementNS(NS, "pattern");
-		pattern.setAttribute("id", "playarea-hatch");
-		pattern.setAttribute("patternUnits", "userSpaceOnUse");
-		pattern.setAttribute("width", "9");
-		pattern.setAttribute("height", "9");
-		pattern.setAttribute("patternTransform", "rotate(45)");
-		const stripe = document.createElementNS(NS, "rect");
-		stripe.setAttribute("width", "2.5");
-		stripe.setAttribute("height", "9");
-		stripe.setAttribute("fill", "#000000");
-		stripe.setAttribute("fill-opacity", "0.3");
-		pattern.appendChild(stripe);
-		defs.appendChild(pattern);
-		svg.insertBefore(defs, svg.firstChild);
 	}
 
 	private onMapSelect(event: Event) {
@@ -1459,16 +1247,38 @@ export class MapView extends LitElement {
 			this.gridStepPx > 0 ? Math.ceil(extent / this.gridStepPx) : 0;
 		fillAxisStrip(columns, count(this.mapWidth), gridColumnLabel);
 		fillAxisStrip(rows, count(this.mapHeight), (index) => String(index + 1));
+		// New labels, and possibly a new grid step: everything laid out per zoom is stale.
+		this.axisX = freshAxis();
+		this.axisY = freshAxis();
 		this.updateGridAxis();
+	}
+
+	/**
+	 * Ask for the axis labels to be placed on the next frame.
+	 *
+	 * Leaflet fires `move` from the pointer stream, which on a 120 Hz screen (or with
+	 * coalesced events) outruns the display — and this is the one piece of chrome that
+	 * has to keep up with a drag, so it must cost one frame's work per frame and not one
+	 * per event.
+	 */
+	private scheduleGridAxis() {
+		if (this.gridAxisFrame) return;
+		this.gridAxisFrame = requestAnimationFrame(() => {
+			this.gridAxisFrame = 0;
+			this.updateGridAxis();
+		});
 	}
 
 	/**
 	 * Slide the grid's column letters and row numbers along the edges of the screen to
 	 * wherever their squares currently are — the map's own sticky table header.
 	 *
-	 * Written straight into the DOM for the same reason the scale bar is: this runs on
-	 * every frame of a drag, and a Lit re-render would rebuild the PoI `<option>` list
-	 * at that rate.
+	 * At a fixed zoom the squares keep their distance from each other, so a pan moves
+	 * every label by the same amount: the strip is translated once and the labels inside
+	 * it are not touched at all. Only the one square running off each end is displaced
+	 * from that, because its label has to stay in the middle of the part you can still
+	 * see. So a frame of dragging costs a handful of style writes rather than one per
+	 * label — and, since nothing here reads back a box, no layout.
 	 */
 	private updateGridAxis() {
 		if (!this.map || this.gridStepPx <= 0) return;
@@ -1488,65 +1298,147 @@ export class MapView extends LitElement {
 		// part in two thousand.
 		const origin = this.map.latLngToContainerPoint(this.px2ll(0, 0));
 		const far = this.map.latLngToContainerPoint(this.px2ll(this.mapWidth, this.mapHeight));
-		const scaleX = (far.x - origin.x) / this.mapWidth;
-		const scaleY = (far.y - origin.y) / this.mapHeight;
-		const container = this.map.getContainer().getBoundingClientRect();
-		// The strips are `position: fixed`, so their own boxes give both the range a label
-		// may occupy and the origin its offset is measured from. Reading them here keeps
-		// the layout (safe areas, the row the letters sit in) in CSS where it belongs.
-		const columnsBox = columns.getBoundingClientRect();
-		const rowsBox = rows.getBoundingClientRect();
 
-		this.placeAxisLabels(columns, this.mapWidth, columnsBox.left, columnsBox.right, "x", (px) => {
-			return container.left + origin.x + px * scaleX;
-		});
-		this.placeAxisLabels(rows, this.mapHeight, rowsBox.top, rowsBox.bottom, "y", (py) => {
-			return container.top + origin.y + py * scaleY;
-		});
+		this.measureAxis(columns, this.axisX, "x");
+		this.measureAxis(rows, this.axisY, "y");
+
+		const container = this.map.getContainer().getBoundingClientRect();
+		this.placeAxis(
+			columns,
+			this.axisX,
+			"x",
+			this.mapWidth,
+			(far.x - origin.x) / this.mapWidth,
+			container.left + origin.x,
+		);
+		this.placeAxis(
+			rows,
+			this.axisY,
+			"y",
+			this.mapHeight,
+			(far.y - origin.y) / this.mapHeight,
+			container.top + origin.y,
+		);
 	}
 
 	/**
-	 * Put each label in the middle of *the visible part* of its square, dropping the ones
-	 * whose square is off screen or down to a sliver. That is what makes the strips read
-	 * like sticky headers: a square running off the edge keeps its label, which slides
-	 * along the border until the square itself is gone.
+	 * Where the strip sits, and how much of the axis it may show. The strips are
+	 * `position: fixed`, so their own boxes answer both — which keeps the layout (safe
+	 * areas, the row the letters sit in) in CSS, where it belongs.
+	 *
+	 * Measured once per layout change, never per frame: per frame it would be a forced
+	 * synchronous layout right after the style writes that dirtied it. The pan
+	 * translation has to come off first, or the box reads back as its own last pan and
+	 * every measurement drifts by the one before it.
 	 */
-	private placeAxisLabels(
+	/** Forget both strips' measured boxes; the next placement re-measures them. */
+	private invalidateGridAxis() {
+		this.axisX.min = NaN;
+		this.axisY.min = NaN;
+	}
+
+	private measureAxis(strip: HTMLElement, cache: AxisCache, axis: "x" | "y") {
+		if (Number.isFinite(cache.min)) return;
+		// The strip, never the track: the strip is the one element here that does not
+		// move, so its box cannot read back as its own last pan.
+		const box = strip.getBoundingClientRect();
+		cache.min = axis === "x" ? box.left : box.top;
+		cache.max = axis === "x" ? box.right : box.bottom;
+	}
+
+	/**
+	 * Place one strip: translate it to follow the map, then fix up the label at each end.
+	 *
+	 * `originScreen` is where canvas pixel 0 of this axis currently sits in viewport
+	 * coordinates, and `scale` is how many screen pixels a canvas pixel is worth.
+	 */
+	private placeAxis(
 		strip: HTMLElement,
-		extentPx: number,
-		min: number,
-		max: number,
+		cache: AxisCache,
 		axis: "x" | "y",
-		project: (canvasPx: number) => number,
+		extentPx: number,
+		scale: number,
+		originScreen: number,
 	) {
-		for (let i = 0; i < strip.childElementCount; i++) {
-			const label = strip.children[i] as HTMLElement;
-			// The last square is clipped by the canvas edge, not by the grid step.
-			const from = project(i * this.gridStepPx);
-			const to = project(Math.min((i + 1) * this.gridStepPx, extentPx));
-			const start = Math.max(from, min);
-			const end = Math.min(to, max);
+		const track = axisTrack(strip);
+		const count = track.childElementCount;
+		if (count === 0 || !Number.isFinite(scale) || scale <= 0) return;
+		const step = this.gridStepPx * scale;
+
+		// Lay the labels out at their unclamped centres. Only the zoom can change these,
+		// so a drag skips this entirely.
+		if (cache.scale !== scale) {
+			cache.scale = scale;
+			for (let i = 0; i < count; i++) {
+				const label = track.children[i] as HTMLElement;
+				const from = i * this.gridStepPx;
+				const to = Math.min((i + 1) * this.gridStepPx, extentPx);
+				const center = (((from + to) / 2) * scale).toFixed(1);
+				if (axis === "x") label.style.left = `${center}px`;
+				else label.style.top = `${center}px`;
+				label.style.transform = axis === "x" ? "translate(-50%, 0)" : "translate(0, -50%)";
+				label.style.display = "";
+			}
+			cache.adjusted.length = 0;
+			cache.offset = NaN;
+		}
+
+		// One write moves every label at once.
+		const offset = Math.round(originScreen - cache.min);
+		if (offset !== cache.offset) {
+			cache.offset = offset;
+			track.style.transform =
+				axis === "x" ? `translate(${offset}px, 0)` : `translate(0, ${offset}px)`;
+		}
+
+		// Give back whatever was displaced last frame, then displace the ends of this one.
+		for (const label of cache.adjusted) {
+			label.style.transform = axis === "x" ? "translate(-50%, 0)" : "translate(0, -50%)";
+			label.style.display = "";
+		}
+		cache.adjusted.length = 0;
+
+		const first = Math.max(0, Math.floor((cache.min - originScreen) / step));
+		const last = Math.min(count - 1, Math.floor((cache.max - originScreen) / step));
+		for (const i of first === last ? [first] : [first, last]) {
+			if (i < 0 || i >= count) continue;
+			const label = track.children[i] as HTMLElement;
+			const from = originScreen + i * this.gridStepPx * scale;
+			const to = originScreen + Math.min((i + 1) * this.gridStepPx, extentPx) * scale;
+			const start = Math.max(from, cache.min);
+			const end = Math.min(to, cache.max);
+			// A square down to a sliver at the edge of the screen would put its letter on
+			// top of the neighbour's, so it stands down instead.
 			if (end - start < GRID_AXIS_MIN_PX) {
 				label.style.display = "none";
+				cache.adjusted.push(label);
 				continue;
 			}
-			const center = Math.round((start + end) / 2 - min);
-			label.style.display = "";
+			const shift = Math.round((start + end) / 2 - (from + to) / 2);
+			if (shift === 0) continue;
 			label.style.transform =
 				axis === "x"
-					? `translate(calc(${center}px - 50%), 0)`
-					: `translate(0, calc(${center}px - 50%))`;
+					? `translate(calc(${shift}px - 50%), 0)`
+					: `translate(0, calc(${shift}px - 50%))`;
+			cache.adjusted.push(label);
 		}
 	}
 
 	/**
 	 * A render can have just created the axis strips (the grid toggle, or a map switch),
-	 * and Lit only ever gives them back empty — the labels inside are ours. Refilling
-	 * them is idempotent and costs a walk over a few dozen spans, so it can simply run
-	 * after every render rather than trying to guess which ones mattered.
+	 * and Lit only ever gives them back empty — the labels inside are ours. It can also
+	 * have moved them, by changing the chrome above them, which is what invalidates the
+	 * measured boxes. Both are cheap; neither happens per frame.
 	 */
 	updated() {
-		this.syncGridAxis();
+		this.invalidateGridAxis();
+		const signature = `${this.showGridAxis}|${this.gridStepPx}|${this.mapWidth}|${this.mapHeight}`;
+		if (signature !== this.axisSignature) {
+			this.axisSignature = signature;
+			this.syncGridAxis();
+		} else {
+			this.scheduleGridAxis();
+		}
 	}
 
 	private recenter() {
@@ -1583,9 +1475,18 @@ export class MapView extends LitElement {
 							<div class="poi-panel">
 								<select class="poi-select" .value=${this.selectedPoiId} @change=${this.onPoiSelect}>
 									<option value="">${t.navigateTo}</option>
-									${[...pointsOfInterest]
-										.sort(comparePointsOfInterest)
-										.map((poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `)}
+									<!-- Guarded on the map id: the list only changes when the map does, and
+									     without this every render walked all ~80 options. That includes the
+									     one \`dragstart\` triggers by clearing \`following\`, which put a
+									     rebuild of this list on the first frame of every drag, and the one
+									     each GPS fix triggers through \`status\`. -->
+									${guard([this.selectedMapId], () =>
+										[...pointsOfInterest]
+											.sort(comparePointsOfInterest)
+											.map(
+												(poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `,
+											),
+									)}
 								</select>
 								${
 									selectedPoi
@@ -1642,12 +1543,16 @@ export class MapView extends LitElement {
 							MAPS.length > 1
 								? html`
 										<select class="map-select" @change=${this.onMapSelect}>
-											${mapsByDate().map(
-												(map) => html`
-													<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
-														${map.name}
-													</option>
-												`,
+											<!-- Guarded like the PoI list, and for the same reason — this one also
+											     re-sorts every event by date on the way. -->
+											${guard([this.selectedMapId], () =>
+												mapsByDate().map(
+													(map) => html`
+														<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
+															${map.name}
+														</option>
+													`,
+												),
 											)}
 										</select>
 									`

@@ -544,7 +544,7 @@ legal-view {
 	flex: 0 0 auto;
 	border-radius: 999px;
 	border: 1px solid rgba(255, 255, 255, 0.14);
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	font-size: 1.35rem;
 	line-height: 1;
@@ -589,14 +589,13 @@ legal-view {
 .map-select {
 	pointer-events: auto;
 	max-width: 140px;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	padding: 8px 12px;
 	border-radius: 999px;
 	font-size: 15px;
 	font-weight: 600;
 	font-family: inherit;
-	backdrop-filter: blur(6px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	appearance: none;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b98a5' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
@@ -624,14 +623,13 @@ legal-view {
 .poi-select {
 	pointer-events: auto;
 	width: 100%;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	padding: 8px 12px;
 	border-radius: 999px;
 	font-size: 14px;
 	font-weight: 600;
 	font-family: inherit;
-	backdrop-filter: blur(6px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	appearance: none;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b98a5' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
@@ -651,11 +649,10 @@ legal-view {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	padding: 10px 12px;
 	border-radius: 14px;
-	backdrop-filter: blur(6px);
 	border: 1px solid color-mix(in srgb, var(--accent-warm) 28%, transparent);
 }
 .nav-arrow {
@@ -780,15 +777,9 @@ legal-view {
 	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
 }
 
-/* Out-of-bounds hatch: the fill comes from an injected SVG <pattern>, which
-   overrides Leaflet's flat fill attribute. */
-.playarea-hatch {
-	fill: url(#playarea-hatch);
-}
-
-/* Marked areas traced off the printed tactical maps. The per-zone fill is set
-   imperatively (each zone has its own coloured <pattern>), so this only has to
-   keep the label and emblem chrome consistent. */
+/* The out-of-bounds hatch and the per-zone stripes are painted into the basemap's
+   tiles now (see `paintTile`), so the shapes themselves have no CSS. What is left
+   here is the chrome that stayed in the DOM: the zone names. */
 .zone-label-marker {
 	background: none;
 	border: none;
@@ -909,14 +900,13 @@ legal-view {
 	pointer-events: auto;
 	/* Grows only as far as the text needs, up to the full row. */
 	max-width: 100%;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	padding: 8px 14px;
 	border-radius: 999px;
 	font-variant-numeric: tabular-nums;
 	font-size: 15px;
 	font-weight: 600;
-	backdrop-filter: blur(6px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .pill.warn {
@@ -962,6 +952,13 @@ legal-view {
 	bottom: 0;
 	left: 0;
 	width: 20px;
+}
+/* What actually moves. The strip clips, the track pans — see `axisTrack`: a clip
+   travels with its own element's transform, so panning the strip would take its
+   clipping rectangle, and every label in it, off the screen. */
+.grid-axis-track {
+	position: absolute;
+	inset: 0;
 }
 .grid-axis-label {
 	position: absolute;
@@ -1029,10 +1026,9 @@ legal-view {
 	height: 52px;
 	border-radius: 50%;
 	border: none;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #8b98a5;
 	font-size: 24px;
-	backdrop-filter: blur(6px);
 	border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .recenter.on {
@@ -1050,10 +1046,9 @@ legal-view {
 	height: 52px;
 	border-radius: 50%;
 	border: 1px solid rgba(255, 255, 255, 0.08);
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #8b98a5;
 	font-size: 22px;
-	backdrop-filter: blur(6px);
 }
 .toggle-btn.on {
 	color: var(--accent);
@@ -1071,7 +1066,6 @@ legal-view {
 	background: rgba(11, 15, 20, 0.92);
 	border: 1px solid rgba(255, 255, 255, 0.1);
 	border-radius: 14px;
-	backdrop-filter: blur(6px);
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 .toggle-row {
@@ -1166,14 +1160,13 @@ legal-view {
 	left: auto;
 	z-index: 1000;
 	width: 150px;
-	background: rgba(11, 15, 20, 0.82);
+	background: rgba(11, 15, 20, 0.9);
 	color: #e6edf3;
 	border: 1px solid rgba(255, 255, 255, 0.08);
 	border-radius: 999px;
 	padding: 8px 14px;
 	font-size: 13px;
 	font-family: inherit;
-	backdrop-filter: blur(6px);
 	opacity: 0.55;
 }
 #test-coords:focus {
