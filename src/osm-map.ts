@@ -338,6 +338,12 @@ export interface BuildOsmOptions {
 	theme?: OsmThemeName;
 	/** Dedicated (low z-index) pane so the map renders under markers/overlays. */
 	pane?: string;
+	/**
+	 * Renderer to draw into. The terrain panes pass a `L.canvas()` here: as SVG this
+	 * layer is ~380 DOM paths the browser restyles and rasterizes on every redraw, and
+	 * a drag forces several redraws. Canvas makes it one bitmap and one call per shape.
+	 */
+	renderer?: L.Renderer;
 }
 
 function ringToLatLngs(ring: [number, number][], project: ProjectFn): L.LatLngExpression[] {
@@ -350,7 +356,7 @@ function ringToLatLngs(ring: [number, number][], project: ProjectFn): L.LatLngEx
  * map like any other layer.
  */
 export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions): L.LayerGroup {
-	const { project, pixelProject, width, height, pane } = opts;
+	const { project, pixelProject, width, height, pane, renderer } = opts;
 	const theme = THEMES[opts.theme ?? "opt"];
 	const group = L.layerGroup();
 
@@ -364,6 +370,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 	// 1) Ground base — the whole field filled so no background shows between features.
 	L.polygon(canvasCorners(), {
 		pane,
+		renderer,
 		stroke: false,
 		fill: true,
 		fillColor: theme.ground,
@@ -390,6 +397,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 				const latlngs = f.geometry.coordinates.map((ring) => ringToLatLngs(ring, project));
 				L.polygon(latlngs, {
 					pane,
+					renderer,
 					stroke: style.weight != null,
 					color: style.color ?? style.fillColor,
 					weight: style.weight ?? 0,
@@ -402,6 +410,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 				const s = (style.kind === "line" ? style : theme.styles.path) as LineStyle;
 				L.polyline(ringToLatLngs(f.geometry.coordinates, project), {
 					pane,
+					renderer,
 					color: s.color,
 					weight: s.weight,
 					dashArray: s.dashArray,
@@ -414,6 +423,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 				for (const ring of f.geometry.coordinates) {
 					L.polyline(ringToLatLngs(ring, project), {
 						pane,
+						renderer,
 						color: style.color,
 						weight: style.weight,
 						dashArray: style.dashArray,
@@ -430,6 +440,7 @@ export function buildOsmLayer(data: OsmFeatureCollection, opts: BuildOsmOptions)
 	if (theme.tone) {
 		L.polygon(canvasCorners(), {
 			pane,
+			renderer,
 			stroke: false,
 			fill: true,
 			fillColor: theme.tone.color,
@@ -453,6 +464,8 @@ export interface BuildGridOptions {
 	theme?: OsmThemeName;
 	/** Pane to draw into (kept separate so the grid can be toggled). */
 	pane?: string;
+	/** Renderer to draw into — see `BuildOsmOptions.renderer`. */
+	renderer?: L.Renderer;
 }
 
 /**
@@ -461,12 +474,12 @@ export interface BuildGridOptions {
  * outer border is drawn by buildOsmFrame instead (always on).
  */
 export function buildOsmGrid(opts: BuildGridOptions): L.LayerGroup {
-	const { pixelProject, width, height, stepPx, pane } = opts;
+	const { pixelProject, width, height, stepPx, pane, renderer } = opts;
 	const group = L.layerGroup();
 	if (stepPx <= 0) return group;
 
 	const color = THEMES[opts.theme ?? "opt"].grid;
-	const gridStyle = { pane, color, weight: 1, opacity: 0.16, interactive: false };
+	const gridStyle = { pane, renderer, color, weight: 1, opacity: 0.16, interactive: false };
 	for (let x = stepPx; x < width; x += stepPx) {
 		L.polyline([pixelProject(x, 0), pixelProject(x, height)], gridStyle).addTo(group);
 	}
@@ -486,6 +499,8 @@ export interface BuildFrameOptions {
 	theme?: OsmThemeName;
 	/** Pane to draw into. */
 	pane?: string;
+	/** Renderer to draw into — see `BuildOsmOptions.renderer`. */
+	renderer?: L.Renderer;
 }
 
 /**
@@ -494,7 +509,7 @@ export interface BuildFrameOptions {
  * rectangle edge. Nothing is rendered beyond the grid.
  */
 export function buildOsmFrame(opts: BuildFrameOptions): L.LayerGroup {
-	const { pixelProject, width, height, pane } = opts;
+	const { pixelProject, width, height, pane, renderer } = opts;
 	const theme = THEMES[opts.theme ?? "opt"];
 	const group = L.layerGroup();
 
@@ -517,6 +532,7 @@ export function buildOsmFrame(opts: BuildFrameOptions): L.LayerGroup {
 	// Opaque surround (canvas rectangle is a hole).
 	L.polygon([outer, canvas], {
 		pane,
+		renderer,
 		stroke: false,
 		fill: true,
 		fillColor: theme.border,
@@ -526,6 +542,7 @@ export function buildOsmFrame(opts: BuildFrameOptions): L.LayerGroup {
 	// Crisp edge line along the grid rectangle.
 	L.polygon(canvas, {
 		pane,
+		renderer,
 		color: theme.edge,
 		weight: 1.5,
 		opacity: 0.6,

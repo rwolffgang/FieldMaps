@@ -51,9 +51,9 @@ const SAME_PLACE_M = 5;
 //
 // RENDER_BUFFER is Leaflet's renderer `padding`: how far past the viewport, as a
 // fraction of it per side, stays drawn (its default is 0.1). It has to stay small.
-// The panes are *painted* at that size — five of them, at device pixel ratio — so a
-// buffer wide enough to cover a whole gesture on its own (padding 1 = nine viewports
-// per pane) stalls the first frame of a drag for a few hundred milliseconds.
+// The panes are *painted* at that size, at device pixel ratio, so a buffer wide
+// enough to cover a whole gesture on its own (padding 1 = nine viewports per pane)
+// stalls the first frame of a drag for a few hundred milliseconds.
 //
 // RECLIP_FRACTION is how much of the buffer a pan may eat before we redraw instead of
 // waiting for the drop. Leaflet already does this for tile layers — GridLayer re-runs
@@ -71,6 +71,21 @@ const RECLIP_FRACTION = 0.5;
 // (`Map._createRenderer`), passing only the pane name — map-level renderer options
 // never reach them.
 L.Renderer.mergeOptions({ padding: RENDER_BUFFER });
+
+// --- Why the terrain draws to <canvas> and the masks stay SVG --------------------
+//
+// The OSM base is ~380 separate paths. As SVG that is 380 DOM elements the browser
+// has to style, lay out and rasterize on every redraw, in a full-viewport layer at
+// device pixel ratio — and a redraw happens several times per drag, not just on drop.
+// Measured on a 1280×720 desktop at DPR 2 that was ~36 Mpx of vector rasterization
+// per redraw across five stacked layers, which is what made dragging crawl. The JS
+// was never the problem (~2.7 ms); the rasterization it triggers was.
+//
+// Canvas collapses each of those panes into one bitmap and one draw call per shape,
+// with no DOM behind it. The mask and zone panes stay SVG on purpose: their hatching
+// is an injected SVG `<pattern>` referenced from CSS, which canvas cannot express —
+// and they are only a handful of paths each, so they were never the expensive part.
+const CANVAS_PANES = ["osm-basemap", "osm-grid", "osm-frame"] as const;
 
 /**
  * Which map to show on first paint. The URL wins — a bookmarked `?map=…` must open
@@ -163,6 +178,8 @@ export class MapView extends LitElement {
 	 * is true the framing is a placeholder that has to be redone.
 	 */
 	private framed = false;
+	/** Canvas renderers for the terrain panes, keyed by pane name (see CANVAS_PANES). */
+	private canvasRenderers: Partial<Record<(typeof CANVAS_PANES)[number], L.Canvas>> = {};
 
 	@state() private status = t.waitingForGps;
 	@state() private following = true;
@@ -216,6 +233,14 @@ export class MapView extends LitElement {
 		// zone stays legible) but still below the overlay pane and its markers.
 		this.map.createPane("zones");
 		this.map.getPane("zones")!.style.zIndex = "320";
+
+		// One canvas renderer per terrain pane (see CANVAS_PANES). Built once and reused
+		// across map switches: the renderer owns the pane's <canvas>, so recreating it per
+		// load would leak a canvas each time.
+		for (const pane of CANVAS_PANES) {
+			this.canvasRenderers[pane] = L.canvas({ pane, padding: RENDER_BUFFER });
+		}
+
 		// Leaflet builds the mask pane's SVG lazily during a render; (re)inject the
 		// hatch pattern whenever the map renders. Idempotent, so it's safe to repeat.
 		this.map.on("load zoomend moveend", () => this.injectHatchPattern());
@@ -285,17 +310,30 @@ export class MapView extends LitElement {
 	 * is the redraw; everything else listening to it here is idempotent. Zoom is the
 	 * exception: Leaflet scales the panes during a pinch and redraws them at the end,
 	 * so any pan measured across a zoom change is left to that redraw. Bail out on it
-	 * rather than redrawing — a pinch fires `move` every frame, and repainting five
-	 * vector panes per frame stalls the gesture so badly that the base map looks frozen
+	 * rather than redrawing — a pinch fires `move` every frame, and repainting every
+	 * vector pane per frame stalls the gesture so badly that the base map looks frozen
 	 * until the fingers lift while the markers, which are cheap, keep up.
+	 *
+	 * The budget is per axis. Leaflet's padding is a fraction of each dimension, so a
+	 * 1280×720 viewport keeps 256 px of buffer either side but only 144 px above and
+	 * below; measuring one diagonal distance against the *smaller* of the two spent the
+	 * generous horizontal buffer at the vertical rate, and horizontal is the direction
+	 * people actually drag. That alone roughly halves the redraws on a sideways pan
+	 * (128 px of travel instead of 72) while leaving each axis exactly as much margin
+	 * against a blank leading edge as it had before — which is why RECLIP_FRACTION
+	 * itself stays at 0.5. Now that a redraw is cheap there is little to win by raising
+	 * it, and a flick that outruns the buffer is a visible regression.
 	 */
 	private reclipIfPannedOut() {
 		const zoom = this.map.getZoom();
 		if (!this.clipCenter || this.clipZoom !== zoom) return;
 		const size = this.map.getSize();
-		const budget = RECLIP_FRACTION * RENDER_BUFFER * Math.min(size.x, size.y);
 		const from = this.map.project(this.clipCenter, zoom);
-		if (from.distanceTo(this.map.project(this.map.getCenter(), zoom)) < budget) return;
+		const to = this.map.project(this.map.getCenter(), zoom);
+		const spent = RECLIP_FRACTION * RENDER_BUFFER;
+		if (Math.abs(to.x - from.x) < spent * size.x && Math.abs(to.y - from.y) < spent * size.y) {
+			return;
+		}
 		this.map.fire("moveend");
 	}
 
@@ -413,6 +451,7 @@ export class MapView extends LitElement {
 				height: this.mapHeight,
 				theme,
 				pane: "osm-basemap",
+				renderer: this.canvasRenderers["osm-basemap"],
 			});
 			this.vectorLayer.addTo(this.map);
 
@@ -425,6 +464,7 @@ export class MapView extends LitElement {
 				stepPx: this.transform.metersToPixels(100),
 				theme,
 				pane: "osm-grid",
+				renderer: this.canvasRenderers["osm-grid"],
 			});
 			if (this.toggles.grid) this.gridLayer.addTo(this.map);
 
@@ -436,6 +476,7 @@ export class MapView extends LitElement {
 				height: this.mapHeight,
 				theme,
 				pane: "osm-frame",
+				renderer: this.canvasRenderers["osm-frame"],
 			});
 			this.frameLayer.addTo(this.map);
 
