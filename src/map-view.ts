@@ -262,6 +262,19 @@ export class MapView extends LitElement {
 	private lastPixel: { px: number; py: number } | null = null;
 	private lastGps: { lat: number; lng: number; accuracy: number; heading: number | null } | null =
 		null;
+	/**
+	 * True between `zoomstart` and `zoomend` — a pinch, a wheel step, a `fitBounds`.
+	 *
+	 * Leaflet does not redraw a vector path while the zoom is changing. It leaves the
+	 * geometry in the coordinate space of the zoom the renderer last settled at and
+	 * CSS-scales the renderer's whole container to cover the difference. So a path that
+	 * *is* reprojected mid-gesture gets written in the live zoom's coordinates and then
+	 * scaled a second time on top of that: it grows at the square of the pinch and comes
+	 * away from the marker it belongs to. See `deferPathsWhileZooming`.
+	 */
+	private zooming = false;
+	/** A fix arrived while `zooming`, so the two paths still have to be redrawn. */
+	private pathsDeferred = false;
 	private mapWidth = 0;
 	private mapHeight = 0;
 	private resizeObserver: ResizeObserver | null = null;
@@ -323,6 +336,8 @@ export class MapView extends LitElement {
 		// rather than catching up when it ends — a label that lagged the squares under it
 		// would be worse than none. Coalesced into one frame's work; see `updateGridAxis`.
 		this.map.on("move zoom moveend zoomend", () => this.scheduleGridAxis());
+
+		this.deferPathsWhileZooming();
 
 		// Dragging the map cancels auto-follow (so you can look around).
 		this.map.on("dragstart", () => {
@@ -909,6 +924,13 @@ export class MapView extends LitElement {
 			this.navHint = t.navEnableCompass;
 		}
 
+		// The readouts above are DOM text and track the gesture; the line is a vector path
+		// and must not be reprojected until the zoom lands (see `zooming`).
+		if (this.zooming) {
+			this.pathsDeferred = true;
+			return;
+		}
+
 		const userLatLng = this.px2ll(userPixel.px, userPixel.py);
 		const poiLatLng = this.px2ll(poiPixel.px, poiPixel.py);
 
@@ -1150,6 +1172,48 @@ export class MapView extends LitElement {
 		marker.on("dblclick", () => this.startNavigation(poi.id));
 	}
 
+	/**
+	 * Keep the accuracy circle and the route line out of the renderer's way for as long
+	 * as a zoom is running, and draw the position that arrived meanwhile once it stops.
+	 *
+	 * Everything else a fix moves is safe mid-zoom: the two markers live in a pane that
+	 * is not transformed, so Leaflet repositions them in the live zoom's coordinates on
+	 * every frame — which is exactly what breaks the paths (see `zooming`). Holding the
+	 * paths costs nothing in fidelity: Leaflet reprojects every path on `zoomend` from
+	 * the layer's own lat/lngs anyway, so the only thing that has to be replayed here is
+	 * a lat/lng or radius that never reached the layer.
+	 */
+	private deferPathsWhileZooming() {
+		this.map.on("zoomstart", () => {
+			this.zooming = true;
+		});
+		this.map.on("zoomend", () => {
+			this.zooming = false;
+			if (!this.pathsDeferred) return;
+			this.pathsDeferred = false;
+			this.redrawPositionPaths();
+		});
+	}
+
+	/** Place the accuracy circle, and the route line with it, at the last known fix. */
+	private redrawPositionPaths() {
+		if (!this.transform || !this.lastGps) return;
+		const pixel = this.displayPixel(this.transform.toPixel(this.lastGps.lat, this.lastGps.lng));
+		this.syncAccuracyCircle(this.px2ll(pixel.px, pixel.py), this.lastGps.accuracy);
+		if (this.selectedPoiId) this.updateNavigation();
+	}
+
+	/** The accuracy circle at `latLng`, unless a zoom is in flight (see `zooming`). */
+	private syncAccuracyCircle(latLng: L.LatLngExpression, accuracyM: number) {
+		if (this.zooming) {
+			this.pathsDeferred = true;
+			return;
+		}
+		this.accuracyCircle.setLatLng(latLng);
+		this.accuracyCircle.setRadius(this.transform.metersToPixels(accuracyM));
+		if (!this.map.hasLayer(this.accuracyCircle)) this.accuracyCircle.addTo(this.map);
+	}
+
 	/** Called by the app whenever a new position/heading is available. */
 	update_(lat: number, lng: number, accuracyM: number, headingDeg: number | null) {
 		if (!this.transform) return;
@@ -1161,9 +1225,7 @@ export class MapView extends LitElement {
 		const pixel = this.displayPixel(gpsPixel);
 		const latLng = this.px2ll(pixel.px, pixel.py);
 
-		this.accuracyCircle.setLatLng(latLng);
-		this.accuracyCircle.setRadius(this.transform.metersToPixels(accuracyM));
-		if (!this.map.hasLayer(this.accuracyCircle)) this.accuracyCircle.addTo(this.map);
+		this.syncAccuracyCircle(latLng, accuracyM);
 
 		this.marker.setLatLng(latLng);
 		if (!this.map.hasLayer(this.marker)) this.marker.addTo(this.map);
