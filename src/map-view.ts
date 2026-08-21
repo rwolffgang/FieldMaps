@@ -238,11 +238,15 @@ export class MapView extends LitElement {
 	private vectorCache = new Map<string, OsmFeatureCollection>();
 	/** Grid spacing in canvas pixels, 0 while no grid is drawn. Also sizes the axis labels. */
 	private gridStepPx = 0;
+	/** The scale bar's elements, resolved on first use — see `scaleParts`. */
+	private scaleElements: { scale: HTMLElement; bar: HTMLElement; label: HTMLElement } | null = null;
 	/** Sticky axis labels: per-strip layout state, and the frame they are placed on. */
 	private axisX = freshAxis();
 	private axisY = freshAxis();
 	private axisSignature = "";
 	private gridAxisFrame = 0;
+	/** The map container's viewport origin, cached alongside the strips — see `containerOrigin`. */
+	private containerBox: { left: number; top: number } | null = null;
 	/** The tiled basemap: terrain, grid, mask, zones, border. Built on the first OSM map. */
 	private basemap: BasemapLayer | null = null;
 	/** The baked geometry behind it, kept so a toggle can rebuild the scene without re-baking. */
@@ -262,6 +266,15 @@ export class MapView extends LitElement {
 	private lastPixel: { px: number; py: number } | null = null;
 	private lastGps: { lat: number; lng: number; accuracy: number; heading: number | null } | null =
 		null;
+	/**
+	 * The fix the position layers are currently placed for — not the last one reported.
+	 *
+	 * A heading-only update carries the same position again, and re-placing for it is
+	 * pure cost (see `update_`). This is what says "already placed", so it is cleared by
+	 * `loadMap`: a new map means a new calibration, and the same latitude and longitude
+	 * land on a different pixel.
+	 */
+	private placedFix: { lat: number; lng: number; accuracy: number } | null = null;
 	/**
 	 * True between `zoomstart` and `zoomend` — a pinch, a wheel step, a `fitBounds`.
 	 *
@@ -410,6 +423,9 @@ export class MapView extends LitElement {
 		this.mapWidth = definition.width;
 		this.mapHeight = definition.height;
 		this.transform = solveTransform(definition.controlPoints);
+		// New calibration: whatever the position layers were placed for is in the old
+		// map's pixels, so the next fix has to place them again even if it is the same one.
+		this.placedFix = null;
 		// Dev sanity check — never shown to the user.
 		console.info(
 			`[calibration:${definition.id}] RMS error: ${this.transform.rmsMeters.toFixed(2)} m across ${definition.controlPoints.length} points`,
@@ -726,6 +742,8 @@ export class MapView extends LitElement {
 		if (headquarters.length === 0 || !this.transform) return;
 
 		this.hqLayer = L.layerGroup();
+		// Resolved once for the whole pass rather than per emblem — same list every time.
+		const pointsOfInterest = this.currentPointsOfInterest();
 		for (const hq of headquarters) {
 			const { px, py } = this.transform.toPixel(hq.lat, hq.lng);
 			const emblem = hq.logo ? `<img class="hq-logo" src="${hq.logo}" alt="" />` : "";
@@ -746,7 +764,7 @@ export class MapView extends LitElement {
 			// Most emblems are painted straight onto a numbered building. Where that is the
 			// case the emblem *is* that PoI's marker — it carries the number and the route,
 			// and `syncPoiDots` leaves the dot off so there is one target, not two.
-			const poi = this.currentPointsOfInterest().find((candidate) => this.samePlace(hq, candidate));
+			const poi = pointsOfInterest.find((candidate) => this.samePlace(hq, candidate));
 			if (poi) {
 				this.bindPoiInteractions(marker, poi);
 			} else {
@@ -848,6 +866,7 @@ export class MapView extends LitElement {
 		this.selectedPoiId = poiId;
 		if (!poiId) {
 			this.clearNavigation();
+			this.updateStatus();
 			return;
 		}
 		// The popup has done its job, and `fitUserAndPoi` is about to move the view out
@@ -856,6 +875,7 @@ export class MapView extends LitElement {
 		this.showPoiMarker();
 		this.updateNavigation();
 		this.fitUserAndPoi();
+		this.updateStatus();
 	}
 
 	private clearNavigation() {
@@ -889,7 +909,15 @@ export class MapView extends LitElement {
 		}
 	}
 
-	private updateNavigation() {
+	/**
+	 * Refresh the navigation readouts, and the route line with them.
+	 *
+	 * `positionUnchanged` is set when only the heading moved: the distance, the bearing
+	 * and the turn hint still have to be recomputed (the hint is *about* the heading),
+	 * but the line on the map has the same two endpoints it already has, and
+	 * reprojecting a vector path is the expensive half of this method.
+	 */
+	private updateNavigation(positionUnchanged = false) {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) {
 			this.navDistanceM = 0;
@@ -923,6 +951,9 @@ export class MapView extends LitElement {
 		} else {
 			this.navHint = t.navEnableCompass;
 		}
+
+		// Nothing moved, and the line is already drawn between these two points.
+		if (positionUnchanged && this.routeLine && this.map.hasLayer(this.routeLine)) return;
 
 		// The readouts above are DOM text and track the gesture; the line is a vector path
 		// and must not be reprojected until the zoom lands (see `zooming`).
@@ -1219,16 +1250,20 @@ export class MapView extends LitElement {
 		if (!this.transform) return;
 		this.lastGps = { lat, lng, accuracy: accuracyM, heading: headingDeg };
 
-		const gpsPixel = this.transform.toPixel(lat, lng);
-		this.lastPixel = gpsPixel;
-		this.offMap = this.isOffMapPixel(gpsPixel);
-		const pixel = this.displayPixel(gpsPixel);
-		const latLng = this.px2ll(pixel.px, pixel.py);
+		// A compass reading is not a new position. The heading changes on every frame
+		// while you turn, GPS about once a second, and everything below except the arrow
+		// is work only a *moved* fix can justify: two vector paths reprojected, a marker
+		// repositioned, and a `panTo` that — even for a zero offset — fires `moveend` and
+		// so sends the basemap through its whole tile set. Compare against the fix the
+		// layers were actually placed for, which `loadMap` clears, so a map switch always
+		// re-places them in the new map's coordinates.
+		const placed = this.placedFix;
+		const positionUnchanged =
+			placed != null && placed.lat === lat && placed.lng === lng && placed.accuracy === accuracyM;
 
-		this.syncAccuracyCircle(latLng, accuracyM);
-
-		this.marker.setLatLng(latLng);
-		if (!this.map.hasLayer(this.marker)) this.marker.addTo(this.map);
+		if (!positionUnchanged) {
+			this.placeFix(lat, lng, accuracyM);
+		}
 
 		// Rebuild the icon only when the triangle/dot state changes; otherwise just
 		// rotate the existing arrow element (cheaper, and avoids marker flicker).
@@ -1246,19 +1281,53 @@ export class MapView extends LitElement {
 			arrow.style.transform = `rotate(${screenDegrees}deg)`;
 		}
 
-		if (this.selectedPoiId) this.updateNavigation();
+		// The turn hint reads off the heading, so it is refreshed either way; the route
+		// line it shares a method with is held back when nothing has moved.
+		if (this.selectedPoiId) this.updateNavigation(positionUnchanged);
 
+		if (!positionUnchanged) this.updateStatus();
+	}
+
+	/**
+	 * Move everything that follows the fix: the accuracy circle, the position marker,
+	 * and the view itself while following. Only ever called for a position that has
+	 * actually changed — see `update_`.
+	 */
+	private placeFix(lat: number, lng: number, accuracyM: number) {
+		const gpsPixel = this.transform.toPixel(lat, lng);
+		this.lastPixel = gpsPixel;
+		this.offMap = this.isOffMapPixel(gpsPixel);
+		const pixel = this.displayPixel(gpsPixel);
+		const latLng = this.px2ll(pixel.px, pixel.py);
+
+		this.syncAccuracyCircle(latLng, accuracyM);
+
+		this.marker.setLatLng(latLng);
+		if (!this.map.hasLayer(this.marker)) this.marker.addTo(this.map);
+
+		this.placedFix = { lat, lng, accuracy: accuracyM };
+
+		// Keep the map in view when the fix falls outside the image; following it
+		// would just pan into empty background.
+		if (this.following && !this.offMap) this.map.panTo(latLng, { animate: true });
+	}
+
+	/**
+	 * The status pill's line: where you are, or how far you still have to go.
+	 *
+	 * Driven by the fix *and* by the navigation target, so it is called from both — a
+	 * stationary player who starts navigating still sees the pill switch to the distance
+	 * without having to wait for their next GPS fix.
+	 */
+	private updateStatus() {
+		if (!this.lastGps) return;
 		if (this.offMap) {
 			this.status = t.offMap;
 		} else if (this.selectedPoiId) {
 			this.status = `${this.getSelectedPoi()?.name ?? "POI"} · ${this.navDistanceM.toFixed(0)} m`;
 		} else {
-			this.status = `±${accuracyM.toFixed(0)} m`;
+			this.status = `±${this.lastGps.accuracy.toFixed(0)} m`;
 		}
-
-		// Keep the map in view when the fix falls outside the image; following it
-		// would just pan into empty background.
-		if (this.following && !this.offMap) this.map.panTo(latLng, { animate: true });
 	}
 
 	/**
@@ -1276,10 +1345,9 @@ export class MapView extends LitElement {
 	 */
 	private updateScale() {
 		if (!this.map || !this.transform) return;
-		const scale = this.querySelector<HTMLElement>(".scale");
-		const bar = scale?.querySelector<HTMLElement>(".scale-bar");
-		const label = scale?.querySelector<HTMLElement>(".scale-label");
-		if (!scale || !bar || !label) return;
+		const parts = this.scaleParts();
+		if (!parts) return;
+		const { scale, bar, label } = parts;
 
 		// Through the CRS rather than 2**zoom by hand, so this follows the projection.
 		const screenPerCanvasPx = this.map.getZoomScale(this.map.getZoom(), 0);
@@ -1293,6 +1361,23 @@ export class MapView extends LitElement {
 			label.textContent = text;
 			scale.setAttribute("aria-label", `${t.scale}: ${text}`);
 		}
+	}
+
+	/**
+	 * The scale bar's three elements, looked up once and kept.
+	 *
+	 * `updateScale` runs on every frame of a pinch, and the markup it writes into is
+	 * static — Lit never replaces it — so re-querying the DOM at that rate buys nothing.
+	 * The lookup is retried while the element does not exist yet (the very first render).
+	 */
+	private scaleParts(): { scale: HTMLElement; bar: HTMLElement; label: HTMLElement } | null {
+		if (this.scaleElements) return this.scaleElements;
+		const scale = this.querySelector<HTMLElement>(".scale");
+		const bar = scale?.querySelector<HTMLElement>(".scale-bar");
+		const label = scale?.querySelector<HTMLElement>(".scale-label");
+		if (!scale || !bar || !label) return null;
+		this.scaleElements = { scale, bar, label };
+		return this.scaleElements;
 	}
 
 	/**
@@ -1364,7 +1449,7 @@ export class MapView extends LitElement {
 		this.measureAxis(columns, this.axisX, "x");
 		this.measureAxis(rows, this.axisY, "y");
 
-		const container = this.map.getContainer().getBoundingClientRect();
+		const container = this.containerOrigin();
 		this.placeAxis(
 			columns,
 			this.axisX,
@@ -1397,6 +1482,24 @@ export class MapView extends LitElement {
 	private invalidateGridAxis() {
 		this.axisX.min = NaN;
 		this.axisY.min = NaN;
+		this.containerBox = null;
+	}
+
+	/**
+	 * Where the map container's top-left corner sits in the viewport.
+	 *
+	 * Cached with the strips' boxes and invalidated with them, for the same reason: this
+	 * is read on every frame of a drag, and it is the one value in that path that comes
+	 * back from layout rather than out of Leaflet's own bookkeeping. The container does
+	 * not move while the map does — only a resize or a chrome change can shift it, and
+	 * both go through `invalidateGridAxis`.
+	 */
+	private containerOrigin(): { left: number; top: number } {
+		if (!this.containerBox) {
+			const box = this.map.getContainer().getBoundingClientRect();
+			this.containerBox = { left: box.left, top: box.top };
+		}
+		return this.containerBox;
 	}
 
 	private measureAxis(strip: HTMLElement, cache: AxisCache, axis: "x" | "y") {
@@ -1567,7 +1670,7 @@ export class MapView extends LitElement {
 														class="nav-stop"
 														title=${t.navStop}
 														aria-label=${t.navStop}
-														@click=${() => this.clearNavigation()}
+														@click=${() => this.startNavigation("")}
 													>
 														×
 													</button>

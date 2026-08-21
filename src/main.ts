@@ -55,6 +55,7 @@ applyRoute();
 
 let compassHeading: number | null = null;
 let lastFix: Fix | null = null;
+let pushFrame = 0;
 
 function pushToMap() {
 	if (!lastFix) return;
@@ -65,11 +66,32 @@ function pushToMap() {
 	view.update_(lastFix.lat, lastFix.lng, lastFix.accuracy, heading);
 }
 
+/**
+ * Push the latest position + heading to the map, at most once per displayed frame.
+ *
+ * GPS arrives about once a second, but `deviceorientation` fires at the sensor's own
+ * rate — 60 Hz on most phones, more on some — and every one of those events used to
+ * run a full `update_`: a marker move, two vector paths reprojected, and a `panTo`
+ * that fires `moveend` and so walks the basemap's whole tile set. None of that can
+ * show up more often than the display refreshes, so coalesce into one frame's work.
+ *
+ * Both inputs are module state, so the frame always reads the newest values rather
+ * than a queued snapshot — and a backgrounded tab (where no frame runs) simply
+ * resumes with the current position instead of replaying a backlog.
+ */
+function schedulePush() {
+	if (pushFrame) return;
+	pushFrame = requestAnimationFrame(() => {
+		pushFrame = 0;
+		pushToMap();
+	});
+}
+
 // --- Geolocation ---
 watch(
 	(fix) => {
 		lastFix = fix;
-		pushToMap();
+		schedulePush();
 	},
 	(err) => {
 		setStatus(t.gpsError(err.message));
@@ -80,7 +102,7 @@ watch(
 function startCompass() {
 	watchHeading((h) => {
 		compassHeading = h;
-		pushToMap();
+		schedulePush();
 	});
 }
 if (needsPermission()) {

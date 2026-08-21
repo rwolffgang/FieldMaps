@@ -36,6 +36,22 @@ import { paintTile, type TileScene } from "./osm-map.js";
  */
 const MAX_OVERSAMPLE = 1.5;
 
+/**
+ * Cap on a tile's backing store, in device pixels per CSS pixel.
+ *
+ * `MAX_OVERSAMPLE` bounds the oversample *factor*, not the result — on a 3x phone it
+ * still asks for 4.5 device pixels per CSS pixel, which is a 1152x1152 backing store
+ * for a 256 px tile: 5.3 MB each, and forty-odd tiles are live at any time. That is a
+ * couple of hundred megabytes of canvas on the device least able to spare it, and a
+ * backgrounded PWA is exactly what a phone discards first when memory runs short.
+ *
+ * Three is already past the point where more helps: the line work here is hairlines
+ * and dashes, and at 3x a tile stretched the full sqrt(2) between zoom levels still
+ * has better than two device pixels per screen pixel. Below 3x nothing changes — a 2x
+ * phone lands on 2 x 1.5 = 3 either way — so this only ever trims the extreme.
+ */
+const MAX_PIXEL_RATIO = 3;
+
 /** Tile edge in CSS pixels. Small tiles mean small, evenly spread bursts of work. */
 const TILE_SIZE = 256;
 
@@ -137,7 +153,8 @@ export class BasemapLayer extends L.GridLayer {
 		// Rasterize at the resolution the tile will actually be shown at, capped.
 		const device = window.devicePixelRatio || 1;
 		const stretch = this._map ? this._map.getZoomScale(this._map.getZoom(), coords.z) : 1;
-		view.pixelRatio = device * Math.min(MAX_OVERSAMPLE, Math.max(1, stretch));
+		const oversample = Math.min(MAX_OVERSAMPLE, Math.max(1, stretch));
+		view.pixelRatio = Math.min(MAX_PIXEL_RATIO, device * oversample);
 
 		tile.width = Math.round(size.x * view.pixelRatio);
 		tile.height = Math.round(size.y * view.pixelRatio);
