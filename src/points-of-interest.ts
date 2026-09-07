@@ -236,14 +236,31 @@ export function scenarioPoiNames(
 }
 
 /**
+ * Resolved label sets, keyed by the `poiNames` object they came from.
+ *
+ * A scenario's `poiNames` is a module-level object built once at load, so it is a
+ * stable key — and the answer for it never changes. Without this the list was rebuilt
+ * (a fresh object per point, ~110 of them) on every call, and the callers are the hot
+ * ones: `render()`, `getSelectedPoi()` on every fix, and once per headquarters while
+ * pairing emblems to buildings. The returned array is shared, so treat it as
+ * read-only — every caller that sorts or filters it already copies first.
+ */
+const labelledCache = new WeakMap<Record<string, string>, LabeledPointOfInterest[]>();
+
+/**
  * Resolve a scenario's `poiNames` map into displayable points of interest: only
  * the ids present in `poiNames` are shown, each with its scenario label.
  */
 export function labelPointsOfInterest(poiNames: Record<string, string>): LabeledPointOfInterest[] {
-	return POINTS_OF_INTEREST.flatMap((poi) => {
-		const name = poiNames[poi.id];
-		return name == null ? [] : [{ ...poi, name }];
-	});
+	let labelled = labelledCache.get(poiNames);
+	if (!labelled) {
+		labelled = POINTS_OF_INTEREST.flatMap((poi) => {
+			const name = poiNames[poi.id];
+			return name == null ? [] : [{ ...poi, name }];
+		});
+		labelledCache.set(poiNames, labelled);
+	}
+	return labelled;
 }
 
 /**
