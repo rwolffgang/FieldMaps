@@ -106,7 +106,7 @@ const optTheme: OsmTheme = {
 		road_minor: { kind: "line", color: "#d8b84a", weight: 2.2 },
 		track: { kind: "line", color: "#d8b84a", weight: 2, dashArray: "9 7" },
 		path: { kind: "line", color: "#e0c464", weight: 2, dashArray: "1 8", lineCap: "round" },
-		barrier: { kind: "line", color: "#c2d6e2", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#4a4538", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
@@ -141,7 +141,7 @@ const m24Theme: OsmTheme = {
 		road_minor: { kind: "line", color: "#c2c6ba", weight: 2.2 },
 		track: { kind: "line", color: "#cfd3c7", weight: 2, dashArray: "9 7" },
 		path: { kind: "line", color: "#dfe3d8", weight: 2, dashArray: "1 8", lineCap: "round" },
-		barrier: { kind: "line", color: "#c25146", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#4e5048", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
@@ -175,7 +175,7 @@ const deTheme: OsmTheme = {
 		road_minor: { kind: "line", color: "#d2d6cb", weight: 2.2 },
 		track: { kind: "line", color: "#c6cbbe", weight: 2, dashArray: "9 7" },
 		path: { kind: "line", color: "#e4e8dd", weight: 2, dashArray: "1 8", lineCap: "round" },
-		barrier: { kind: "line", color: "#c9444a", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#454843", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
@@ -208,7 +208,7 @@ const asdTheme: OsmTheme = {
 		road_minor: { kind: "line", color: "#d8dfc9", weight: 2.2 },
 		track: { kind: "line", color: "#cbd3bc", weight: 2, dashArray: "9 7" },
 		path: { kind: "line", color: "#e8eede", weight: 2, dashArray: "1 8", lineCap: "round" },
-		barrier: { kind: "line", color: "#c8d64a", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#4a4f40", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
@@ -242,7 +242,7 @@ const lsoTheme: OsmTheme = {
 		road_minor: { kind: "line", color: "#e2e6dd", weight: 2 },
 		track: { kind: "line", color: "#d5dad0", weight: 1.8, dashArray: "9 7" },
 		path: { kind: "line", color: "#eef1ea", weight: 1.8, dashArray: "1 7", lineCap: "round" },
-		barrier: { kind: "line", color: "#4aa3d6", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#4a4f4c", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
@@ -275,7 +275,7 @@ const lafTheme: OsmTheme = {
 		road_minor: { kind: "line", color: "#dee3d8", weight: 2.2 },
 		track: { kind: "line", color: "#d2d8cc", weight: 2, dashArray: "9 7" },
 		path: { kind: "line", color: "#e9ede4", weight: 2, dashArray: "1 8", lineCap: "round" },
-		barrier: { kind: "line", color: "#d8b34a", weight: 1.6, dashArray: "9 7" },
+		barrier: { kind: "line", color: "#3d423e", weight: 1.6, dashArray: "9 7" },
 	},
 };
 
