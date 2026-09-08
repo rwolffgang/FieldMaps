@@ -34,6 +34,9 @@
 			placeholder="Paste lat, lng"
 		/>
 		<div id="toast" hidden></div>
+		<!-- "A new build is ready." Only ever shown over a live map — anywhere else
+		     the update just applies itself. See src/update.ts. -->
+		<button id="update-banner" type="button" hidden></button>
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>
