@@ -459,6 +459,15 @@ landing-view {
 	color: #e6edf3;
 }
 
+/* The build this phone is actually running. Deliberately dull and deliberately
+   present: it is how "did the update land?" gets answered without a debugger. */
+.landing-version {
+	margin-top: 0.6rem !important;
+	font-size: 0.6875rem;
+	color: #4a5a6a;
+	font-variant-numeric: tabular-nums;
+}
+
 /* ---------------------------------------------------------------------------
    Legal page — Impressum and privacy notice at /?page=impressum.
    Its own scroll container, like the landing page, for the same reason: body
@@ -1194,6 +1203,33 @@ legal-view {
 	border-radius: 8px;
 	font-size: 14px;
 	text-align: center;
+}
+
+/* "New version available — tap to update". Shares the toast's slot: it only ever
+   shows over a live map (everywhere else update.ts applies the build silently),
+   and a GPS error is the one thing that can be up at the same time, so the banner
+   steps down by one toast height when it is. An error long enough to wrap would
+   still touch it — rare enough, and the toast is the one you want on top. */
+#update-banner {
+	position: fixed;
+	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav));
+	left: 12px;
+	right: 12px;
+	max-width: 420px;
+	margin-inline: auto;
+	z-index: 1000;
+	background: rgba(11, 15, 20, 0.92);
+	border: 1px solid var(--accent);
+	color: var(--accent);
+	padding: 8px 14px;
+	border-radius: 8px;
+	font-family: inherit;
+	font-size: 14px;
+	text-align: center;
+	cursor: pointer;
+}
+#toast:not([hidden]) ~ #update-banner {
+	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav) + 46px);
 }
 
 /* Position marker */

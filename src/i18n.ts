@@ -120,6 +120,8 @@ interface Strings {
 	offMap: string;
 	mapLoading: string;
 	mapLoadFailed: string;
+	/** Only ever seen over a live map — off the map an update applies itself. */
+	updateReady: string;
 	enableCompass: string;
 	compassDenied: string;
 	backToOverview: string;
@@ -181,6 +183,7 @@ const STRINGS: Record<Lang, Strings> = {
 		offMap: "⚠ Außerhalb der Karte — Position in der Kartenmitte angezeigt",
 		mapLoading: "Karte wird geladen…",
 		mapLoadFailed: "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen",
+		updateReady: "Neue Version verfügbar — tippen zum Aktualisieren",
 		enableCompass: "Kompass aktivieren",
 		compassDenied: "Kompass-Freigabe abgelehnt",
 		backToOverview: "Zur Übersicht",
@@ -367,6 +370,7 @@ const STRINGS: Record<Lang, Strings> = {
 		offMap: "⚠ Off map — outside this field; position shown at map center",
 		mapLoading: "Loading map…",
 		mapLoadFailed: "⚠ Map could not be loaded — tap to retry",
+		updateReady: "New version available — tap to update",
 		enableCompass: "Enable compass",
 		compassDenied: "Compass permission denied",
 		backToOverview: "Back to the overview",
