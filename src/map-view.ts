@@ -844,6 +844,15 @@ export class MapView extends LitElement {
 		requestAnimationFrame(() => this.resyncSize());
 	}
 
+	/**
+	 * Whether a navigation is running. The one piece of map state a reload would
+	 * destroy and the player would have to re-enter by hand — `main.ts` holds an
+	 * app update back over it.
+	 */
+	get navigating(): boolean {
+		return this.selectedPoiId !== "";
+	}
+
 	private onPoiSelect(event: Event) {
 		this.startNavigation((event.target as HTMLSelectElement).value);
 	}

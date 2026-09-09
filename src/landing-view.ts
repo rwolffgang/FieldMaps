@@ -15,6 +15,7 @@ import { mapsByDate, getPointsOfInterestForMap } from "./config.js";
 import { goToMap, goToLegal, mapUrl, LEGAL_URL } from "./router.js";
 import { daysUntil, formatSchedule, isRunning } from "./event-schedule.js";
 import { currentLang, strings } from "./i18n.js";
+import { BUILD_ID } from "./update.js";
 
 /** Donations — the airsoft twist on "buy me a coffee". */
 const SUPPORT_URL = "https://buymeacoffee.com/rwolffgang";
@@ -184,6 +185,10 @@ export class LandingView extends LitElement {
 							>${t.legal.linkLabel}</a
 						>
 					</p>
+
+					<!-- Which build this phone is on. The app updates itself (see
+					     src/update.ts), and this is how you check that it did. -->
+					<p class="landing-version">${BUILD_ID}</p>
 				</footer>
 			</div>
 		`;

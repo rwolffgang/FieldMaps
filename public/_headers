@@ -1,9 +1,9 @@
-# Cloudflare Pages custom headers.
-# Keep the service worker, its registration shim, and the manifest fresh so
-# PWA updates roll out on reload instead of being served from a stale cache.
+# Cloudflare custom headers, honoured by Workers static assets.
+# The service worker script is how a client finds out a new build exists at all
+# (src/update.ts re-fetches it on a timer), so it must never be answered from a
+# cache — an edge or browser copy of yesterday's sw.js is an app that cannot
+# update. The manifest changes rarely but is just as cheap to revalidate.
 /sw.js
-  Cache-Control: no-cache
-/registerSW.js
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache

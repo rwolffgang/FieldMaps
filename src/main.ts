@@ -8,6 +8,7 @@ import { watchHeading, needsPermission, requestPermission } from "./heading.js";
 import { getMapById, GPS_HEADING_SPEED } from "./config.js";
 import { onRouteChange, routedMapId, routedLegal } from "./router.js";
 import { applyDocumentLang, strings } from "./i18n.js";
+import { startUpdates } from "./update.js";
 
 applyDocumentLang();
 const t = strings();
@@ -52,6 +53,32 @@ function applyRoute() {
 
 onRouteChange(applyRoute);
 applyRoute();
+
+// --- Staying on the deployed build ---
+// `update.ts` does the finding; this decides when the swap is allowed to happen.
+// Off the map it is free — the overview and the Impressum are rebuilt from the URL
+// alone, so the update goes in and the page reloads before anyone notices. Over a
+// map it is not: a reload drops the player's pan, their zoom and, worst of all,
+// wherever they were navigating to. So a foreground map gets the banner and the
+// choice, and the update takes itself the moment the app goes into the background —
+// unless a navigation is running, which is the one thing worth waiting out.
+const updateBanner = document.querySelector("#update-banner") as HTMLButtonElement;
+updateBanner.textContent = t.updateReady;
+let applyUpdate: (() => void) | null = null;
+updateBanner.addEventListener("click", () => applyUpdate?.());
+
+const updates = startUpdates({
+	canReloadNow: () => routedMapId() == null || (document.hidden && !view.navigating),
+	onWaiting: (apply) => {
+		applyUpdate = apply;
+		updateBanner.hidden = false;
+	},
+	onApplying: () => {
+		updateBanner.hidden = true;
+	},
+});
+// Leaving a map for the overview makes the reload free; take it there and then.
+onRouteChange(() => updates.applyWhenSafe());
 
 let compassHeading: number | null = null;
 let lastFix: Fix | null = null;
