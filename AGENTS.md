@@ -1,10 +1,8 @@
 # AGENTS.md
 
-**Field Maps** — https://www.fieldmaps.app
+**Field Maps** — https://www.fieldmaps.app · repo `rwolffgang/FieldMaps`
 
-## TODO
-
-- [ ] **Rename the GitHub repository** from `rwolffgang/MahlwinkelMap` to match the Field Maps name. It is still the old name from when this only covered Mahlwinkel. Once renamed, update `REPO_URL` in `src/landing-view.ts` (the "Quellcode" link on the landing page) and the `origin` remote — GitHub redirects the old URL, but the visible link should be the real one.
+`README.md` is the outward-facing description of the same project (what it is, how to run it). This file is the working document: file map, invariants, calibration, gotchas. Keep the two from drifting — a change that alters how the app is run or deployed belongs in both.
 
 Offline-first PWA that shows the user's live GPS position on a pre-georeferenced airsoft field map. No tile server, no backend — everything is computed client-side from a hardcoded calibration. Every scenario now draws the **custom vector map**, rendered from bundled OpenStreetMap data (`scripts/fetch-osm.mjs` → `public/map_osm.geojson`) in that event's theme: the geometry is projected to canvas pixels once (`src/osm-map.ts`) and rasterized into canvas tiles (`src/basemap-layer.ts`), so panning the map moves finished pixels rather than redrawing vectors. The app ships **no map imagery at all** — the retired photo bases live in `reference/legacy-map-images/`. A photo `base` is still supported (`kind: "image"`, see `src/scenarios/scenario.ts`) but nothing uses it; prefer a theme on the shared base.
 
@@ -21,6 +19,8 @@ Vite + Lit + TypeScript, Leaflet (`L.CRS.Simple`) for rendering, `vite-plugin-pw
 - `npm run preview` — serve the production build locally.
 
 Deploy: `npm run deploy` (`npm run build` + `wrangler deploy`) to Cloudflare, or `npm run build` and publish `dist/` over HTTPS anywhere (GitHub Pages is fine); install as a PWA on the phone. Geolocation requires a secure context, so it will not work from `file://`.
+
+The Cloudflare Worker is still called `mahlwinkel-map` in `wrangler.jsonc`, and the npm package `airsoft-field-map` — both predate the Field Maps name. Renaming the worker would deploy a _new_ worker and leave the `fieldmaps.app` custom domain attached to the old one, so leave it alone unless you are prepared to move the route by hand. Nothing user-visible carries either name.
 
 **Clients already out there update themselves** — no version to bump, nothing to tell anyone. Deploying is the whole rollout: installed apps find the new build within about five minutes of being on screen, immediately on resume or reconnect, and swap over without a prompt unless a map is open in front of someone. `src/update.ts` has the details; the landing page footer shows the build a phone is actually on (`v0.1.0+1a2b3c4`), which is how you check that a rollout landed.
 

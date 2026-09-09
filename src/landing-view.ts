@@ -28,8 +28,7 @@ function featureMailto(subject: string) {
 	return "mailto:robert@wolffgang.de?subject=" + encodeURIComponent(subject);
 }
 
-/** TODO: update once the repository is renamed (see AGENTS.md). */
-const REPO_URL = "https://github.com/rwolffgang/MahlwinkelMap";
+const REPO_URL = "https://github.com/rwolffgang/FieldMaps";
 
 @customElement("landing-view")
 export class LandingView extends LitElement {
