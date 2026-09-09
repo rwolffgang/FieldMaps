@@ -6,7 +6,6 @@
 import type { Scenario } from "./scenario.js";
 import { mission24 } from "./mission24.js";
 import { operationTschernobyl } from "./operation-tschernobyl.js";
-import { operationTschernobylM24 } from "./operation-tschernobyl-m24.js";
 import { darkEmergency } from "./dark-emergency.js";
 import { airsoftDays } from "./airsoft-days.js";
 import { lightSim } from "./light-sim.js";
@@ -18,7 +17,6 @@ export const SCENARIOS: Scenario[] = [
 	mission24,
 	darkEmergency,
 	operationTschernobyl,
-	operationTschernobylM24,
 	lightSim,
 	airsoftDays,
 	lostAirfield,

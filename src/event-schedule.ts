@@ -4,11 +4,13 @@
 //
 // The events recur every year on roughly the same dates, so a schedule is stored as
 // month/day only — no year. That keeps the scenario files from going stale every
-// January: "the next Mission 24" resolves against whatever today is, and the app
-// never shows a date that has already passed.
+// January: "the next Mission 24" resolves against whatever today is.
 //
 // Ordering is "soonest first", with a running event counted as zero days away, so
 // the map you actually need is at the top of the list on the day you need it.
+// Events whose occurrence this calendar year has already finished still wrap in
+// `daysUntil` (that is next year's date), but `hasEnded` flags them so the landing
+// page can put them under Past Events until January, when they become upcoming again.
 // -----------------------------------------------------------------------------
 
 import { currentLang, monthNames, type Lang } from "./i18n.js";
@@ -61,6 +63,22 @@ export function isRunning(schedule: EventSchedule, now = new Date()): boolean {
 }
 
 /**
+ * True once this calendar year's occurrence has finished. Recurring events wrap to
+ * next year in `daysUntil`, but the landing page still wants those under Past Events
+ * until 1 January, when they become upcoming again.
+ */
+export function hasEnded(schedule: EventSchedule, now = new Date()): boolean {
+	if (isRunning(schedule, now)) return false;
+	const today = todayUtc(now);
+	const year = now.getUTCFullYear();
+	const end = schedule.end ?? schedule.start;
+	const startThisYear = utcDay(year, schedule.start);
+	if (startThisYear > today) return false;
+	const endYear = utcDay(year, end) < startThisYear ? year + 1 : year;
+	return utcDay(endYear, end) < today;
+}
+
+/**
  * Date range in the reader's language: "3.–5. Juli" / "3–5 July",
  * "29. April – 2. Mai" / "29 April – 2 May", "20. Juni" / "20 June".
  * German puts an ordinal dot after the day, English does not.
@@ -78,14 +96,26 @@ export function formatSchedule(schedule: EventSchedule, lang: Lang = currentLang
 }
 
 /**
- * Sort comparator: soonest first, then alphabetical. Anything without a schedule
- * (the style variants, which are not events) sorts to the end.
+ * Sort comparator: upcoming soonest first, then this year's past events in calendar
+ * order, then alphabetical. Anything without a schedule (the style variants, which
+ * are not events) sorts to the end.
+ *
+ * Past events wrap to next year in `daysUntil`, which already places them after
+ * whatever is still ahead this year — the extra `hasEnded` rank just keeps a
+ * variant from landing between two past cards.
  */
 export function compareBySchedule<T extends { schedule?: EventSchedule; name: string }>(
 	a: T,
 	b: T,
 	now = new Date(),
 ): number {
+	const rank = (item: T): number => {
+		if (!item.schedule) return 2;
+		if (hasEnded(item.schedule, now)) return 1;
+		return 0;
+	};
+	const group = rank(a) - rank(b);
+	if (group) return group;
 	const left = a.schedule ? daysUntil(a.schedule, now) : Number.MAX_SAFE_INTEGER;
 	const right = b.schedule ? daysUntil(b.schedule, now) : Number.MAX_SAFE_INTEGER;
 	return left - right || a.name.localeCompare(b.name, "de");

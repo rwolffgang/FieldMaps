@@ -269,6 +269,56 @@ landing-view {
 	gap: 0.625rem;
 }
 
+/* Past events start collapsed. Native <details> so it works without extra script
+   and keeps its open state when Lit reuses the element. */
+.past-events {
+	margin-top: 2.5rem;
+}
+.past-events-summary {
+	display: flex;
+	align-items: center;
+	gap: 0.55rem;
+	width: max-content;
+	max-width: 100%;
+	padding: 0.25rem 0;
+	cursor: pointer;
+	list-style: none;
+	user-select: none;
+	color: #6b7f92;
+}
+.past-events-summary::-webkit-details-marker {
+	display: none;
+}
+.past-events-summary::marker {
+	content: none;
+}
+.past-events-summary .landing-section {
+	margin: 0;
+	color: inherit;
+}
+.past-events-summary:hover,
+.past-events-summary:focus-visible {
+	color: #93a5b6;
+	outline: none;
+}
+.past-events-chevron {
+	flex: 0 0 auto;
+	width: 0.38rem;
+	height: 0.38rem;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(-45deg);
+	transition: transform 0.15s;
+	margin-top: -0.1rem;
+}
+.past-events[open] .past-events-chevron {
+	transform: rotate(45deg);
+	margin-top: -0.05rem;
+}
+.past-events[open] .event-grid {
+	margin-top: 0.875rem;
+}
+
 .event-card {
 	display: flex;
 	align-items: stretch;

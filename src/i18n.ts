@@ -98,6 +98,7 @@ interface Strings {
 	installHintAndroid: string;
 	sectionEvents: string;
 	sectionEventsNote: string;
+	sectionPastEvents: string;
 	badgeRunning: string;
 	badgeInDays: (days: number) => string;
 	variant: string;
@@ -158,6 +159,7 @@ const STRINGS: Record<Lang, Strings> = {
 		sectionEventsNote:
 			"Alle Karten zeigen dasselbe Gelände — pro Event wechseln nur Beschriftungen, Zonen und " +
 			"Fraktionen. Andere Spielfelder sind nicht enthalten.",
+		sectionPastEvents: "Vergangene Events",
 		badgeRunning: "Läuft jetzt",
 		badgeInDays: (days) => (days === 1 ? "Morgen" : `In ${days} Tagen`),
 		variant: "Variante",
@@ -345,6 +347,7 @@ const STRINGS: Record<Lang, Strings> = {
 		sectionEventsNote:
 			"Every map covers the same ground — only the labels, zones and factions change per " +
 			"event. Other fields are not included.",
+		sectionPastEvents: "Past Events",
 		badgeRunning: "Running now",
 		badgeInDays: (days) => (days === 1 ? "Tomorrow" : `In ${days} days`),
 		variant: "Variant",

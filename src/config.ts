@@ -105,7 +105,8 @@ export const MAPS: MapDefinition[] = SCENARIOS.map(scenarioToMap);
 
 /**
  * The maps in the order a player wants them: the event that is running right now
- * first, then the next one, and so on — style variants (no schedule) last.
+ * first, then the next one, then this year's past events, then style variants
+ * (no schedule).
  *
  * A function rather than a constant because the answer depends on today's date, and
  * this is a PWA that people leave open for a whole weekend. Cheap enough to call per

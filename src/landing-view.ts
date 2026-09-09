@@ -9,12 +9,12 @@
 // browser affordance keeps working.
 // -----------------------------------------------------------------------------
 
-import { LitElement, html } from "lit";
+import { LitElement, html, nothing } from "lit";
 import { customElement } from "lit/decorators.js";
-import { mapsByDate, getPointsOfInterestForMap } from "./config.js";
+import { mapsByDate, getPointsOfInterestForMap, type MapDefinition } from "./config.js";
 import { goToMap, goToLegal, mapUrl, LEGAL_URL } from "./router.js";
-import { daysUntil, formatSchedule, isRunning } from "./event-schedule.js";
-import { currentLang, strings } from "./i18n.js";
+import { daysUntil, formatSchedule, hasEnded, isRunning } from "./event-schedule.js";
+import { currentLang, strings, type Lang } from "./i18n.js";
 import { BUILD_ID } from "./update.js";
 
 /** Donations — the airsoft twist on "buy me a coffee". */
@@ -53,9 +53,68 @@ export class LandingView extends LitElement {
 		goToLegal();
 	}
 
+	/** Closed until the player opens it; remembered so a re-render does not shut it. */
+	private pastEventsOpen = false;
+
+	private onPastEventsToggle(event: Event) {
+		this.pastEventsOpen = (event.currentTarget as HTMLDetailsElement).open;
+	}
+
+	private eventCard(map: MapDefinition, lang: Lang, badge: string) {
+		const t = strings();
+		const count = getPointsOfInterestForMap(map.id).length;
+		const zones = map.zones?.length ?? 0;
+		const headquarters = map.headquarters?.length ?? 0;
+		const running = map.schedule != null && isRunning(map.schedule);
+		// German is the source text; fall back to it if a scenario has no
+		// translation yet, rather than showing the card with a hole in it.
+		const blurb = (lang === "en" ? map.blurbEn : map.blurb) ?? map.blurb;
+		return html`
+			<li>
+				<a
+					class="event-card ${running ? "is-running" : ""}"
+					href=${mapUrl(map.id)}
+					style="--event-accent:${map.accent ?? "#8aa0b4"}"
+					@click=${(e: MouseEvent) => this.open(e, map.id)}
+				>
+					<span class="event-rule"></span>
+					<span class="event-body">
+						<span class="event-name">${map.name}</span>
+						<span class="event-when">
+							${
+								map.schedule
+									? html`<span class="event-dates">${formatSchedule(map.schedule, lang)}</span>`
+									: html`<span class="event-dates event-variant">${t.variant}</span>`
+							}
+							${badge ? html`<span class="event-badge">${badge}</span>` : nothing}
+						</span>
+						${blurb ? html`<span class="event-blurb">${blurb}</span>` : nothing}
+						<span class="event-meta">
+							${t.points(count)}${headquarters ? html` · ${headquarters} HQ` : nothing}${
+								zones ? html` · ${t.zones(zones)}` : nothing
+							}
+						</span>
+					</span>
+					<span class="event-go" aria-hidden="true">→</span>
+				</a>
+			</li>
+		`;
+	}
+
 	render() {
 		const t = strings();
 		const lang = currentLang();
+		const ordered = mapsByDate();
+		const upcomingMaps = ordered.filter((map) => map.schedule == null || !hasEnded(map.schedule));
+		const pastMaps = ordered.filter((map) => map.schedule != null && hasEnded(map.schedule));
+		// Only the soonest still-upcoming event gets the "next up" badge.
+		const soonest = upcomingMaps.find((map) => map.schedule != null);
+
+		const badgeFor = (map: MapDefinition): string => {
+			if (map.schedule != null && isRunning(map.schedule)) return t.badgeRunning;
+			if (map === soonest) return t.badgeInDays(daysUntil(map.schedule!));
+			return "";
+		};
 
 		return html`
 			<div class="landing">
@@ -93,60 +152,32 @@ export class LandingView extends LitElement {
 
 				<h2 class="landing-section">${t.sectionEvents}</h2>
 				<p class="landing-section-note">${t.sectionEventsNote}</p>
-				<ul class="event-grid">
-					${(() => {
-						const ordered = mapsByDate();
-						// Only the first scheduled event gets the "next up" badge — the list is
-						// already sorted, so that is whichever one is soonest.
-						const upcoming = ordered.find((map) => map.schedule != null);
-						return ordered.map((map) => {
-							const count = getPointsOfInterestForMap(map.id).length;
-							const zones = map.zones?.length ?? 0;
-							const hqs = map.headquarters?.length ?? 0;
-							const running = map.schedule != null && isRunning(map.schedule);
-							const badge = running
-								? t.badgeRunning
-								: map === upcoming
-									? t.badgeInDays(daysUntil(map.schedule!))
-									: "";
-							// German is the source text; fall back to it if a scenario has no
-							// translation yet, rather than showing the card with a hole in it.
-							const blurb = (lang === "en" ? map.blurbEn : map.blurb) ?? map.blurb;
-							return html`
-								<li>
-									<a
-										class="event-card ${running ? "is-running" : ""}"
-										href=${mapUrl(map.id)}
-										style="--event-accent:${map.accent ?? "#8aa0b4"}"
-										@click=${(e: MouseEvent) => this.open(e, map.id)}
-									>
-										<span class="event-rule"></span>
-										<span class="event-body">
-											<span class="event-name">${map.name}</span>
-											<span class="event-when">
-												${
-													map.schedule
-														? html`<span class="event-dates"
-																>${formatSchedule(map.schedule, lang)}</span
-															>`
-														: html`<span class="event-dates event-variant">${t.variant}</span>`
-												}
-												${badge ? html`<span class="event-badge">${badge}</span>` : ""}
-											</span>
-											${blurb ? html`<span class="event-blurb">${blurb}</span>` : ""}
-											<span class="event-meta">
-												${t.points(count)}${hqs ? html` · ${hqs} HQ` : ""}${
-													zones ? html` · ${t.zones(zones)}` : ""
-												}
-											</span>
-										</span>
-										<span class="event-go" aria-hidden="true">→</span>
-									</a>
-								</li>
-							`;
-						});
-					})()}
-				</ul>
+				${
+					upcomingMaps.length
+						? html`<ul class="event-grid">
+								${upcomingMaps.map((map) => this.eventCard(map, lang, badgeFor(map)))}
+							</ul>`
+						: nothing
+				}
+				${
+					pastMaps.length
+						? html`
+								<details
+									class="past-events"
+									?open=${this.pastEventsOpen}
+									@toggle=${this.onPastEventsToggle}
+								>
+									<summary class="past-events-summary">
+										<h2 class="landing-section">${t.sectionPastEvents}</h2>
+										<span class="past-events-chevron" aria-hidden="true"></span>
+									</summary>
+									<ul class="event-grid">
+										${pastMaps.map((map) => this.eventCard(map, lang, ""))}
+									</ul>
+								</details>
+							`
+						: nothing
+				}
 
 				<footer class="landing-foot">
 					<p>${t.linkHint}</p>
