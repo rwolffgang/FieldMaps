@@ -83,7 +83,7 @@ export interface BoundaryLine {
 export interface Scenario {
 	/** Stable id, also used for persistence and as the map id. */
 	id: string;
-	/** Label shown in the scenario selector. */
+	/** Label shown on the landing card. */
 	name: string;
 	/** One line for the landing page card — what this game is, in the user's words. */
 	blurb?: string;

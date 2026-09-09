@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------------
 // scenarios/index.ts
-// Register every scenario here. The order is the order they appear in the selector.
+// Register every scenario here. The order is the order they appear on the landing page.
 // -----------------------------------------------------------------------------
 
 import type { Scenario } from "./scenario.js";

@@ -6,7 +6,6 @@ import "leaflet/dist/leaflet.css";
 import { solveTransform, type Transform } from "./transform.js";
 import {
 	MAPS,
-	mapsByDate,
 	DEFAULT_MAP_ID,
 	getMapById,
 	getPointsOfInterestForMap,
@@ -29,7 +28,7 @@ import {
 	type TileScene,
 } from "./osm-map.js";
 import { BasemapLayer } from "./basemap-layer.js";
-import { goHome, goToMap, routedMapId } from "./router.js";
+import { goHome, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
 import { strings } from "./i18n.js";
 
@@ -834,14 +833,6 @@ export class MapView extends LitElement {
 			if (this.toggles.hqs) this.hqLayer.addTo(this.map);
 			else this.map.removeLayer(this.hqLayer);
 		}
-	}
-
-	private onMapSelect(event: Event) {
-		const id = (event.target as HTMLSelectElement).value;
-		if (id === this.selectedMapId) return;
-		// Route rather than load directly, so switching maps from the HUD produces the
-		// same shareable URL as arriving from the landing page.
-		goToMap(id);
 	}
 
 	/** Show a map because the route changed. */
@@ -1704,25 +1695,6 @@ export class MapView extends LitElement {
 						<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>
 							‹
 						</button>
-						${
-							MAPS.length > 1
-								? html`
-										<select class="map-select" @change=${this.onMapSelect}>
-											<!-- Guarded like the PoI list, and for the same reason — this one also
-											     re-sorts every event by date on the way. -->
-											${guard([this.selectedMapId], () =>
-												mapsByDate().map(
-													(map) => html`
-														<option value=${map.id} ?selected=${this.selectedMapId === map.id}>
-															${map.name}
-														</option>
-													`,
-												),
-											)}
-										</select>
-									`
-								: ""
-						}
 					</div>
 					<div class="hud-right">
 						${this.renderToggles()}

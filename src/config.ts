@@ -28,7 +28,7 @@ export type { PointOfInterest, LabeledPointOfInterest };
 export interface MapDefinition {
 	/** Stable identifier used for persistence and URLs. */
 	id: string;
-	/** Label shown in the map selector dropdown. */
+	/** Label shown on the landing card. */
 	name: string;
 	/** One-line description for the landing page card. */
 	blurb?: string;
