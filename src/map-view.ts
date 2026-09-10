@@ -31,6 +31,14 @@ import { BasemapLayer } from "./basemap-layer.js";
 import { goHome, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
 import { strings } from "./i18n.js";
+import {
+	installMethod,
+	installNudgeSnoozed,
+	onInstallChange,
+	promptInstall,
+	snoozeInstallNudge,
+	type InstallMethod,
+} from "./install.js";
 
 // There is no in-app language switcher — the browser's choice is fixed for the
 // session — so resolving the strings once at module load is enough.
@@ -274,6 +282,18 @@ export class MapView extends LitElement {
 	 * land on a different pixel.
 	 */
 	private placedFix: { lat: number; lng: number; accuracy: number } | null = null;
+
+	private stopWatchingInstall?: () => void;
+
+	connectedCallback() {
+		super.connectedCallback();
+		this.stopWatchingInstall = onInstallChange(() => (this.install = installMethod()));
+	}
+
+	disconnectedCallback() {
+		super.disconnectedCallback();
+		this.stopWatchingInstall?.();
+	}
 	/**
 	 * True between `zoomstart` and `zoomend` — a pinch, a wheel step, a `fitBounds`.
 	 *
@@ -306,6 +326,17 @@ export class MapView extends LitElement {
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
 	@state() private togglesOpen = false;
+
+	// --- The install nudge. The landing page's card is the real pitch; this is the
+	// backstop for everyone who arrived on a shared ?map= link and so has never seen
+	// that page. It covers part of a live map, which buys it two obligations: it
+	// waits until the app has actually proved useful, and "Später" means it. ---
+	@state() private install: InstallMethod = installMethod();
+	/** True once a fix has been drawn: the app has just shown them where they are. */
+	@state() private locatedOnce = false;
+	@state() private installBarDismissed = installNudgeSnoozed();
+	/** iOS has no prompt to fire, so its bar unfolds into the gesture instead. */
+	@state() private installStepsOpen = false;
 	@state() private toggles: Toggles = loadStoredToggles();
 	/** Set when the OSM data failed to load, so the user (or `online`) can retry it. */
 	@state() private vectorRetry: { definition: MapDefinition; dataUrl: string } | null = null;
@@ -1306,6 +1337,7 @@ export class MapView extends LitElement {
 		if (!this.map.hasLayer(this.marker)) this.marker.addTo(this.map);
 
 		this.placedFix = { lat, lng, accuracy: accuracyM };
+		this.locatedOnce = true;
 
 		// Keep the map in view when the fix falls outside the image; following it
 		// would just pan into empty background.
@@ -1634,55 +1666,15 @@ export class MapView extends LitElement {
 						`
 					: ""
 			}
-			${
-				pointsOfInterest.length > 0
-					? html`
-							<div class="poi-panel">
-								<select class="poi-select" .value=${this.selectedPoiId} @change=${this.onPoiSelect}>
-									<option value="">${t.navigateTo}</option>
-									<!-- Guarded on the map id: the list only changes when the map does, and
-									     without this every render walked all ~80 options. That includes the
-									     one \`dragstart\` triggers by clearing \`following\`, which put a
-									     rebuild of this list on the first frame of every drag, and the one
-									     each GPS fix triggers through \`status\`. -->
-									${guard([this.selectedMapId], () =>
-										[...pointsOfInterest]
-											.sort(comparePointsOfInterest)
-											.map(
-												(poi) => html` <option value=${poi.id}>${poi.id} · ${poi.name}</option> `,
-											),
-									)}
-								</select>
-								${
-									selectedPoi
-										? html`
-												<div class="nav-card">
-													<div
-														class="nav-arrow"
-														style="transform:rotate(${this.navArrowDeg}deg)"
-													></div>
-													<div class="nav-info">
-														<span class="nav-distance">${this.navDistanceM.toFixed(0)} m</span>
-														<span class="nav-hint">${this.navHint}</span>
-													</div>
-													<button
-														type="button"
-														class="nav-stop"
-														title=${t.navStop}
-														aria-label=${t.navStop}
-														@click=${() => this.startNavigation("")}
-													>
-														×
-													</button>
-												</div>
-											`
-										: ""
-								}
-							</div>
-						`
-					: ""
-			}
+			<!-- Top row: out of the map on the left, the settings gear on the right. Both
+			     are one tap and neither is aimed at while walking, which is why they get the
+			     edge the thumb reaches for least. -->
+			<div class="top-row">
+				<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>‹</button>
+				${this.renderToggles()}
+			</div>
 			<div class="hud">
+				${this.renderInstallBar()}
 				<!-- Status and errors get a row of their own above the controls, so a long
 				     message (a failed map load, the off-map warning) can use the full width. -->
 				<div class="hud-status">
@@ -1701,17 +1693,133 @@ export class MapView extends LitElement {
 				</div>
 				<div class="hud-controls">
 					<div class="hud-left">
-						<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>
-							‹
-						</button>
+						${
+							pointsOfInterest.length > 0
+								? html`
+										<div class="poi-panel">
+											${
+												selectedPoi
+													? html`
+															<div class="nav-card">
+																<div
+																	class="nav-arrow"
+																	style="transform:rotate(${this.navArrowDeg}deg)"
+																></div>
+																<div class="nav-info">
+																	<span class="nav-distance"
+																		>${this.navDistanceM.toFixed(0)} m</span
+																	>
+																	<span class="nav-hint">${this.navHint}</span>
+																</div>
+																<button
+																	type="button"
+																	class="nav-stop"
+																	title=${t.navStop}
+																	aria-label=${t.navStop}
+																	@click=${() => this.startNavigation("")}
+																>
+																	×
+																</button>
+															</div>
+														`
+													: ""
+											}
+											<select
+												class="poi-select"
+												.value=${this.selectedPoiId}
+												@change=${this.onPoiSelect}
+											>
+												<option value="">${t.navigateTo}</option>
+												<!-- Guarded on the map id: the list only changes when the map does, and
+												     without this every render walked all ~80 options. That includes the
+												     one \`dragstart\` triggers by clearing \`following\`, which put a
+												     rebuild of this list on the first frame of every drag, and the one
+												     each GPS fix triggers through \`status\`. -->
+												${guard([this.selectedMapId], () =>
+													[...pointsOfInterest]
+														.sort(comparePointsOfInterest)
+														.map(
+															(poi) => html`
+																<option value=${poi.id}>${poi.id} · ${poi.name}</option>
+															`,
+														),
+												)}
+											</select>
+										</div>
+									`
+								: ""
+						}
 					</div>
 					<div class="hud-right">
-						${this.renderToggles()}
 						<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>
 							◎
 						</button>
 					</div>
 				</div>
+			</div>
+		`;
+	}
+
+	/**
+	 * The install bar, for players who never saw the landing page.
+	 *
+	 * Event links get passed around directly — `?map=de` in a group chat — so a good
+	 * share of players land straight on a map and never read the page that explains
+	 * any of this. This is the same offer, at the point it starts to matter, and it
+	 * holds itself to three rules: it waits for the first GPS fix, so it is asking
+	 * someone who has just watched the app work rather than someone still staring at
+	 * a blank map; it never appears while a navigation is running, because it would
+	 * be covering the one thing they are walking towards; and dismissing it is
+	 * remembered for a fortnight, which covers a whole event weekend.
+	 */
+	private renderInstallBar() {
+		if (this.installBarDismissed || !this.locatedOnce) return "";
+		if (this.selectedPoiId) return "";
+		// "manual" is a desktop browser's menu and "in-app-browser" needs a paragraph
+		// to explain itself: both belong on the landing page, not over a live map.
+		if (this.install.kind !== "prompt" && this.install.kind !== "ios") return "";
+
+		const dismiss = () => {
+			snoozeInstallNudge();
+			this.installBarDismissed = true;
+		};
+
+		const act = async () => {
+			if (this.install.kind === "prompt") {
+				await promptInstall();
+				return;
+			}
+			// iOS: nothing to fire, so the bar unfolds into the gesture instead of
+			// sending them back to the overview and losing the map they are on.
+			this.installStepsOpen = !this.installStepsOpen;
+		};
+
+		return html`
+			<div class="install-bar">
+				<span class="install-bar-text">
+					${t.installBarText}
+					${
+						this.installStepsOpen
+							? html`
+									<span class="install-bar-steps">
+										<span>1. ${t.installIosStep1}</span>
+										<span>2. ${t.installIosStep2}</span>
+									</span>
+								`
+							: ""
+					}
+				</span>
+				<button type="button" class="install-bar-go" @click=${act}>
+					${this.install.kind === "prompt" ? t.installBarAction : t.installBarShow}
+				</button>
+				<button
+					type="button"
+					class="install-bar-later"
+					aria-label=${t.installBarLater}
+					@click=${dismiss}
+				>
+					×
+				</button>
 			</div>
 		`;
 	}
@@ -1747,7 +1855,7 @@ export class MapView extends LitElement {
 					aria-label=${t.layers}
 					@click=${() => (this.togglesOpen = !this.togglesOpen)}
 				>
-					▤
+					⚙
 				</button>
 			</div>
 		`;

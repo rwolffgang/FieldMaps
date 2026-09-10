@@ -12,28 +12,26 @@
 	--accent-warm: var(--brand-orange);
 	/* Top-of-screen chrome is laid out in rows by hand: the elements live in
 	   different subtrees (map-view's own markup vs. the page shell), so they
-	   cannot share a flex container. Row 1 holds the PoI select and the test
-	   input, row 2 the compass prompt, row 3 the nav card, row 4 the toast.
+	   cannot share a flex container. Row 1 holds the back button and the settings
+	   gear, row 2 the compass prompt, row 3 the toast.
 	   Each row that can be absent contributes its height through a --stack-*
 	   variable that is 0 while it is hidden, so the rows below just add them up.
 	   Only the last row (the toast) may grow freely; the ones above it are
 	   fixed-content, so their heights can be stated here. */
 	--top-inset: max(12px, env(safe-area-inset-top));
 	--top-row-gap: 8px;
-	--top-row-1-h: 36px;
+	--top-row-1-h: 46px;
 	--compass-h: 40px;
-	--nav-card-h: 62px;
 	--grid-axis-h: 16px;
 	--stack-grid-axis: 0px;
 	--top-row-2: calc(
 		var(--top-inset) + var(--stack-grid-axis) + var(--top-row-1-h) + var(--top-row-gap)
 	);
 	--stack-compass: 0px;
-	--stack-nav: 0px;
 }
 /* The grid's column letters take a row of their own above everything else, rather
-   than sharing the top edge with the PoI select — a letter parked behind that pill
-   for the whole match is a letter you never get to read. Declared on the same
+   than sharing the top edge with the back button — a letter parked behind that
+   pill for the whole match is a letter you never get to read. Declared on the same
    element as the row arithmetic above, because a custom property resolves its
    var()s where it is declared: an override on `body` would never reach
    `--top-row-2`. */
@@ -42,9 +40,6 @@
 }
 body:has(#enable-compass:not([hidden])) {
 	--stack-compass: calc(var(--compass-h) + var(--top-row-gap));
-}
-body:has(.nav-card) {
-	--stack-nav: calc(var(--nav-card-h) + var(--top-row-gap));
 }
 
 * {
@@ -62,12 +57,19 @@ body {
 	-webkit-tap-highlight-color: transparent;
 }
 
-map-view,
+/* Absolute, not fixed: a fixed element is a stacking context whatever its
+   z-index, and that would seal the map's own chrome underneath the rows the page
+   shell owns (the compass prompt, the toast) — the settings panel drops down
+   across both. Everything inside is positioned against the viewport anyway. */
+map-view {
+	position: absolute;
+	inset: 0;
+}
+/* Fixed on purpose here: Leaflet's panes climb to z-index 700, and the stacking
+   context this creates keeps them under the chrome instead of beside it. */
 #map {
 	position: fixed;
 	inset: 0;
-}
-#map {
 	background: #0b0f14;
 }
 
@@ -241,6 +243,258 @@ landing-view {
 	.install-note {
 		display: none;
 	}
+}
+
+/* The webview case, where the answer is "leave this browser first". Neutral rather
+   than orange: it is a blocker to clear, not the call to action. */
+.install-note.is-blocked {
+	border-color: rgba(255, 255, 255, 0.14);
+	background: rgba(255, 255, 255, 0.04);
+}
+.install-note.is-blocked .install-title {
+	color: #e6edf4;
+}
+.install-note.is-blocked .install-mark {
+	color: #93a5b6;
+	margin-top: 0.25rem;
+}
+
+/* Chromium handed us its prompt, so the card ends in a button and no instructions.
+   Full width on a phone: it is the one thing the page is asking for. */
+.install-btn {
+	margin-top: 0.7rem;
+	padding: 0.6rem 1.1rem;
+	border: 0;
+	border-radius: 10px;
+	background: var(--accent-warm);
+	color: #1a1000;
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+	cursor: pointer;
+	align-self: flex-start;
+	/* 44px is where both platforms' touch guidelines land, and the whole point of
+	   this branch is that installing takes one confident tap. */
+	min-height: 44px;
+}
+.install-btn:active {
+	transform: translateY(1px);
+}
+
+/* iOS: the gesture, numbered, with the Share glyph inline where the word would be
+   too vague — the control it names carries no label on that platform. */
+.install-steps {
+	margin-top: 0.55rem;
+	font-size: 0.8rem;
+	line-height: 1.5;
+	color: #b8c6d4;
+}
+.install-steps-lead {
+	display: block;
+	color: #93a5b6;
+}
+.install-steps ol {
+	margin: 0.3rem 0 0;
+	padding-left: 1.2rem;
+}
+.install-steps li {
+	margin: 0.15rem 0;
+}
+.install-step-glyph {
+	display: inline-flex;
+	vertical-align: -0.3em;
+	margin-right: 0.3rem;
+	color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Share. Blue, not orange: the install card above it is the page's call to
+   action and nothing else on the screen may compete with it. This is an offer.
+   --------------------------------------------------------------------------- */
+.share-cta {
+	margin-top: 0.75rem;
+}
+.share-btn {
+	display: flex;
+	align-items: center;
+	gap: 0.85rem;
+	width: 100%;
+	padding: 0.85rem 1.1rem;
+	border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+	border-radius: 14px;
+	background: color-mix(in srgb, var(--accent) 8%, transparent);
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+.share-btn:active {
+	transform: translateY(1px);
+}
+.share-btn-glyph {
+	flex: none;
+	display: flex;
+	color: var(--accent);
+}
+.share-btn-text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	min-width: 0;
+}
+.share-btn-label {
+	font-size: 0.95rem;
+	font-weight: 700;
+	color: var(--accent);
+}
+.share-btn-sub {
+	font-size: 0.8rem;
+	line-height: 1.4;
+	color: #93a5b6;
+}
+
+/* The sheet. A native <dialog>, so the backdrop, the focus trap and Escape all
+   come from the browser. */
+.share-sheet {
+	position: relative;
+	width: min(21rem, calc(100vw - 2.5rem));
+	padding: 1.4rem 1.4rem 1.2rem;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 18px;
+	background: #121a22;
+	color: #e6edf4;
+	text-align: center;
+	overflow: visible;
+}
+.share-sheet::backdrop {
+	background: rgba(4, 8, 12, 0.72);
+}
+.share-sheet-title {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+.share-sheet-hint {
+	margin: 0.3rem 0 1rem;
+	font-size: 0.8rem;
+	color: #93a5b6;
+}
+/* The code carries its own white ground (see scripts/make-qr.mjs) — a QR needs
+   one, and every surface on this page is near-black. The rounded plate just
+   finishes the edge the SVG's quiet zone already reserves. */
+.share-qr {
+	display: block;
+	width: 100%;
+	max-width: 15rem;
+	height: auto;
+	margin: 0 auto;
+	border-radius: 12px;
+	/* A scanner reads contrast, not smoothing: keep the modules square. */
+	image-rendering: pixelated;
+}
+.share-url {
+	margin: 0.85rem 0 1rem;
+	font-size: 0.9rem;
+	font-weight: 700;
+	color: var(--accent);
+	word-break: break-all;
+}
+.share-sheet-actions {
+	display: flex;
+	gap: 0.6rem;
+}
+.share-action {
+	flex: 1;
+	padding: 0.6rem 0.5rem;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	border-radius: 10px;
+	background: rgba(255, 255, 255, 0.05);
+	color: #e6edf4;
+	font: inherit;
+	font-size: 0.85rem;
+	font-weight: 700;
+	cursor: pointer;
+	min-height: 44px;
+}
+.share-action:active {
+	transform: translateY(1px);
+}
+.share-close {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.6rem;
+	width: 2rem;
+	height: 2rem;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: #93a5b6;
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   The install bar on the map screen, for players who arrived on a shared event
+   link and so have never seen the landing page. First row of the HUD, which is
+   a bottom-anchored column, so it sits just above the status pill.
+   --------------------------------------------------------------------------- */
+.install-bar {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.6rem 0.7rem 0.6rem 0.9rem;
+	border: 1px solid color-mix(in srgb, var(--accent-warm) 40%, transparent);
+	border-radius: 12px;
+	background: rgba(18, 26, 34, 0.94);
+	backdrop-filter: blur(8px);
+	/* The HUD itself is click-through so the map stays draggable underneath. */
+	pointer-events: auto;
+}
+.install-bar-text {
+	flex: 1;
+	min-width: 0;
+	font-size: 0.78rem;
+	line-height: 1.35;
+	color: #d3dbe3;
+}
+/* iOS unfolds the gesture here rather than sending the player back to the
+   overview, which would cost them the map they are standing on. */
+.install-bar-steps {
+	display: flex;
+	flex-direction: column;
+	margin-top: 0.35rem;
+	font-size: 0.74rem;
+	color: #93a5b6;
+}
+.install-bar-go {
+	flex: none;
+	padding: 0.45rem 0.8rem;
+	border: 0;
+	border-radius: 9px;
+	background: var(--accent-warm);
+	color: #1a1000;
+	font: inherit;
+	font-size: 0.8rem;
+	font-weight: 800;
+	cursor: pointer;
+	/* A little under the full 44: this one is covering a map, and the bar beside it
+	   has a dismiss button that must not get crowded off the edge. */
+	min-height: 40px;
+}
+.install-bar-later {
+	flex: none;
+	width: 1.9rem;
+	height: 1.9rem;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: #93a5b6;
+	font-size: 1.2rem;
+	line-height: 1;
+	cursor: pointer;
 }
 
 .landing-section {
@@ -595,22 +849,69 @@ legal-view {
 	font-weight: 600;
 }
 
-/* Back to the overview, in the map HUD. */
-.home-btn {
-	pointer-events: auto;
-	width: 38px;
-	height: 38px;
-	flex: 0 0 auto;
-	border-radius: 999px;
-	border: 1px solid rgba(255, 255, 255, 0.14);
-	background: rgba(11, 15, 20, 0.9);
-	color: #e6edf3;
-	font-size: 1.35rem;
-	line-height: 1;
-	cursor: pointer;
+/* Top row of the map chrome: back to the overview on the left, the settings gear
+   on the right, with the map running underneath between them. */
+.top-row {
+	position: fixed;
+	top: calc(var(--top-inset) + var(--stack-grid-axis));
+	left: 12px;
+	right: 12px;
+	/* Above the rows below it (1000), because the settings panel drops down across
+	   them — a compass prompt over the first switch makes the panel unusable. */
+	z-index: 1100;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	pointer-events: none;
 }
-.home-btn:hover {
+
+/* The two top-row controls. They sit over live map, some of it pale, so they carry
+   a solid ground, a bright rim and a shadow rather than the near-transparent
+   treatment the map furniture below gets — these are the only two ways out of the
+   screen and both have to be findable at a glance in daylight. */
+.home-btn,
+.toggle-btn {
+	pointer-events: auto;
+	width: 46px;
+	height: 46px;
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border-radius: 50%;
+	/* A full-strength rim, not the hairline the rest of the chrome uses: over a
+	   black scenario map a 14%-white edge is a circle you have to go looking for. */
+	border: 2px solid rgba(255, 255, 255, 0.55);
+	background: rgba(22, 29, 38, 0.95);
+	color: #fff;
+	line-height: 1;
+	font-family: inherit;
+	cursor: pointer;
+	/* The dark halo is what holds the rim apart from the pale basemaps, the same
+	   job the text shadow does for the scale bar and the grid letters. */
+	box-shadow:
+		0 2px 12px rgba(0, 0, 0, 0.7),
+		0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+.home-btn:hover,
+.toggle-btn:hover,
+.home-btn:focus-visible,
+.toggle-btn:focus-visible {
 	border-color: var(--accent);
+	color: var(--accent);
+	outline: none;
+}
+.home-btn:active,
+.toggle-btn:active {
+	transform: scale(0.94);
+}
+
+/* Back to the overview, top left. */
+.home-btn {
+	font-size: 26px;
+	/* The chevron sits high in its em box; nudge it back onto the centre. */
+	padding-bottom: 3px;
 }
 
 /* HUD overlay — two rows: status/errors on top, controls below. */
@@ -635,22 +936,20 @@ legal-view {
 }
 .hud-controls {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	justify-content: space-between;
 	gap: 12px;
 }
 .hud-left {
 	display: flex;
-	align-items: center;
+	align-items: flex-end;
 	gap: 8px;
 	min-width: 0;
 }
-/* Points of interest — top left */
+/* Points of interest — bottom left, in the HUD's control row. Down here it sits
+   under the thumb that is holding the phone, and the nav card it opens stacks
+   directly above it instead of across the map. */
 .poi-panel {
-	position: fixed;
-	top: calc(var(--top-inset) + var(--stack-grid-axis));
-	left: 12px;
-	z-index: 1000;
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
@@ -678,10 +977,8 @@ legal-view {
 	outline: none;
 	border-color: var(--accent-warm);
 }
-/* Row 3: below the compass prompt when that is up, directly under the PoI
-   select when it is not. */
+/* Sits directly above the select that opened it. */
 .nav-card {
-	margin-top: var(--stack-compass);
 	pointer-events: auto;
 	display: flex;
 	align-items: center;
@@ -1072,19 +1369,13 @@ legal-view {
 	color: var(--accent);
 }
 
-/* Layer toggles */
+/* Settings — the gear in the top row and the layer switches it drops down. */
 .toggles {
 	position: relative;
 	pointer-events: auto;
+	flex: 0 0 auto;
 }
 .toggle-btn {
-	pointer-events: auto;
-	width: 52px;
-	height: 52px;
-	border-radius: 50%;
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	background: rgba(11, 15, 20, 0.9);
-	color: #8b98a5;
 	font-size: 22px;
 }
 .toggle-btn.on {
@@ -1093,7 +1384,7 @@ legal-view {
 }
 .toggles-panel {
 	position: absolute;
-	bottom: 60px;
+	top: 54px;
 	right: 0;
 	display: flex;
 	flex-direction: column;
@@ -1189,37 +1480,11 @@ legal-view {
 	font-weight: 700;
 	font-size: 15px;
 }
-/* Testing aid: paste "lat, lng" from Google Maps. */
-#test-coords {
-	position: fixed;
-	top: calc(var(--top-inset) + var(--stack-grid-axis));
-	right: 12px;
-	left: auto;
-	z-index: 1000;
-	width: 150px;
-	background: rgba(11, 15, 20, 0.9);
-	color: #e6edf3;
-	border: 1px solid rgba(255, 255, 255, 0.08);
-	border-radius: 999px;
-	padding: 8px 14px;
-	font-size: 13px;
-	font-family: inherit;
-	opacity: 0.55;
-}
-#test-coords:focus {
-	opacity: 1;
-	outline: none;
-	border-color: var(--accent);
-}
-#test-coords::placeholder {
-	color: #8b98a5;
-}
-
 /* Last top row: it is the only one allowed to grow (an error message wraps), so
    nothing is positioned below it and it keeps the full width to wrap into. */
 #toast {
 	position: fixed;
-	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav));
+	top: calc(var(--top-row-2) + var(--stack-compass));
 	left: 12px;
 	right: 12px;
 	max-width: 420px;
@@ -1240,7 +1505,7 @@ legal-view {
    still touch it — rare enough, and the toast is the one you want on top. */
 #update-banner {
 	position: fixed;
-	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav));
+	top: calc(var(--top-row-2) + var(--stack-compass));
 	left: 12px;
 	right: 12px;
 	max-width: 420px;
@@ -1257,7 +1522,7 @@ legal-view {
 	cursor: pointer;
 }
 #toast:not([hidden]) ~ #update-banner {
-	top: calc(var(--top-row-2) + var(--stack-compass) + var(--stack-nav) + 46px);
+	top: calc(var(--top-row-2) + var(--stack-compass) + 46px);
 }
 
 /* Position marker */

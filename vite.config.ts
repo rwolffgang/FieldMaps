@@ -68,6 +68,11 @@ export default defineConfig({
 				// first load. Raise this limit if your map image is large.
 				maximumFileSizeToCacheInBytes: 30 * 1024 * 1024,
 				globPatterns: ["**/*.{js,css,html,png,svg,webp,jpg,geojson}"],
+				// Everything except the manifest's screenshots. Those exist for the
+				// install dialog, which by definition is shown *before* there is a
+				// service worker to serve them — precaching them would put a megabyte
+				// on every phone to speed up a picture none of them will ever request.
+				globIgnores: ["**/screenshots/**"],
 			},
 			manifest: {
 				name: "Field Maps",
@@ -80,6 +85,35 @@ export default defineConfig({
 				background_color: "#0b0f14",
 				display: "standalone",
 				orientation: "any",
+				// Chrome has two install dialogs, and screenshots are what pick the good
+				// one: without them the offer is a thin bar naming the site, with them it
+				// is a card showing the app. That is a real part of why a test user does
+				// or does not understand that this thing installs. Regenerate with
+				// `node scripts/make-screenshots.mjs` whenever the map's look changes —
+				// the sizes below have to keep matching the files.
+				screenshots: [
+					{
+						src: "screenshots/map-narrow.png",
+						sizes: "824x1784",
+						type: "image/png",
+						form_factor: "narrow",
+						label: "Your GPS position on the event's tactical map",
+					},
+					{
+						src: "screenshots/overview-narrow.png",
+						sizes: "824x1784",
+						type: "image/png",
+						form_factor: "narrow",
+						label: "Every event at Mahlwinkel, each with its own map",
+					},
+					{
+						src: "screenshots/map-wide.png",
+						sizes: "2560x1600",
+						type: "image/png",
+						form_factor: "wide",
+						label: "Your GPS position on the event's tactical map",
+					},
+				],
 				icons: [
 					{ src: "icons/icon-192.png", sizes: "192x192", type: "image/png" },
 					{ src: "icons/icon-512.png", sizes: "512x512", type: "image/png" },

@@ -21,9 +21,9 @@ const legal = document.querySelector("legal-view") as HTMLElement;
 // Both elements stay in the DOM and we toggle `hidden`, rather than tearing the map
 // down: map-view already re-fits itself when its container gains size (it has to,
 // for the 0x0 cold start), so hiding it is cheap and returning to it is instant.
-// The map-only chrome (status toast, compass prompt, coordinate test input) follows
-// the same switch — none of it means anything on the overview.
-const mapOnlyChrome = ["#test-coords", "#toast", "#enable-compass"].map(
+// The map-only chrome (status toast, compass prompt) follows the same switch —
+// none of it means anything on the overview.
+const mapOnlyChrome = ["#toast", "#enable-compass"].map(
 	(selector) => document.querySelector(selector) as HTMLElement | null,
 );
 
@@ -162,40 +162,6 @@ keepAwake();
 document.addEventListener("visibilitychange", () => {
 	if (document.visibilityState === "visible") keepAwake();
 });
-
-// --- Testing aid: paste "lat, lng" from Google Maps to place the dot ---
-// Lets you exercise the calibration on a desktop without a real GPS fix.
-const testInput = document.querySelector("#test-coords") as HTMLInputElement | null;
-if (testInput) {
-	testInput.dataset.wanted = "1"; // always shown over a map, never on the overview
-	const applyTestCoords = (text: string) => {
-		const m = text.match(/(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)/);
-		if (!m) {
-			setStatus("Couldn't parse coordinates");
-			return;
-		}
-		const lat = parseFloat(m[1]);
-		const lng = parseFloat(m[2]);
-		// Feed straight to the view (bypassing geo smoothing); no heading, tiny circle.
-		view.update_(lat, lng, 3, null);
-		setStatus(`Test: ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-	};
-	testInput.addEventListener("keydown", (e) => {
-		if (e.key === "Enter") {
-			e.preventDefault();
-			applyTestCoords(testInput.value);
-		}
-	});
-	// Apply immediately on paste, before the field even shows the text.
-	testInput.addEventListener("paste", (e) => {
-		const text = e.clipboardData?.getData("text") ?? "";
-		if (text) {
-			e.preventDefault();
-			testInput.value = text.trim();
-			applyTestCoords(text);
-		}
-	});
-}
 
 function setStatus(msg: string) {
 	const el = document.querySelector("#toast") as HTMLElement | null;

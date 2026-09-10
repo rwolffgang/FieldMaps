@@ -92,10 +92,39 @@ interface Strings {
 	tagline: string;
 	site: string;
 	intro: string;
+	// --- Installing. The landing page's card and the map screen's bar both read
+	// from here; which of these are shown depends on `src/install.ts`. ---
 	installTitle: string;
+	/** Why to bother, in the one sentence that matters on a field with no signal. */
 	installText: string;
-	installHintIos: string;
-	installHintAndroid: string;
+	/** Chromium only: the label on the button that fires the browser's own prompt. */
+	installButton: string;
+	installIosLead: string;
+	installIosStep1: string;
+	installIosStep2: string;
+	installManualLead: string;
+	/** Inside a webview, where installing is impossible until they leave it. */
+	installInAppTitle: string;
+	installInAppText: (app: string) => string;
+	installInAppHint: string;
+	/** The map screen's bar: shorter, because it is covering a map. */
+	installBarText: string;
+	installBarAction: string;
+	/** iOS again: the bar cannot install, so its button opens the gesture instead. */
+	installBarShow: string;
+	installBarLater: string;
+
+	// --- Sharing. ---
+	shareLabel: string;
+	shareTitle: string;
+	shareIntro: string;
+	shareScanHint: string;
+	shareCopy: string;
+	shareCopied: string;
+	shareSend: string;
+	shareClose: string;
+	/** The message that rides along with the link in the OS share sheet. */
+	shareMessage: string;
 	sectionEvents: string;
 	sectionEventsNote: string;
 	sectionPastEvents: string;
@@ -151,10 +180,34 @@ const STRINGS: Record<Lang, Strings> = {
 			"Mahlwinkel. Die App zeigt dir per GPS, wo du dort gerade stehst — auf der Taktikkarte " +
 			"des jeweiligen Events, mit allen Gebäuden, Zonen und Hauptquartieren. Karten und Daten " +
 			"sind komplett in der App gespeichert: einmal geladen, funktioniert alles ohne Netz.",
-		installTitle: "Zum Startbildschirm hinzufügen",
-		installText: "Dann läuft Field Maps wie eine normale App — im Vollbild, ohne Browserleiste.",
-		installHintIos: "iPhone: Teilen → „Zum Home-Bildschirm“",
-		installHintAndroid: "Android: ⋮ → „App installieren“",
+		installTitle: "Als App installieren",
+		installText:
+			"Auf dem Gelände hast du kaum Empfang. Installiert lädt Field Maps nichts nach — " +
+			"Karte, Punkte und GPS laufen komplett offline, im Vollbild, ohne Browserleiste.",
+		installButton: "Jetzt installieren",
+		installIosLead: "Auf dem iPhone in zwei Schritten:",
+		installIosStep1: "Unten in der Leiste auf Teilen tippen",
+		installIosStep2: "„Zum Home-Bildschirm“ wählen",
+		installManualLead: "Im Browsermenü „App installieren“ wählen.",
+		installInAppTitle: "Erst im Browser öffnen",
+		installInAppText: (app) =>
+			`Du bist gerade im ${app}-Browser — von hier lässt sich keine App installieren.`,
+		installInAppHint: "Menü öffnen und „In Safari öffnen“ bzw. „In Chrome öffnen“ wählen.",
+		installBarText: "Offline nutzbar machen — installieren, dann läuft die Karte ohne Empfang.",
+		installBarAction: "Installieren",
+		installBarShow: "Zeig mir wie",
+		installBarLater: "Später",
+
+		shareLabel: "Teilen",
+		shareTitle: "Field Maps weitergeben",
+		shareIntro: "Lass den Code scannen — oder schick den Link.",
+		shareScanHint: "Mit der Kamera scannen",
+		shareCopy: "Link kopieren",
+		shareCopied: "Link kopiert",
+		shareSend: "Link senden",
+		shareClose: "Schließen",
+		shareMessage:
+			"Field Maps — deine GPS-Position auf der Taktikkarte in Mahlwinkel, offline nutzbar.",
 		sectionEvents: "Events in Mahlwinkel",
 		sectionEventsNote:
 			"Alle Karten zeigen dasselbe Gelände — pro Event wechseln nur Beschriftungen, Zonen und " +
@@ -339,10 +392,34 @@ const STRINGS: Record<Lang, Strings> = {
 			"uses GPS to show where you are standing there — on the tactical map of the event " +
 			"itself, with every building, zone and headquarters. Maps and data are stored inside " +
 			"the app: once loaded, everything works without a network.",
-		installTitle: "Add it to your home screen",
-		installText: "Then Field Maps runs like a normal app — full screen, no browser bar.",
-		installHintIos: "iPhone: Share → “Add to Home Screen”",
-		installHintAndroid: "Android: ⋮ → “Install app”",
+		installTitle: "Install it as an app",
+		installText:
+			"There is barely any signal on the field. Installed, Field Maps loads nothing over the " +
+			"network — the map, the points and your GPS position all work offline, full screen, " +
+			"with no browser bar.",
+		installButton: "Install now",
+		installIosLead: "On iPhone, two steps:",
+		installIosStep1: "Tap Share in the bar at the bottom",
+		installIosStep2: "Choose “Add to Home Screen”",
+		installManualLead: "Open the browser menu and choose “Install app”.",
+		installInAppTitle: "Open it in your browser first",
+		installInAppText: (app) =>
+			`You are in ${app}'s built-in browser, and no app can be installed from here.`,
+		installInAppHint: "Open its menu and choose “Open in Safari” or “Open in Chrome”.",
+		installBarText: "Make it work offline — install it and the map runs with no signal.",
+		installBarAction: "Install",
+		installBarShow: "Show me how",
+		installBarLater: "Later",
+
+		shareLabel: "Share",
+		shareTitle: "Pass Field Maps on",
+		shareIntro: "Let them scan the code, or send the link.",
+		shareScanHint: "Scan it with the camera",
+		shareCopy: "Copy link",
+		shareCopied: "Link copied",
+		shareSend: "Send link",
+		shareClose: "Close",
+		shareMessage: "Field Maps — your GPS position on the Mahlwinkel tactical map, works offline.",
 		sectionEvents: "Events at Mahlwinkel",
 		sectionEventsNote:
 			"Every map covers the same ground — only the labels, zones and factions change per " +

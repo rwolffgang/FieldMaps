@@ -36,6 +36,12 @@ because the field has very little.
 - **Sticky grid axis** so the column letters and row numbers stay on screen while
   the map scrolls under them.
 - **Both languages.** German and English, including the Impressum and privacy notice.
+- **Installs as an app.** One tap on Android, where the browser hands the page its
+  own install prompt; the Share-sheet gesture spelled out on iOS, which has no such
+  API. Opened inside Instagram's or Facebook's built-in browser, where nothing can
+  be installed at all, it says so instead of giving instructions that cannot work.
+- **Share by QR code.** A code and a link, for handing the app to someone standing
+  next to you at a field with no reception.
 
 ## Events covered
 
