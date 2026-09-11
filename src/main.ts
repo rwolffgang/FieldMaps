@@ -9,9 +9,13 @@ import { getMapById, GPS_HEADING_SPEED } from "./config.js";
 import { onRouteChange, routedMapId, routedLegal } from "./router.js";
 import { applyDocumentLang, strings } from "./i18n.js";
 import { startUpdates } from "./update.js";
+import { startAnalytics } from "./analytics.js";
 
 applyDocumentLang();
 const t = strings();
+
+// How many people use this. Cookie-less and fire-and-forget; see analytics.ts.
+startAnalytics();
 
 const view = document.querySelector("map-view") as MapView;
 const landing = document.querySelector("landing-view") as HTMLElement;
