@@ -26,13 +26,14 @@
  * The site token, from the Cloudflare dashboard: Web Analytics → the site →
  * **Manage site**, then the `token` field of the JS snippet it shows.
  *
- * Public by design — it ships in the HTML of every site that uses it — so it
- * belongs in the repo rather than in a build secret or an env var that has to
- * survive every deploy. **Empty means the beacon never loads**, which is how
- * this arrives in the tree, and is a deliberate off switch rather than a
- * placeholder to work around: fill it in to start counting, blank it to stop.
+ * Public by design — it ships in the HTML of every site that uses it, so any
+ * visitor can already read it with View Source — which is why it lives in the
+ * repo rather than in a build secret or an env var that has to survive every
+ * deploy. It is an identifier, not a credential: it grants no access to the
+ * dashboard, which needs the Cloudflare account. **Empty means the beacon never
+ * loads**, and is the off switch: blank it to stop counting.
  */
-const BEACON_TOKEN = "";
+const BEACON_TOKEN = "7b55cbedb34446f7a37d4d9b319d2994";
 
 /** Cloudflare's beacon. Fixed URL; the token rides along in a data attribute. */
 const BEACON_SRC = "https://static.cloudflareinsights.com/beacon.min.js";
@@ -53,7 +54,13 @@ export function startAnalytics(): void {
 
 	const script = document.createElement("script");
 	script.src = BEACON_SRC;
-	script.defer = true;
+	// `module`, not `defer`, because that is what Cloudflare's own snippet uses.
+	// The file is a plain IIFE bundle today and would run either way, so this is
+	// about staying on their supported shape rather than about today's contents —
+	// if a future beacon does use module syntax, a classic script would throw.
+	// Module scripts are deferred by default and fetched with CORS, which the
+	// beacon answers with `access-control-allow-origin: *`.
+	script.type = "module";
 	script.dataset.cfBeacon = JSON.stringify({ token: BEACON_TOKEN });
 	document.head.append(script);
 }
