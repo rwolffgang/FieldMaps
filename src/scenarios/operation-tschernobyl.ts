@@ -10,8 +10,15 @@ import type { Scenario } from "./scenario.js";
  * (airsofthelden-events.com/op-tschernobyl/taktikkarte); the earlier hand-typed
  * names were close but not the legend's wording.
  *
+ * That 2024 sheet is still the current one. Checked on 11 September 2026: the
+ * redirect serves the same file byte for byte, and the organiser's downloads page
+ * now lists a 2026 waiver for this event but no Taktikkarte at all. So this is not
+ * a stale reference — there is nothing newer to read off yet.
+ *
  * NOTE: `playArea` is still a generated placeholder (the convex hull of the PoIs, a
- * bit expanded). Replace it with the real, walked boundary for this game.
+ * bit expanded). Replace it with the real, walked boundary for this game. Unlike
+ * LIGHT-SIM this map has no printed coordinate grid, so re-reading it means fitting
+ * a transform through the shared buildings and turbines first.
  */
 export const operationTschernobyl: Scenario = {
 	id: "opt",
