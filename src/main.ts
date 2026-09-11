@@ -135,27 +135,56 @@ function disarmGpsError() {
 	gpsErrorTimer = 0;
 }
 
-watch(
-	(fix) => {
-		lastFix = fix;
-		disarmGpsError();
-		clearStatus("gps");
-		schedulePush();
-	},
-	(err) => {
-		// A refused permission is the reader's to undo and will never resolve on its
-		// own, so it is the one GPS failure worth saying immediately.
-		if (err.code === 1 /* PERMISSION_DENIED */) {
+let gpsStarted = false;
+
+/**
+ * Start the position watch — which is also what raises the browser's permission
+ * prompt, so this is deliberately not called at load.
+ *
+ * The overview is a list of events. It shows no position, draws no dot and does
+ * nothing with a fix, so asking there is a system dialog on top of a page that has
+ * given no reason for one — and a "no" there is the reader's to find in the site
+ * settings later, on a map that then cannot work. A map is the reason: it is opened
+ * to be stood on, and the prompt arrives with the screen that explains it.
+ *
+ * Once started the watch stays on for the rest of the session, even back on the
+ * overview: that screen is mostly passed through to pick another field, and a
+ * restart would pay for it with a cold fix — 10 s and more under the tree cover
+ * these maps are for.
+ */
+function startGps() {
+	if (gpsStarted) return;
+	gpsStarted = true;
+	watch(
+		(fix) => {
+			lastFix = fix;
 			disarmGpsError();
-			setStatus(t.gpsDenied, "gps");
-			return;
-		}
-		// Already counting down from an earlier failure — a watch reports the same
-		// dead spot over and over, and the wait should run from the first one.
-		if (gpsErrorTimer) return;
-		gpsErrorTimer = window.setTimeout(() => setStatus(t.gpsNoFix, "gps"), GPS_GRACE_MS);
-	},
-);
+			clearStatus("gps");
+			schedulePush();
+		},
+		(err) => {
+			// A refused permission is the reader's to undo and will never resolve on its
+			// own, so it is the one GPS failure worth saying immediately.
+			if (err.code === 1 /* PERMISSION_DENIED */) {
+				disarmGpsError();
+				setStatus(t.gpsDenied, "gps");
+				return;
+			}
+			// Already counting down from an earlier failure — a watch reports the same
+			// dead spot over and over, and the wait should run from the first one.
+			if (gpsErrorTimer) return;
+			gpsErrorTimer = window.setTimeout(() => setStatus(t.gpsNoFix, "gps"), GPS_GRACE_MS);
+		},
+	);
+}
+
+// A deep-linked map (`?map=de`, the link that gets passed around) counts as opening
+// one, so this runs on the current route as well as on every change to it.
+function startGpsOverMap() {
+	if (routedMapId() != null) startGps();
+}
+onRouteChange(startGpsOverMap);
+startGpsOverMap();
 
 // --- Compass ---
 function startCompass() {
