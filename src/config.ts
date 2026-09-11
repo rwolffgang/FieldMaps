@@ -13,7 +13,7 @@ import {
 	type Zone,
 } from "./scenarios/index.js";
 import type { OsmThemeName } from "./osm-map.js";
-import { compareBySchedule, type EventSchedule } from "./event-schedule.js";
+import { compareBySchedule, hasEnded, type EventSchedule } from "./event-schedule.js";
 
 // =============================================================================
 //  Scenarios live in src/scenarios/ (labels + play area) and points of interest
@@ -53,7 +53,8 @@ export interface MapDefinition {
 	poiNames: Record<string, string>;
 	/**
 	 * Active play-area boundary as [lat, lng] points. Everything outside is covered
-	 * by the out-of-bounds texture. Empty/undefined = whole field, no mask.
+	 * by the out-of-bounds texture. Empty/undefined = whole field, no mask. Drawn only
+	 * while the event is still ahead — see `showsPlayArea`.
 	 */
 	playArea?: LatLng[];
 	/** Marked areas traced from the event's tactical map. */
@@ -118,6 +119,24 @@ export function mapsByDate(now = new Date()): MapDefinition[] {
 
 /** Which map loads on first visit (before any saved preference or URL). */
 export const DEFAULT_MAP_ID = MAPS[0]?.id ?? "";
+
+/**
+ * Whether a map's play-area boundary is one to draw.
+ *
+ * Every boundary in `src/scenarios/` is traced off the organiser's printed tactical
+ * map and is provisional until it has been checked against the field by hand. For an
+ * event that has already run, that check is not going to happen while the map is only
+ * being looked back at, so the boundary — and the out-of-bounds mask hanging off it —
+ * stays off rather than drawing a line nobody has stood behind. "Past" is the landing
+ * page's own past (`hasEnded`), so the cards under Past Events and the maps without a
+ * boundary are the same set.
+ *
+ * The play area is still read for framing (`initialBounds` in `map-view.ts`), which
+ * draws nothing — it only decides what is on screen when the map opens.
+ */
+export function showsPlayArea(map: MapDefinition, now = new Date()): boolean {
+	return map.schedule == null || !hasEnded(map.schedule, now);
+}
 
 export function getMapById(id: string): MapDefinition {
 	return MAPS.find((map) => map.id === id) ?? MAPS[0];

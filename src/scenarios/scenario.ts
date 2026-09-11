@@ -111,6 +111,11 @@ export interface Scenario {
 	 *
 	 * How to fill it: walk/trace the boundary in Google Maps, right-click each
 	 * corner -> copy the lat/lng, and paste the pairs here in order.
+	 *
+	 * It is drawn only while the event has not yet run this year: a traced boundary is
+	 * provisional until it has been checked on the ground, and a past event's is left
+	 * unpainted rather than shown unchecked (`showsPlayArea` in config.ts). The points
+	 * still frame the map when it opens, so keep them even for a past event.
 	 */
 	playArea: LatLng[];
 	/** Marked areas from the printed map (safe zones, faction territory, …). */

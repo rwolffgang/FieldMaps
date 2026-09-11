@@ -9,6 +9,7 @@ import {
 	DEFAULT_MAP_ID,
 	getMapById,
 	getPointsOfInterestForMap,
+	showsPlayArea,
 	type MapDefinition,
 	type LabeledPointOfInterest,
 } from "./config.js";
@@ -546,7 +547,7 @@ export class MapView extends LitElement {
 		// has to be fetched first and arrives through `loadVectorMap`.
 		this.baked = {
 			osm: null,
-			playArea: this.bakePlayArea(definition.playArea),
+			playArea: this.bakePlayArea(definition),
 			...this.bakeZones(definition),
 		};
 
@@ -647,9 +648,12 @@ export class MapView extends LitElement {
 	/**
 	 * Bake the play-area boundary. Everything outside it is covered by the darken +
 	 * diagonal-hatch texture `paintTile` draws, emulating the printed maps. No polygon
-	 * (or fewer than 3 points) means "whole field" — nothing is masked.
+	 * (or fewer than 3 points) means "whole field" — nothing is masked, and so does a
+	 * past event, whose traced boundary is not one to show (`showsPlayArea`).
 	 */
-	private bakePlayArea(playArea: [number, number][] | undefined): BakedShape | null {
+	private bakePlayArea(definition: MapDefinition): BakedShape | null {
+		if (!showsPlayArea(definition)) return null;
+		const playArea = definition.playArea;
 		if (!playArea || playArea.length < 3 || !this.transform) return null;
 		return bakeShape(playArea, (lat, lng) => this.transform.toPixel(lat, lng));
 	}
@@ -741,6 +745,10 @@ export class MapView extends LitElement {
 	 * fitting the whole canvas opens on a screenful of masked-out surround with the
 	 * actual field small in the middle. Frame the scenario's play area instead when it
 	 * has one; only fall back to the canvas for scenarios that play the whole field.
+	 *
+	 * This reads the play area even for a past event, whose boundary is not drawn: the
+	 * framing puts nothing on the map, it only decides which part of the field opens on
+	 * screen, and that part is the same whether or not the edge is painted.
 	 */
 	private initialBounds(definition: MapDefinition): L.LatLngBoundsExpression {
 		const canvas: L.LatLngBoundsExpression = [
@@ -876,7 +884,10 @@ export class MapView extends LitElement {
 		return this.hasGrid && this.toggles.grid;
 	}
 	private get hasMask(): boolean {
-		return (getMapById(this.selectedMapId).playArea?.length ?? 0) >= 3;
+		const map = getMapById(this.selectedMapId);
+		// A past event's boundary is never painted, so there is nothing for the toggle to
+		// switch and the row is left off the panel entirely.
+		return showsPlayArea(map) && (map.playArea?.length ?? 0) >= 3;
 	}
 	private get hasZones(): boolean {
 		const map = getMapById(this.selectedMapId);

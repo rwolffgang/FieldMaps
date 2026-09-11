@@ -26,7 +26,7 @@ The Cloudflare Worker is still called `mahlwinkel-map` in `wrangler.jsonc`, and 
 
 ## The files a user edits
 
-- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (in practice always the shared OSM vector map plus a theme; a photo `image` with its own control points is still supported but unused), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked). Optionally also `zones` (marked areas: safe zones, "Zivile Zone", …), `headquarters` (faction HQs drawn with their emblem from `/public/logos`), and `lines` (open frontlines). Copy a file, edit it, register it in `src/scenarios/index.ts`.
+- `src/scenarios/*.ts` — **one file per playable scenario.** Each picks a `base` (in practice always the shared OSM vector map plus a theme; a photo `image` with its own control points is still supported but unused), the scenario's PoI labels (`poiNames`), and its play-area boundary polygon (`playArea`, `[lat, lng]` points; everything outside is masked — drawn only while the event has not already run this year, see **Event ordering**). Optionally also `zones` (marked areas: safe zones, "Zivile Zone", …), `headquarters` (faction HQs drawn with their emblem from `/public/logos`), and `lines` (open frontlines). Copy a file, edit it, register it in `src/scenarios/index.ts`.
 - `src/points-of-interest.ts` — the shared registry of physical PoI **coordinates** (same across all scenarios) plus the default label set. `labelPointsOfInterest` memoises on the `poiNames` object it is handed (a module-level object per scenario, so a stable key); the array it returns is shared and must be treated as read-only.
 - `src/config.ts` — turns each scenario into a selectable map (resolving its base) and holds the smoothing tunables. Prefer editing scenario files over this.
 
@@ -73,6 +73,8 @@ Event cards are real `<a href="?map=…">` elements with the click intercepted �
 ## Event ordering
 
 `src/event-schedule.ts` stores each event as month/day only (no year), because they recur annually — that keeps the scenario files from going stale every January. `mapsByDate()` sorts the overview soonest-first, counting a running event as zero days away, so the map you need is at the top on the day you need it. Style variants (no `schedule`) sort last. It is a function, not a constant, because the answer depends on today's date and people leave this open for a whole weekend.
+
+`hasEnded` is the test the landing page groups Past Events by, and it decides one more thing: **a past event's map draws no play-area boundary.** Every boundary in `src/scenarios/` is traced off the organiser's printed tactical map and stays provisional until someone has checked it against the ground, so a map that is only being looked back at shows the terrain rather than a line nobody has stood behind. `showsPlayArea()` in `config.ts` is the single test: `map-view.ts` bakes no play area when it is false, which takes the out-of-bounds mask and its dashed edge with it, and the boundary-mask toggle drops off the layer panel because there is nothing left for it to switch. The points stay in the scenario file either way — `initialBounds` still frames the map with them, and framing paints nothing. Mind the annual wrap: on 1 January a past event is upcoming again and its boundary comes back exactly as traced, so that is the deadline for confirming it.
 
 ## Invariants — do not break these
 

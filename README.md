@@ -30,7 +30,10 @@ because the field has very little.
 - **Navigate to a point of interest.** Pick a building from the list, tap
   "Navigate here" in its popup, or double-tap its dot on the map.
 - **One map per event.** Labels, zones, headquarters, frontlines and colours change
-  per event; the ground underneath is the same airfield every time.
+  per event; the ground underneath is the same airfield every time. An event that has
+  already run keeps its map but not its play-area boundary: those lines are traced off
+  the printed map and are only drawn once they have been confirmed on the ground for
+  the coming edition.
 - **Layer toggles** for point-of-interest numbers, the grid, the out-of-bounds mask,
   zones and headquarters. Your choices persist.
 - **Sticky grid axis** so the column letters and row numbers stay on screen while
