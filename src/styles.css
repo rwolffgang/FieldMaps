@@ -71,6 +71,9 @@ map-view {
 	position: fixed;
 	inset: 0;
 	background: #0b0f14;
+	/* Holding a finger on the map picks a destination; iOS would otherwise answer the
+	   same gesture with its own selection callout on top of the popup. */
+	-webkit-touch-callout: none;
 }
 
 [hidden] {

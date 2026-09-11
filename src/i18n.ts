@@ -146,7 +146,10 @@ interface Strings {
 	// --- The map screen. The HUD goes through here too: a player who gets a German
 	// overview must not then land on a half-English map. ---
 	waitingForGps: string;
-	gpsError: (message: string) => string;
+	/** Permission refused: actionable, and shown the moment it happens. */
+	gpsDenied: string;
+	/** No fix yet. Transient on iOS, so only shown once it has lasted (see `main.ts`). */
+	gpsNoFix: string;
 	offMap: string;
 	mapLoading: string;
 	mapLoadFailed: string;
@@ -157,6 +160,10 @@ interface Strings {
 	backToOverview: string;
 	navigateTo: string;
 	navigateHere: string;
+	/** A spot the player long-pressed, on a map whose grid is not on screen to name it. */
+	markedPosition: string;
+	/** The same spot when the grid is drawn, named by the square it falls in. */
+	gridSquare: (label: string) => string;
 	navStop: string;
 	navArrived: string;
 	navEnableCompass: string;
@@ -234,7 +241,8 @@ const STRINGS: Record<Lang, Strings> = {
 			"Deine GPS-Position auf der Taktikkarte der Airsoft-Events auf dem Flugplatz Mahlwinkel — " +
 			"offline, ohne Empfang.",
 		waitingForGps: "Warte auf GPS…",
-		gpsError: (message) => `GPS-Fehler: ${message}`,
+		gpsDenied: "GPS-Freigabe abgelehnt — Standort in den Browser-Einstellungen erlauben",
+		gpsNoFix: "⚠ Kein GPS-Signal — unter freiem Himmel klappt es besser",
 		offMap: "⚠ Außerhalb der Karte — Position in der Kartenmitte angezeigt",
 		mapLoading: "Karte wird geladen…",
 		mapLoadFailed: "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen",
@@ -244,6 +252,8 @@ const STRINGS: Record<Lang, Strings> = {
 		backToOverview: "Zur Übersicht",
 		navigateTo: "Navigieren zu…",
 		navigateHere: "Hierhin navigieren",
+		markedPosition: "Markierte Position",
+		gridSquare: (label) => `Feld ${label}`,
 		navStop: "Navigation beenden",
 		navArrived: "Du bist da",
 		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
@@ -446,7 +456,8 @@ const STRINGS: Record<Lang, Strings> = {
 			"Your GPS position on the tactical map of the airsoft events at Mahlwinkel airfield, " +
 			"Germany — offline, no signal needed.",
 		waitingForGps: "Waiting for GPS…",
-		gpsError: (message) => `GPS error: ${message}`,
+		gpsDenied: "Location permission denied — allow it in your browser settings",
+		gpsNoFix: "⚠ No GPS signal — it works better out in the open",
 		offMap: "⚠ Off map — outside this field; position shown at map center",
 		mapLoading: "Loading map…",
 		mapLoadFailed: "⚠ Map could not be loaded — tap to retry",
@@ -456,6 +467,8 @@ const STRINGS: Record<Lang, Strings> = {
 		backToOverview: "Back to the overview",
 		navigateTo: "Navigate to…",
 		navigateHere: "Navigate here",
+		markedPosition: "Marked position",
+		gridSquare: (label) => `Square ${label}`,
 		navStop: "End navigation",
 		navArrived: "You have arrived",
 		navEnableCompass: "Enable compass for turn hints",

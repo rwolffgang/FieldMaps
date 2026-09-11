@@ -370,7 +370,14 @@ export class LandingView extends LitElement {
 					<p class="landing-site">
 						<span class="landing-site-pin" aria-hidden="true">📍</span>${t.site}
 					</p>
-					<p class="landing-intro">${t.intro}</p>
+					<!-- The pitch is for someone deciding whether to keep this. Once the app
+					     is on the home screen that decision is made, and the paragraph is just
+					     something between the reader and the event they came to open. -->
+					${
+						this.install.kind === "installed"
+							? nothing
+							: html`<p class="landing-intro">${t.intro}</p>`
+					}
 				</header>
 
 				${this.renderInstall()} ${this.renderShare()}

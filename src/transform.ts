@@ -22,6 +22,16 @@ export interface ControlPoint {
 export interface Transform {
 	/** GPS -> image pixel. */
 	toPixel(lat: number, lng: number): { px: number; py: number };
+	/**
+	 * Image pixel -> GPS, the exact inverse of `toPixel`.
+	 *
+	 * A similarity has no shear, so the forward 2x2 is invertible in closed form and
+	 * this is a real inverse rather than a search: feed a point back through and you
+	 * get the pixel you started from, to floating-point noise. Needed because a spot
+	 * the user picks on the map exists only as pixels, while every distance and
+	 * bearing in the app is computed on lat/lng.
+	 */
+	toLatLng(px: number, py: number): { lat: number; lng: number };
 	/** Convert a ground distance in meters to a length in image pixels. */
 	metersToPixels(m: number): number;
 	/** Convert an image-pixel length back to meters. */
@@ -46,6 +56,13 @@ function project(lat: number, lng: number, lat0: number, lng0: number) {
 	const E = (lng - lng0) * Math.cos(lat0 * DEG) * R * DEG;
 	const N = (lat - lat0) * R * DEG;
 	return { E, N };
+}
+
+/** The inverse of `project`: local East/North meters back to lat/lng. */
+function unproject(E: number, N: number, lat0: number, lng0: number) {
+	const lat = lat0 + N / (R * DEG);
+	const lng = lng0 + E / (Math.cos(lat0 * DEG) * R * DEG);
+	return { lat, lng };
 }
 
 /** Solve a small linear system Mx = v via Gaussian elimination w/ partial pivot. */
@@ -122,6 +139,15 @@ export function solveTransform(points: ControlPoint[]): Transform {
 		toPixel(lat, lng) {
 			const { E, N } = project(lat, lng, lat0, lng0);
 			return { px: a * E + b * N + c, py: b * E - a * N + d };
+		},
+		toLatLng(px, py) {
+			// Invert [[a, b], [b, -a]], whose determinant is -(a^2 + b^2) = -scale^2.
+			// The matrix is its own inverse up to that factor — it is a reflection, which
+			// is exactly the y-flip baked into the forward model above.
+			const u = px - c;
+			const v = py - d;
+			const s2 = a * a + b * b;
+			return unproject((a * u + b * v) / s2, (b * u - a * v) / s2, lat0, lng0);
 		},
 		metersToPixels: (m) => m * scale,
 		pixelsToMeters: (p) => p / scale,

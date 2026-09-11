@@ -56,6 +56,13 @@ function runCase(scale: number, rotDeg: number) {
 	const got = T.toPixel(test.lat, test.lng);
 	const err = Math.hypot(got.px - expected.px, got.py - expected.py);
 	check(`rot=${rotDeg} arbitrary point`, err < 1e-2, `err=${err}px`);
+
+	// And back again: a spot picked on the map is a pixel, and navigating to it needs
+	// the lat/lng. Round-trip a pixel that is nowhere near a control point.
+	const back = T.toLatLng(320, 880);
+	const round = T.toPixel(back.lat, back.lng);
+	const roundErr = Math.hypot(round.px - 320, round.py - 880);
+	check(`rot=${rotDeg} pixel round-trip`, roundErr < 1e-6, `err=${roundErr}px`);
 }
 
 console.log("Transform self-test");

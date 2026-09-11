@@ -49,6 +49,33 @@ const TOGGLES_KEY = "field-map-toggles";
 const ARRIVED_DISTANCE_M = 8;
 
 /**
+ * The `selectedPoiId` a spot picked off the map carries. Navigation is keyed by PoI
+ * id throughout, so a long-pressed position joins that machinery as a PoI with a
+ * reserved id rather than as a second kind of target running beside it. Numbered
+ * PoI ids are digits, letters and dashes off the printed maps, so nothing can
+ * collide with this.
+ */
+const CUSTOM_TARGET_ID = "__here__";
+
+/**
+ * How far a long-press may land outside the canvas and still be taken as a point on
+ * the map, in canvas pixels. The tiles stop at the canvas edge, so past that there
+ * is nothing to aim at — but the pin is drawn 22 px above the spot and a thumb is
+ * wide, so refusing the last few pixels of the field would feel broken.
+ */
+const HOLD_SLACK_PX = 24;
+
+/**
+ * How long after one long-press a second `contextmenu` at the same spot is still
+ * taken to be the same gesture. Android Chrome fires the event itself *and* runs
+ * Leaflet's `tapHold` timer, so one press can arrive twice; a real second press
+ * cannot land inside this window, since making one takes 600 ms of holding still.
+ */
+const HOLD_DEDUPE_MS = 1000;
+/** …and how far apart, in screen pixels, two of them may be and still be one press. */
+const HOLD_DEDUPE_PX = 20;
+
+/**
  * How close a headquarters has to be to a PoI to count as *the same place* — the
  * emblem is then drawn on that building and the PoI needs no dot of its own. The
  * scenarios make this an easy call: every intentional pairing is 0.0 m (both were
@@ -307,6 +334,8 @@ export class MapView extends LitElement {
 	private zooming = false;
 	/** A fix arrived while `zooming`, so the two paths still have to be redrawn. */
 	private pathsDeferred = false;
+	/** Where and when the last long-press was taken, so one press is not read twice. */
+	private lastHold: { x: number; y: number; at: number } | null = null;
 	private mapWidth = 0;
 	private mapHeight = 0;
 	private resizeObserver: ResizeObserver | null = null;
@@ -322,6 +351,12 @@ export class MapView extends LitElement {
 	@state() private offMap = false;
 	@state() private selectedMapId = initialMapId();
 	@state() private selectedPoiId = "";
+	/**
+	 * The spot the player long-pressed, standing in as a PoI so the rest of the
+	 * navigation code needs to know nothing about it. Only ever the one — picking a
+	 * new spot replaces it.
+	 */
+	@state() private customTarget: LabeledPointOfInterest | null = null;
 	@state() private navDistanceM = 0;
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
@@ -358,6 +393,14 @@ export class MapView extends LitElement {
 			// from — and a fade is a compositing pass per tile on exactly the frames a drag
 			// needs for itself.
 			fadeAnimation: false,
+			// Long-press picks a destination (`onMapHold`), and this is what makes the
+			// gesture exist on iOS at all: WebKit fires no `contextmenu`, so Leaflet
+			// synthesises one — but only for a browser it recognises as mobile Safari, and
+			// an installed PWA's user agent has dropped the "Safari" token, which is
+			// precisely the case this app is used in. Turning it on everywhere is safe:
+			// the handler only binds `touchstart`, so a mouse never sees it, and Android's
+			// own long-press `contextmenu` is deduplicated in `onMapHold`.
+			tapHold: true,
 		});
 
 		// A photo base goes below the basemap's tiles (tilePane is 200), so the mask and
@@ -379,6 +422,12 @@ export class MapView extends LitElement {
 		// rather than catching up when it ends — a label that lagged the squares under it
 		// would be worse than none. Coalesced into one frame's work; see `updateGridAxis`.
 		this.map.on("move zoom moveend zoomend", () => this.scheduleGridAxis());
+
+		// Hold a finger on any spot (or right-click it) and the map offers to take you
+		// there — see `onMapHold`. Leaflet only reaches this handler for a press that
+		// landed on nothing: the PoI markers answer `contextmenu` themselves, and marker
+		// events do not bubble to the map.
+		this.map.on("contextmenu", (event: L.LeafletMouseEvent) => this.onMapHold(event));
 
 		this.deferPathsWhileZooming();
 
@@ -435,6 +484,7 @@ export class MapView extends LitElement {
 	}
 
 	private getSelectedPoi(): LabeledPointOfInterest | null {
+		if (this.selectedPoiId === CUSTOM_TARGET_ID) return this.customTarget;
 		return this.currentPointsOfInterest().find((poi) => poi.id === this.selectedPoiId) ?? null;
 	}
 
@@ -909,8 +959,91 @@ export class MapView extends LitElement {
 		this.updateStatus();
 	}
 
+	/**
+	 * A long press (or a right-click) on a spot that is not a PoI: ask whether to
+	 * navigate there.
+	 *
+	 * The numbered PoIs are the buildings the organiser thought to number, and a lot
+	 * of what a player actually walks to is not one of them — a treeline, the corner
+	 * a squad said it would hold, the spot a flank is meant to come out of. Someone
+	 * can read a grid square off the map and be told to go there, so the map has to
+	 * let them aim at it. The ask is the same popup a PoI dot gives, because it is
+	 * the same decision.
+	 */
+	private onMapHold(event: L.LeafletMouseEvent) {
+		if (!this.transform) return;
+
+		// One press, possibly two events: Android Chrome fires `contextmenu` on its own
+		// *and* Leaflet's tapHold timer synthesises one. Whichever arrives second is the
+		// same finger in the same place, not a new pick.
+		const at = event.originalEvent.timeStamp || Date.now();
+		const { x, y } = event.containerPoint;
+		if (
+			this.lastHold &&
+			at - this.lastHold.at < HOLD_DEDUPE_MS &&
+			Math.hypot(x - this.lastHold.x, y - this.lastHold.y) < HOLD_DEDUPE_PX
+		) {
+			return;
+		}
+		this.lastHold = { x, y, at };
+
+		const pixel = this.ll2px(event.latlng);
+		// The tiles stop at the canvas edge, so a press past it is aimed at the surround
+		// and there is nothing there to walk to. Just inside that, clamp instead of
+		// refusing: the pin is drawn above the spot and a thumb covers a lot of field.
+		if (
+			pixel.px < -HOLD_SLACK_PX ||
+			pixel.py < -HOLD_SLACK_PX ||
+			pixel.px > this.mapWidth + HOLD_SLACK_PX ||
+			pixel.py > this.mapHeight + HOLD_SLACK_PX
+		) {
+			return;
+		}
+		const px = Math.min(Math.max(pixel.px, 0), this.mapWidth);
+		const py = Math.min(Math.max(pixel.py, 0), this.mapHeight);
+
+		const { lat, lng } = this.transform.toLatLng(px, py);
+		const target: LabeledPointOfInterest = {
+			id: CUSTOM_TARGET_ID,
+			name: this.namePickedPoint(px, py),
+			lat,
+			lng,
+		};
+
+		// Built here rather than bound to a marker: the spot only becomes a place on the
+		// map if the answer is yes, and until then the popup's own tip is what points at
+		// it. Dismissing is a tap anywhere else, the way every other popup here closes.
+		const popup = L.popup({ className: "poi-popup", closeButton: false, offset: [0, -6] });
+		this.applyPopupPadding(popup);
+		popup
+			.setLatLng(this.px2ll(px, py))
+			.setContent(this.makeNavPopupBody(target.name, () => this.startCustomNavigation(target)))
+			.openOn(this.map);
+	}
+
+	/**
+	 * What to call a spot the player picked. With the grid on screen it has a name
+	 * already — the square it falls in, which is also how the spot was described to
+	 * them over the radio. With the grid off there is nothing on screen to read a
+	 * square against, so naming one would be a coordinate they cannot check.
+	 */
+	private namePickedPoint(px: number, py: number): string {
+		if (!this.showGridAxis || this.gridStepPx <= 0) return t.markedPosition;
+		const column = gridColumnLabel(Math.floor(px / this.gridStepPx));
+		const row = Math.floor(py / this.gridStepPx) + 1;
+		return t.gridSquare(`${column}${row}`);
+	}
+
+	private startCustomNavigation(target: LabeledPointOfInterest) {
+		this.customTarget = target;
+		this.startNavigation(CUSTOM_TARGET_ID);
+	}
+
 	private clearNavigation() {
 		this.selectedPoiId = "";
+		// A picked spot exists only for the navigation it was picked for: leaving it
+		// behind would keep a stale option in the select long after the route is gone.
+		this.customTarget = null;
 		this.navDistanceM = 0;
 		this.navHint = "";
 		this.navArrowDeg = 0;
@@ -1030,6 +1163,11 @@ export class MapView extends LitElement {
 		return [this.mapHeight - py, px];
 	}
 
+	/** The inverse of `px2ll`: a point on the Leaflet map back to an image pixel. */
+	private ll2px(latLng: L.LatLng): { px: number; py: number } {
+		return { px: latLng.lng, py: this.mapHeight - latLng.lat };
+	}
+
 	private mapCenterPixel(): { px: number; py: number } {
 		return { px: this.mapWidth / 2, py: this.mapHeight / 2 };
 	}
@@ -1114,34 +1252,49 @@ export class MapView extends LitElement {
 		// Leaflet re-reads the auto-pan padding right after building the content, so this
 		// is the moment to re-measure the chrome the popup has to stay clear of.
 		const popup = marker.getPopup();
-		if (popup) {
-			const { top, bottom } = this.chromeInsets();
-			popup.options.autoPanPaddingTopLeft = L.point(16, top);
-			popup.options.autoPanPaddingBottomRight = L.point(16, bottom);
-		}
+		if (popup) this.applyPopupPadding(popup);
+		return this.makeNavPopupBody(this.poiLabel(poi), () => this.startNavigation(poi.id));
+	}
 
+	/**
+	 * A name and the one thing you want from a place on the ground. Shared by the PoI
+	 * dots and by a spot picked off the map, so both ask the question the same way.
+	 */
+	private makeNavPopupBody(label: string, navigateTo: () => void): HTMLElement {
 		const body = document.createElement("div");
 		body.className = "poi-popup-body";
 
 		const title = document.createElement("span");
 		title.className = "poi-popup-title";
-		title.textContent = this.poiLabel(poi);
+		title.textContent = label;
 
 		const navigate = document.createElement("button");
 		navigate.type = "button";
 		navigate.className = "poi-popup-nav";
 		navigate.textContent = t.navigateHere;
-		navigate.addEventListener("click", () => this.startNavigation(poi.id));
+		navigate.addEventListener("click", navigateTo);
 
 		body.append(title, navigate);
 		return body;
 	}
 
+	/** Keep a popup clear of the chrome it would otherwise auto-pan itself under. */
+	private applyPopupPadding(popup: L.Popup) {
+		const { top, bottom } = this.chromeInsets();
+		popup.options.autoPanPaddingTopLeft = L.point(16, top);
+		popup.options.autoPanPaddingBottomRight = L.point(16, bottom);
+	}
+
 	/**
 	 * How far the chrome intrudes on the map, top and bottom, with a margin. The top
-	 * rows come and go (compass prompt, nav card, a toast of any height) and the HUD
-	 * grows with a wrapped status line, so measure them instead of restating the CSS
-	 * row arithmetic here.
+	 * rows come and go (compass prompt, a toast of any height) and the HUD grows with
+	 * a wrapped status line, the nav card and the install bar, so measure them instead
+	 * of restating the CSS row arithmetic here.
+	 *
+	 * Only elements that really sit at the top belong in `top`: the PoI panel moved
+	 * into the HUD, and measuring its bottom edge from up here made the top inset
+	 * nearly a full screen, which auto-panned every popup — and the PoI under it —
+	 * down to the bottom edge.
 	 */
 	private chromeInsets(): { top: number; bottom: number } {
 		const visibleBottom = (element: Element | null) =>
@@ -1149,7 +1302,7 @@ export class MapView extends LitElement {
 				? element.getBoundingClientRect().bottom
 				: 0;
 		const top = Math.max(
-			visibleBottom(this.querySelector(".poi-panel")),
+			visibleBottom(this.querySelector(".top-row")),
 			visibleBottom(document.querySelector("#enable-compass")),
 			visibleBottom(document.querySelector("#toast")),
 		);
@@ -1232,6 +1385,10 @@ export class MapView extends LitElement {
 		// Double-click skips the popup: two taps and you are navigating. Marker mouse
 		// events don't bubble, so this never reaches the map's dblclick zoom.
 		marker.on("dblclick", () => this.startNavigation(poi.id));
+		// A long press that landed on a PoI means *that* PoI, not the patch of ground
+		// under it. Answering the event here is also what keeps it away from the map:
+		// Leaflet passes a mouse event to the map only when no layer under it listens.
+		marker.on("contextmenu", () => marker.openPopup());
 	}
 
 	/**
@@ -1628,6 +1785,15 @@ export class MapView extends LitElement {
 	 * measured boxes. Both are cheap; neither happens per frame.
 	 */
 	updated() {
+		// Lit commits an element's own bindings before its children, so on the render
+		// that first offers a picked spot the select is told to show an option that is
+		// still one part away from existing — it lands on nothing and reads as the
+		// placeholder for as long as that route runs. Nothing writes the value again
+		// afterwards, because the binding itself has not changed. So set it here, where
+		// the options are in.
+		const select = this.querySelector<HTMLSelectElement>(".poi-select");
+		if (select && select.value !== this.selectedPoiId) select.value = this.selectedPoiId;
+
 		this.invalidateGridAxis();
 		const signature = `${this.showGridAxis}|${this.gridStepPx}|${this.mapWidth}|${this.mapHeight}`;
 		if (signature !== this.axisSignature) {
@@ -1694,7 +1860,7 @@ export class MapView extends LitElement {
 				<div class="hud-controls">
 					<div class="hud-left">
 						${
-							pointsOfInterest.length > 0
+							pointsOfInterest.length > 0 || selectedPoi
 								? html`
 										<div class="poi-panel">
 											${
@@ -1730,6 +1896,17 @@ export class MapView extends LitElement {
 												@change=${this.onPoiSelect}
 											>
 												<option value="">${t.navigateTo}</option>
+												<!-- A spot picked off the map is not in the list and never will be, so
+												     it gets an entry of its own — outside the guard below, since it is
+												     the one option that changes without the map changing. Without it the
+												     select would sit on no option at all while that navigation runs. -->
+												${
+													this.customTarget
+														? html`
+																<option value=${CUSTOM_TARGET_ID}>${this.customTarget.name}</option>
+															`
+														: ""
+												}
 												<!-- Guarded on the map id: the list only changes when the map does, and
 												     without this every render walked all ~80 options. That includes the
 												     one \`dragstart\` triggers by clearing \`following\`, which put a

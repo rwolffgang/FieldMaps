@@ -115,13 +115,41 @@ function schedulePush() {
 }
 
 // --- Geolocation ---
+/**
+ * Core Location hands Safari a plain "kCLErrorDomain error 0" the moment a watch
+ * starts without a usable fix — indoors, in a hangar, in the seconds before the
+ * first satellites are found — and then delivers a position a few seconds later as
+ * if nothing had happened. Repeating that verbatim put an alarming, permanent line
+ * on the map for something that fixes itself, so hold everything but a denied
+ * permission back until it has lasted a while, and take it down on the first fix.
+ */
+const GPS_GRACE_MS = 12000;
+let gpsErrorTimer = 0;
+
+function disarmGpsError() {
+	clearTimeout(gpsErrorTimer);
+	gpsErrorTimer = 0;
+}
+
 watch(
 	(fix) => {
 		lastFix = fix;
+		disarmGpsError();
+		clearStatus("gps");
 		schedulePush();
 	},
 	(err) => {
-		setStatus(t.gpsError(err.message));
+		// A refused permission is the reader's to undo and will never resolve on its
+		// own, so it is the one GPS failure worth saying immediately.
+		if (err.code === 1 /* PERMISSION_DENIED */) {
+			disarmGpsError();
+			setStatus(t.gpsDenied, "gps");
+			return;
+		}
+		// Already counting down from an earlier failure — a watch reports the same
+		// dead spot over and over, and the wait should run from the first one.
+		if (gpsErrorTimer) return;
+		gpsErrorTimer = window.setTimeout(() => setStatus(t.gpsNoFix, "gps"), GPS_GRACE_MS);
 	},
 );
 
@@ -145,7 +173,7 @@ if (needsPermission()) {
 			delete btn.dataset.wanted;
 			btn.hidden = true;
 			startCompass();
-		} else setStatus(t.compassDenied);
+		} else setStatus(t.compassDenied, "compass");
 	});
 } else {
 	startCompass();
@@ -163,12 +191,28 @@ document.addEventListener("visibilitychange", () => {
 	if (document.visibilityState === "visible") keepAwake();
 });
 
-function setStatus(msg: string) {
+// The toast is one shared line and the last writer wins. `statusOwner` records who
+// that was, so whoever put a message up can take it down again once it stops being
+// true without wiping something else's.
+type StatusOwner = "gps" | "compass";
+let statusOwner: StatusOwner | null = null;
+
+function setStatus(msg: string, owner: StatusOwner) {
 	const el = document.querySelector("#toast") as HTMLElement | null;
 	if (!el) return;
+	statusOwner = owner;
 	el.textContent = msg;
 	// Remember that there is something to say, but only show it over a map — a GPS
 	// error is noise on the overview, where there is no position to place anyway.
 	el.dataset.wanted = "1";
 	el.hidden = routedMapId() == null;
+}
+
+function clearStatus(owner: StatusOwner) {
+	const el = document.querySelector("#toast") as HTMLElement | null;
+	if (!el || statusOwner !== owner) return;
+	statusOwner = null;
+	el.textContent = "";
+	delete el.dataset.wanted;
+	el.hidden = true;
 }
