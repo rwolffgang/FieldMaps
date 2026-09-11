@@ -2,7 +2,7 @@
 
 The organiser's printed Taktikkarten, one per event. **Source material, not app
 assets** — they deliberately live outside `public/` so Vite does not bundle them and
-Workbox does not precache them into the offline PWA (they are ~9 MB together).
+Workbox does not precache them into the offline PWA (they are ~13 MB together).
 
 Every PoI coordinate, play area, zone and headquarters position in `src/` was read
 off these images. Keep them so the numbers can be re-derived or checked.
@@ -14,7 +14,8 @@ off these images. Keep them so the numbers can be re-derived or checked.
 | `m24_2026_taktikkarte.jpg`       | Mission 24H            | M24-39517-2026-6 | `/mission-24h/taktikkarte`    |
 | `opt_2024_taktikkarte.jpg`       | OP Tschernobyl         | TNO-39517-2024-9 | `/op-tschernobyl/taktikkarte` |
 | `light_sim_2026_taktikkarte.jpg` | LIGHT-SIM              | DE-39517-2026-7  | `/light-sim/taktikkarte`      |
-| `asd_2024_taktikkarte.jpg`       | Airsoft Days           | ASD-39517-2024-7 | `/airsoft-days/taktikkarte`   |
+| `asd_2025_taktikkarte.pdf`       | Airsoft Days           | ASD-39517-2025-7 | `/airsoft-days/taktikkarte`   |
+| `asd_2024_taktikkarte.jpg`       | Airsoft Days (older)   | ASD-39517-2024-7 | supplied locally              |
 | `lost_airfield_taktikkarte.jpg`  | Lost Airfield          | —                | `/lost-airfield/taktikkarte`  |
 
 All base URLs are `https://airsofthelden-events.com`. Those paths are redirects to
@@ -33,7 +34,7 @@ Each `/taktikkarte` path was fetched and compared byte for byte with the copy he
 | Dark Emergency | `DE2026_Taktikkarte_Download_Final.jpg`  | identical                          |
 | Mission 24H    | `M24_Taktikkarte_ASH_2026_Web_….jpg`     | same image, 14 bytes of metadata   |
 | Lost Airfield  | `Lost-Airfield-Taktikkarte-web.jpg`      | same image, 14 bytes of metadata   |
-| Airsoft Days   | `ASD2025_Taktikkarte_Web.pdf`            | **superseded** — a 2025 PDF now    |
+| Airsoft Days   | `ASD2025_Taktikkarte_Web.pdf`            | newer — **taken**, see below       |
 
 Two things worth knowing before the October game:
 
@@ -42,8 +43,10 @@ Two things worth knowing before the October game:
   to the 2024 file. Nothing newer exists on the event pages, the faction pages, the
   news blog, the store search or the legacy `airsofthelden.com` domain. Re-check the
   downloads page nearer the event.
-- **Airsoft Days moved to a 2025 PDF**, so `asd_2024_taktikkarte.jpg` is now the only
-  stale file in this folder. Nothing in `src/` has been re-read off it yet.
+- **Airsoft Days moved to a 2025 PDF**, which is now here as
+  `asd_2025_taktikkarte.pdf`. The 2024 JPEG is kept beside it the way the older Dark
+  Emergency sheet is kept. What changed between the two, and what still has to change
+  in `src/`, is written up in `asd-2024-vs-2025.md`.
 
 LIGHT-SIM also gained an operational guide, `/light-sim/leitfaden`
 (`LightSim_-_Leitfaden_2026_V4.pdf`, 8 September 2026). It is not kept here — 17 MB,
@@ -51,6 +54,11 @@ and page 17 carries the same DE-39517-2026-7 map at lower resolution. What it ad
 UCRF HQ is building 700 and TERRA HQ is building 120, and the season has seven
 scoring zones whose positions are hidden until their control points are found. That
 last point is why `src/scenarios/light-sim.ts` does not draw them.
+
+A note on the format: Airsoft Days is the only entry here that is a PDF rather than an
+image, because that is what the organiser serves. Its labels are outlined and its page
+is one embedded raster plus vector artwork, so read it by rendering the page —
+`asd-2024-vs-2025.md` has the one-liner.
 
 ## How they were georeferenced
 
