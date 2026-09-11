@@ -353,8 +353,8 @@ const STRINGS: Record<Lang, Strings> = {
 							"Start kennt. Der Service Worker legt außerdem Karten, Bilder und Programmdateien " +
 							"in einem Cache ab — nur dadurch funktioniert die App offline.",
 						"Beides bleibt auf deinem Gerät und lässt sich jederzeit über die Website-Daten " +
-							"deines Browsers löschen. Cookies, Tracking oder Reichweitenmessung setzt die App " +
-							"nicht ein.",
+							"deines Browsers löschen. Cookies setzt die App nicht ein; zur Reichweiten" +
+							"messung siehe den gleichnamigen Abschnitt weiter unten.",
 					],
 				},
 				{
@@ -373,12 +373,31 @@ const STRINGS: Record<Lang, Strings> = {
 					],
 				},
 				{
+					heading: "Reichweitenmessung",
+					body: [
+						"Um zu sehen, wie viele Menschen die App überhaupt nutzen, setze ich Cloudflare " +
+							"Web Analytics ein. Die App lädt dazu beim Start ein kleines Zählskript von " +
+							"Cloudflare nach. Übermittelt werden die aufgerufene Seite, der Referrer, die " +
+							"ungefähre Herkunft auf Länderebene sowie technische Angaben zu Gerät und " +
+							"Browser.",
+						"Die Messung kommt ohne Cookies aus, speichert nichts auf deinem Gerät und legt " +
+							"keine Kennung an, mit der du über mehrere Besuche oder über andere Websites " +
+							"hinweg wiedererkannt werden könntest. Ich sehe ausschließlich zusammengefasste " +
+							"Zahlen, keine einzelnen Personen.",
+						"Rechtsgrundlage ist mein berechtigtes Interesse an einer einfachen Reichweiten" +
+							"messung (Art. 6 Abs. 1 lit. f DSGVO); weil dabei nichts auf deinem Gerät " +
+							"gespeichert oder ausgelesen wird, ist keine Einwilligung nach § 25 TDDDG " +
+							"erforderlich. Ohne Netz — also auf dem Feld — findet keine Messung statt, und " +
+							"die App funktioniert davon unabhängig vollständig weiter.",
+					],
+				},
+				{
 					heading: "Externe Links",
 					body: [
 						"Die Übersichtsseite verlinkt auf Buy Me a Coffee und GitHub. Die Verbindung zu " +
-							"diesen Anbietern entsteht erst, wenn du den jeweiligen Link anklickst — die App " +
-							"selbst lädt keine Schriften, Skripte oder Inhalte von Dritten nach. Danach gelten " +
-							"deren Datenschutzhinweise.",
+							"diesen Anbietern entsteht erst, wenn du den jeweiligen Link anklickst — abgesehen " +
+							"vom Zählskript oben lädt die App keine Schriften, Skripte oder Inhalte von " +
+							"Dritten nach. Danach gelten deren Datenschutzhinweise.",
 					],
 				},
 				{
@@ -388,7 +407,8 @@ const STRINGS: Record<Lang, Strings> = {
 							"Verarbeitung, Datenübertragbarkeit und Widerspruch (Art. 15 bis 21 DSGVO) sowie " +
 							"das Recht, dich bei einer Datenschutz-Aufsichtsbehörde zu beschweren. Da ich " +
 							"selbst keine personenbezogenen Daten von dir speichere, betreffen solche " +
-							"Ansprüche in der Regel nur die Logdaten des Hosters.",
+							"Ansprüche in der Regel nur die Logdaten und die Reichweitenmessung beim " +
+							"Hoster.",
 					],
 				},
 			],
@@ -566,7 +586,8 @@ const STRINGS: Record<Lang, Strings> = {
 							"maps, images and program files in a cache — that is what makes the app work " +
 							"offline.",
 						"Both stay on your device and can be deleted at any time through your browser's " +
-							"site data. The app uses no cookies, no tracking and no analytics.",
+							"site data. The app uses no cookies; for visitor counting see the section of " +
+							"that name below.",
 					],
 				},
 				{
@@ -586,11 +607,28 @@ const STRINGS: Record<Lang, Strings> = {
 					],
 				},
 				{
+					heading: "Visitor counting",
+					body: [
+						"To see how many people use the app at all, I use Cloudflare Web Analytics. On " +
+							"start-up the app loads a small counting script from Cloudflare. What is sent is " +
+							"the page requested, the referrer, the approximate origin at country level and " +
+							"technical details about device and browser.",
+						"The measurement works without cookies, stores nothing on your device and creates " +
+							"no identifier that could recognise you across visits or across other websites. " +
+							"I see aggregate numbers only, never individual people.",
+						"The legal basis is my legitimate interest in a simple visitor count " +
+							"(Art. 6(1)(f) GDPR); as nothing is stored on or read from your device, no " +
+							"consent under § 25 TDDDG is required. With no signal — out on the field — " +
+							"nothing is measured, and the app works exactly the same either way.",
+					],
+				},
+				{
 					heading: "External links",
 					body: [
 						"The overview links to Buy Me a Coffee and GitHub. A connection to those providers " +
-							"is only made once you click the link — the app itself loads no fonts, scripts or " +
-							"content from third parties. Their own privacy notices apply from that point on.",
+							"is only made once you click the link — apart from the counting script above, the " +
+							"app loads no fonts, scripts or content from third parties. Their own privacy " +
+							"notices apply from that point on.",
 					],
 				},
 				{
@@ -599,7 +637,8 @@ const STRINGS: Record<Lang, Strings> = {
 						"You have the right of access, rectification, erasure, restriction of processing, " +
 							"data portability and objection (Art. 15 to 21 GDPR), as well as the right to " +
 							"lodge a complaint with a supervisory authority. As I store no personal data " +
-							"about you myself, such requests will usually concern the host's log data only.",
+							"about you myself, such requests will usually concern the host's log data and " +
+							"visitor counting only.",
 					],
 				},
 			],

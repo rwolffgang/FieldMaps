@@ -21,6 +21,11 @@ browser, and every screen is reachable from the service worker cache. Once the a
 has been opened on a network, it works with no signal at all — which is the point,
 because the field has very little.
 
+The one thing the app sends anywhere is a cookie-less page view to Cloudflare Web
+Analytics on start-up, so there is some idea of how many people use it. It stores
+nothing on the device, identifies nobody, and never fires without a network. See
+`src/analytics.ts`, and the privacy notice at `/?page=impressum`.
+
 ## What it does
 
 - **Live position and heading.** GPS position with its accuracy circle, plus a
