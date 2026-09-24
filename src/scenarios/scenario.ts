@@ -33,6 +33,9 @@ export type ScenarioBase =
 			controlPoints: ControlPoint[];
 	  };
 
+/** How a zone's interior is drawn; see `Zone.style`. */
+export type ZoneStyle = "hatch" | "fill" | "outline" | "biohazard";
+
 /**
  * A marked area copied off the printed tactical map — a safe zone, a faction's
  * territory, the "Zivile Zone", and so on. Drawn over the terrain, under the PoIs.
@@ -48,9 +51,10 @@ export interface Zone {
 	color: string;
 	/**
 	 * "hatch" = diagonal stripes (the printed maps' safe-zone look), "fill" = flat
-	 * translucent wash, "outline" = ring only. Defaults to "hatch".
+	 * translucent wash, "outline" = ring only, "biohazard" = a wash strewn with
+	 * biohazard symbols (the printed maps' "Verstrahlt" look). Defaults to "hatch".
 	 */
-	style?: "hatch" | "fill" | "outline";
+	style?: ZoneStyle;
 }
 
 /**

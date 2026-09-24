@@ -91,7 +91,7 @@ export const operationTschernobyl: Scenario = {
 			id: "verstrahlt",
 			name: "Verstrahlt",
 			color: "#35c85a",
-			style: "fill",
+			style: "biohazard",
 			points: [
 				[52.378221, 11.821136],
 				[52.379244, 11.825704],
