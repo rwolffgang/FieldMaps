@@ -23,8 +23,8 @@ import type { Scenario } from "./scenario.js";
 export const operationTschernobyl: Scenario = {
 	id: "opt",
 	name: "Operation Tschernobyl",
-	blurb: "Stalker-Szenario in der Zone: fünf Fraktionen, Sperrgebiet, Anomalien.",
-	blurbEn: "Stalker scenario in the Zone: five factions, an exclusion area, anomalies.",
+	blurb: "Stalker-Szenario in der Zone: sechs Fraktionen, Sperrgebiet, Anomalien.",
+	blurbEn: "Stalker scenario in the Zone: six factions, an exclusion area, anomalies.",
 	schedule: { start: [10, 8], end: [10, 11] },
 	accent: "#e6c24d",
 	base: { kind: "osm" },
@@ -74,6 +74,17 @@ export const operationTschernobyl: Scenario = {
 			lng: 11.8267,
 			color: "#e8c24d",
 			logo: "logos/tno-stalker.png",
+		},
+		{
+			// The blue-and-yellow radiation disc between the Stalker Bar and the
+			// Forschungskomplex. It stands in the open rather than on a numbered
+			// building, so it is drawn as its own marker.
+			id: "baltische-brigade",
+			name: "Baltische Brigade",
+			lat: 52.380042,
+			lng: 11.825784,
+			color: "#1f9bd4",
+			logo: "logos/tno-baltische-brigade.png",
 		},
 		{
 			id: "wissenschaftler",
