@@ -6,37 +6,41 @@ import type { Scenario } from "./scenario.js";
  * vector base (the aged-sepia style). The play area is limited: everything outside
  * the boundary below is masked out.
  *
- * Labels and HQ emblems now follow the official tactical map TNO-39517-2024-9
- * (airsofthelden-events.com/op-tschernobyl/taktikkarte); the earlier hand-typed
- * names were close but not the legend's wording.
+ * Labels, HQ emblems and the southern boundary follow the official tactical map
+ * TNO-39517-2026-9 (airsofthelden-events.com/op-tschernobyl/taktikkarte). Against
+ * the 2024 edition it adds the irradiated block south of 601 (204, 213, 217 — the
+ * "Verstrahlt" zone), takes Sierra's clearing into the field, splits 601/602 into
+ * Garnison Süd/Nord, and swaps the trench names: 631 is now "Grabensystem" and 807
+ * "Schützengräben".
  *
- * NOTE: `playArea` is still a generated placeholder (the convex hull of the PoIs, a
- * bit expanded). Replace it with the real, walked boundary for this game.
+ * This map's "213 Altes Lagerhaus" is the building the site (and the Lost Airfield
+ * map) numbers 211 — the site's own 213 is the long hall at the west end of the
+ * same block — so it is labelled on 211 with the printed number alongside.
+ *
+ * The play area and zones are traced by hand off the printed maps, so their
+ * edges are good to a few tens of metres only.
  */
 export const operationTschernobyl: Scenario = {
 	id: "opt",
 	name: "Operation Tschernobyl",
-	blurb: "Stalker-Szenario in der Zone: fünf Fraktionen, Sperrgebiet, Anomalien.",
-	blurbEn: "Stalker scenario in the Zone: five factions, an exclusion area, anomalies.",
+	blurb: "Stalker-Szenario in der Zone: sechs Fraktionen, Sperrgebiet, Anomalien.",
+	blurbEn: "Stalker scenario in the Zone: six factions, an exclusion area, anomalies.",
 	schedule: { start: [10, 8], end: [10, 11] },
 	accent: "#e6c24d",
 	base: { kind: "osm" },
 	poiNames: scenarioPoiNames(
 		{
-			"601": "Garnison",
+			"211": "Altes Lagerhaus (213)",
 			"607": "Forschungskomplex",
-			"608": "Funkstation",
 			"610": "Stalker Bar",
 			"616": "Forschungsbunker",
-			"631": "No Man's Land",
 			"700": "Kraftwerk",
 			"714": "Unterschlupf",
 			"800": "Stützpunkt",
-			"807": "Grabensystem",
 			"820": "Strahlenbunker",
 		},
 		// Not printed on the OP Tschernobyl map.
-		["204", "217", "423", "500", "505", "508", "602", "808", "825", "Tango"],
+		["423", "500", "505", "508", "808", "825", "Tango"],
 	),
 	headquarters: [
 		{
@@ -72,6 +76,17 @@ export const operationTschernobyl: Scenario = {
 			logo: "logos/tno-stalker.png",
 		},
 		{
+			// The blue-and-yellow radiation disc between the Stalker Bar and the
+			// Forschungskomplex. It stands in the open rather than on a numbered
+			// building, so it is drawn as its own marker.
+			id: "baltische-brigade",
+			name: "Baltische Brigade",
+			lat: 52.380042,
+			lng: 11.825784,
+			color: "#1f9bd4",
+			logo: "logos/tno-baltische-brigade.png",
+		},
+		{
 			id: "wissenschaftler",
 			name: "Wissenschaftler",
 			lat: 52.379629,
@@ -81,6 +96,20 @@ export const operationTschernobyl: Scenario = {
 		},
 	],
 	zones: [
+		{
+			// The biohazard-strewn block south of 601 (204/213/217), new on the 2026
+			// map. Its west and south edges are the play-area boundary itself.
+			id: "verstrahlt",
+			name: "Verstrahlt",
+			color: "#35c85a",
+			style: "biohazard",
+			points: [
+				[52.378221, 11.821136],
+				[52.379244, 11.825704],
+				[52.377933, 11.82655],
+				[52.376942, 11.822157],
+			],
+		},
 		{
 			// "LEBENSGEFAHR! MILITÄRISCHES SPERRGEBIET" — the fenced-off strip north-east
 			// of Bravo. Traced off the printed map, so treat the edges as indicative.
@@ -117,10 +146,12 @@ export const operationTschernobyl: Scenario = {
 		[52.381497, 11.815253],
 		[52.381497, 11.821035], //  52.380759, 11.821035
 		[52.378493, 11.82101],
-		[52.378485, 11.82179],
-		[52.379361, 11.825745],
-		[52.379952, 11.82718],
-		[52.379176, 11.828867],
+		// The 2026 map's southern extension: down the Verstrahlt block and round
+		// Sierra's clearing, which the 2024 edition left outside.
+		[52.376942, 11.822157],
+		[52.377933, 11.82655],
+		[52.378288, 11.828248],
+		[52.379021, 11.828556],
 		[52.37894, 11.832106],
 		[52.378856, 11.836383], //+
 		[52.378521, 11.836506], //+

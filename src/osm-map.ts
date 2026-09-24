@@ -16,6 +16,8 @@
 // warm tone wash over the whole field.
 // -----------------------------------------------------------------------------
 
+import type { ZoneStyle } from "./scenarios/scenario.js";
+
 /** Feature classes emitted by scripts/fetch-osm.mjs (property `k`). */
 type FeatureClass =
 	| "grass"
@@ -445,7 +447,7 @@ export function bakeOsm(data: OsmFeatureCollection, project: Project): BakedGeom
 export interface BakedZone {
 	shape: BakedShape;
 	color: string;
-	style: "hatch" | "fill" | "outline";
+	style: ZoneStyle;
 }
 
 /** An open frontline, baked. */
@@ -493,6 +495,12 @@ export interface TileView {
 const MASK_HATCH = { period: 9, width: 2.5, color: "#000000", alpha: 0.3 };
 /** Zone hatch, per the printed maps' safe-zone stripes. */
 const ZONE_HATCH = { period: 10, width: 3.5, alpha: 0.55 };
+/**
+ * Biohazard zone, per the printed maps' "Verstrahlt" areas: symbols `size` screen
+ * pixels across, staggered two to a `period`-pixel tile so they read as a scatter
+ * rather than a grid.
+ */
+const ZONE_BIOHAZARD = { period: 64, size: 26, alpha: 0.75 };
 
 const NO_DASH: number[] = [];
 const dashCache = new Map<string, number[]>();
@@ -587,20 +595,106 @@ function modulo(value: number, size: number): number {
 }
 
 /**
- * Fill the path already on `ctx` with a hatch, in DEVICE space so the stripes keep
- * their size on screen at any zoom — and offset so they line up across tile seams.
+ * The biohazard symbol, drawn from its geometric construction rather than shipped as
+ * an image: three arms (circles on a circle of centres), each hollowed by a circle set
+ * further out so it breaks through the rim, a hole and three slits at the hub, and the
+ * ring showing through each arm's hollow. Unit = the arms' radius, so the whole symbol
+ * spans `2 × (armOffset + 1)`.
+ */
+const BIOHAZARD = {
+	armOffset: 0.733,
+	hollowRadius: 0.7,
+	hollowOffset: 1.1,
+	hubRadius: 0.2,
+	ringRadius: 0.9,
+	ringWidth: 0.2,
+	gap: 0.067,
+	slitLength: 0.55,
+};
+const BIOHAZARD_EXTENT = BIOHAZARD.armOffset + 1;
+const BIOHAZARD_ARMS = [-90, 30, 150].map((deg) => (deg * Math.PI) / 180);
+
+/** Draw one biohazard symbol centred on (x, y); `radius` is its overall half-width. */
+function drawBiohazard(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
+	const b = BIOHAZARD;
+	const circle = (cx: number, cy: number, r: number) => {
+		ctx.moveTo(cx + r, cy);
+		ctx.arc(cx, cy, r, 0, Math.PI * 2);
+	};
+	const around = (offset: number, r: number) => {
+		for (const a of BIOHAZARD_ARMS) circle(Math.cos(a) * offset, Math.sin(a) * offset, r);
+	};
+
+	ctx.save();
+	ctx.translate(x, y);
+	ctx.scale(radius / BIOHAZARD_EXTENT, radius / BIOHAZARD_EXTENT);
+
+	// The three arms, hollowed out, with the hub hole and slits cut through them.
+	ctx.beginPath();
+	around(b.armOffset, 1);
+	ctx.fill();
+	ctx.globalCompositeOperation = "destination-out";
+	ctx.beginPath();
+	around(b.hollowOffset, b.hollowRadius);
+	circle(0, 0, b.hubRadius);
+	ctx.fill();
+	ctx.lineWidth = b.gap;
+	ctx.beginPath();
+	for (const a of BIOHAZARD_ARMS) {
+		ctx.moveTo(0, 0);
+		ctx.lineTo(-Math.cos(a) * b.slitLength, -Math.sin(a) * b.slitLength);
+	}
+	ctx.stroke();
+	ctx.globalCompositeOperation = "source-over";
+
+	// The ring, visible only inside the hollows and kept a gap clear of the arms.
+	ctx.beginPath();
+	around(b.hollowOffset, b.hollowRadius - b.gap);
+	ctx.clip();
+	ctx.beginPath();
+	circle(0, 0, b.ringRadius + b.ringWidth / 2);
+	circle(0, 0, b.ringRadius - b.ringWidth / 2);
+	ctx.fill("evenodd");
+	ctx.restore();
+}
+
+/**
+ * The biohazard tile, cached like the stripes. Two symbols per tile, on the diagonal,
+ * so the repeat is a staggered scatter; each sits wholly inside its quarter, so the
+ * tile repeats seamlessly without drawing anything across its edges.
+ */
+const biohazardCache = new Map<string, HTMLCanvasElement>();
+
+function biohazardTile(color: string, alpha: number, pixelRatio: number): HTMLCanvasElement {
+	const key = `${color}|${alpha}|${pixelRatio}`;
+	let tile = biohazardCache.get(key);
+	if (tile) return tile;
+
+	const side = Math.max(4, Math.round(ZONE_BIOHAZARD.period * pixelRatio));
+	const radius = Math.min(ZONE_BIOHAZARD.size * pixelRatio, side / 2) / 2;
+	tile = document.createElement("canvas");
+	tile.width = side;
+	tile.height = side;
+	const ctx = tile.getContext("2d")!;
+	ctx.fillStyle = color;
+	ctx.strokeStyle = color;
+	drawBiohazard(ctx, side / 4, side / 4, radius);
+	drawBiohazard(ctx, (side * 3) / 4, (side * 3) / 4, radius);
+	// Alpha goes on the finished symbols in one pass, so the cut-outs stay clean.
+	ctx.globalCompositeOperation = "destination-in";
+	ctx.globalAlpha = alpha;
+	ctx.fillRect(0, 0, side, side);
+	biohazardCache.set(key, tile);
+	return tile;
+}
+
+/**
+ * Fill the path already on `ctx` with a repeating tile, in DEVICE space so it keeps
+ * its size on screen at any zoom — and offset so it lines up across tile seams.
  * The path itself is untouched: a canvas path is stored in device coordinates as it
  * is built, so changing the transform afterwards moves only the pattern.
  */
-function fillHatch(
-	ctx: CanvasRenderingContext2D,
-	view: TileView,
-	color: string,
-	alpha: number,
-	period: number,
-	width: number,
-) {
-	const tile = stripeTile(color, alpha, period, width, view.pixelRatio);
+function fillPattern(ctx: CanvasRenderingContext2D, view: TileView, tile: HTMLCanvasElement) {
 	const pattern = ctx.createPattern(tile, "repeat");
 	if (!pattern) return;
 	const side = tile.width;
@@ -613,6 +707,18 @@ function fillHatch(
 	ctx.fillStyle = pattern;
 	ctx.fill("evenodd");
 	ctx.restore();
+}
+
+/** Fill the path already on `ctx` with a diagonal hatch; see `fillPattern`. */
+function fillHatch(
+	ctx: CanvasRenderingContext2D,
+	view: TileView,
+	color: string,
+	alpha: number,
+	period: number,
+	width: number,
+) {
+	fillPattern(ctx, view, stripeTile(color, alpha, period, width, view.pixelRatio));
 }
 
 function paintFeature(
@@ -749,11 +855,13 @@ export function paintTile(ctx: CanvasRenderingContext2D, scene: TileScene, view:
 			if (zone.style !== "outline") {
 				ctx.beginPath();
 				traceShape(ctx, zone.shape, true);
-				ctx.globalAlpha = zone.style === "fill" ? 0.22 : 0.1;
+				ctx.globalAlpha = zone.style === "hatch" ? 0.1 : zone.style === "fill" ? 0.22 : 0.14;
 				ctx.fillStyle = zone.color;
 				ctx.fill("evenodd");
 				if (zone.style === "hatch") {
 					fillHatch(ctx, view, zone.color, ZONE_HATCH.alpha, ZONE_HATCH.period, ZONE_HATCH.width);
+				} else if (zone.style === "biohazard") {
+					fillPattern(ctx, view, biohazardTile(zone.color, ZONE_BIOHAZARD.alpha, view.pixelRatio));
 				}
 			}
 
