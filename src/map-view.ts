@@ -28,6 +28,10 @@ import {
 	type TileScene,
 } from "./osm-map.js";
 import { BasemapLayer } from "./basemap-layer.js";
+import type { DosimeterView } from "./dosimeter-view.js";
+import { primeDosimeterAudio } from "./dosimeter-view.js";
+import type { RadiationPoint } from "./radiation.js";
+import type { LatLng } from "./scenarios/scenario.js";
 import { goHome, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
 import { strings } from "./i18n.js";
@@ -361,6 +365,8 @@ export class MapView extends LitElement {
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
 	@state() private togglesOpen = false;
+	/** The prop dosimeter's dialog, on a map whose scenario offers one. */
+	@state() private dosimeterOpen = false;
 
 	// --- The install nudge. The landing page's card is the real pitch; this is the
 	// backstop for everyone who arrived on a shared ?map= link and so has never seen
@@ -490,6 +496,8 @@ export class MapView extends LitElement {
 
 	private loadMap(definition: MapDefinition) {
 		this.selectedMapId = definition.id;
+		// The dosimeter belongs to the map it was opened on, and the next one may not have one.
+		this.dosimeterOpen = false;
 		try {
 			localStorage.setItem(STORAGE_KEY, definition.id);
 		} catch {
@@ -1451,6 +1459,10 @@ export class MapView extends LitElement {
 
 		if (!positionUnchanged) {
 			this.placeFix(lat, lng, accuracyM);
+			// Handed straight to the device rather than through a render of this whole
+			// view: a moved fix changes nothing else here that a render would redraw.
+			const dosimeter = this.querySelector<DosimeterView>("dosimeter-view");
+			if (dosimeter) dosimeter.position = { lat, lng, accuracy: accuracyM };
 		}
 
 		// Rebuild the icon only when the triangle/dot state changes; otherwise just
@@ -1793,6 +1805,7 @@ export class MapView extends LitElement {
 		// the options are in.
 		const select = this.querySelector<HTMLSelectElement>(".poi-select");
 		if (select && select.value !== this.selectedPoiId) select.value = this.selectedPoiId;
+		this.syncDosimeterDialog();
 
 		this.invalidateGridAxis();
 		const signature = `${this.showGridAxis}|${this.gridStepPx}|${this.mapWidth}|${this.mapHeight}`;
@@ -1837,8 +1850,9 @@ export class MapView extends LitElement {
 			     edge the thumb reaches for least. -->
 			<div class="top-row">
 				<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>‹</button>
-				${this.renderToggles()}
+				<div class="top-row-end">${this.renderDosimeterButton()} ${this.renderToggles()}</div>
 			</div>
+			${this.renderDosimeter()}
 			<div class="hud">
 				${this.renderInstallBar()}
 				<!-- Status and errors get a row of their own above the controls, so a long
@@ -1999,6 +2013,107 @@ export class MapView extends LitElement {
 				</button>
 			</div>
 		`;
+	}
+
+	/**
+	 * The prop dosimeter, on the scenarios that ask for one (OP Tschernobyl). A real
+	 * <dialog> like the landing page's share sheet, so the backdrop, the focus trap and
+	 * Escape come from the browser. The device itself is only in the DOM while the
+	 * dialog is open, which is what starts and stops its needle twitching.
+	 */
+	private renderDosimeterButton() {
+		if (!getMapById(this.selectedMapId).dosimeter) return "";
+		return html`
+			<button
+				type="button"
+				class="dosimeter-btn ${this.dosimeterOpen ? "on" : ""}"
+				aria-label=${t.dosimeter}
+				title=${t.dosimeter}
+				@click=${() => {
+					// Inside the tap, the one place a browser lets audio start: the device
+					// opens with its Geiger clicks already running.
+					primeDosimeterAudio();
+					this.dosimeterOpen = true;
+				}}
+			>
+				<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+					<circle cx="12" cy="12" r="2" fill="currentColor"></circle>
+					<path
+						fill="currentColor"
+						d="M12 12 L7.5 4.2 A9 9 0 0 1 16.5 4.2 Z M12 12 L21 12 A9 9 0 0 1 16.5 19.8 Z M12 12 L7.5 19.8 A9 9 0 0 1 3 12 Z"
+					></path>
+					<circle
+						cx="12"
+						cy="12"
+						r="3.2"
+						fill="none"
+						stroke="rgba(22,29,38,0.95)"
+						stroke-width="1.6"
+					></circle>
+				</svg>
+			</button>
+		`;
+	}
+
+	private renderDosimeter() {
+		if (!getMapById(this.selectedMapId).dosimeter) return "";
+		return html`
+			<dialog
+				class="dosimeter-sheet"
+				@close=${() => (this.dosimeterOpen = false)}
+				@click=${this.onDosimeterBackdrop}
+			>
+				${
+					this.dosimeterOpen
+						? html`<dosimeter-view
+								.position=${this.lastGps}
+								.zones=${this.dosimeterSources().zones}
+								.points=${this.dosimeterSources().points}
+								@close=${() => (this.dosimeterOpen = false)}
+							></dosimeter-view>`
+						: ""
+				}
+			</dialog>
+		`;
+	}
+
+	/**
+	 * What the dosimeter's GPS reading is computed from: the map's `biohazard` zones
+	 * and its radiating PoIs (`radiatingPois`, or every PoI on the map). Memoised on
+	 * the map id, so the device is handed the same arrays and does not re-render on a
+	 * render of this view that changed neither.
+	 */
+	private dosimeterSources(): { zones: LatLng[][]; points: RadiationPoint[] } {
+		if (this.dosimeterSourcesFor?.mapId !== this.selectedMapId) {
+			const definition = getMapById(this.selectedMapId);
+			const radiating = definition.radiatingPois ? new Set(definition.radiatingPois) : null;
+			this.dosimeterSourcesFor = {
+				mapId: this.selectedMapId,
+				zones: (definition.zones ?? [])
+					.filter((zone) => zone.style === "biohazard")
+					.map((zone) => zone.points),
+				points: this.currentPointsOfInterest().filter((poi) => !radiating || radiating.has(poi.id)),
+			};
+		}
+		return this.dosimeterSourcesFor;
+	}
+	private dosimeterSourcesFor: {
+		mapId: string;
+		zones: LatLng[][];
+		points: RadiationPoint[];
+	} | null = null;
+
+	/** A tap on the backdrop (the dialog itself, not the device inside it) closes it. */
+	private onDosimeterBackdrop(event: MouseEvent) {
+		if (event.target === event.currentTarget) this.dosimeterOpen = false;
+	}
+
+	/** Drive the native <dialog> from `dosimeterOpen`, so state stays the single truth. */
+	private syncDosimeterDialog() {
+		const dialog = this.querySelector<HTMLDialogElement>("dialog.dosimeter-sheet");
+		if (!dialog) return;
+		if (this.dosimeterOpen && !dialog.open) dialog.showModal();
+		if (!this.dosimeterOpen && dialog.open) dialog.close();
 	}
 
 	private renderToggles() {

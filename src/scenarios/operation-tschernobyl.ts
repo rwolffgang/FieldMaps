@@ -28,6 +28,7 @@ export const operationTschernobyl: Scenario = {
 	schedule: { start: [10, 8], end: [10, 11] },
 	accent: "#e6c24d",
 	base: { kind: "osm" },
+	dosimeter: true,
 	poiNames: scenarioPoiNames(
 		{
 			"211": "Altes Lagerhaus (213)",

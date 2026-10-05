@@ -62,6 +62,10 @@ export interface MapDefinition {
 	headquarters?: Headquarters[];
 	/** Open frontlines traced from the event's tactical map. */
 	lines?: BoundaryLine[];
+	/** Whether the map's top row offers the prop dosimeter. */
+	dosimeter?: boolean;
+	/** PoI ids that lift the dosimeter's GPS reading; omitted = every PoI on the map. */
+	radiatingPois?: string[];
 }
 
 // Shared calibration for the OSM vector base. Every OSM scenario renders on this
@@ -92,6 +96,8 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		zones: scenario.zones,
 		headquarters: scenario.headquarters,
 		lines: scenario.lines,
+		dosimeter: scenario.dosimeter,
+		radiatingPois: scenario.radiatingPois,
 	};
 	if (scenario.base.kind === "osm") {
 		return { ...common, ...OSM_BASE, theme: scenario.base.theme ?? "opt" };

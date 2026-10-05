@@ -176,6 +176,13 @@ interface Strings {
 	layerMask: string;
 	layerZones: string;
 	layerHqs: string;
+	/** The top-row button that opens the prop dosimeter on the Stalker maps. */
+	dosimeter: string;
+	dosimeterClose: string;
+	dosimeterDial: string;
+	dosimeterSound: string;
+	dosimeterRange: string;
+	dosimeterSensitivity: string;
 }
 
 const STRINGS: Record<Lang, Strings> = {
@@ -273,6 +280,12 @@ const STRINGS: Record<Lang, Strings> = {
 		layerMask: "Spielfeldgrenze",
 		layerZones: "Zonen",
 		layerHqs: "Hauptquartiere",
+		dosimeter: "Dosimeter öffnen",
+		dosimeterClose: "Dosimeter schließen",
+		dosimeterDial: "Zeigerinstrument, 0 bis 5, mal Messbereich",
+		dosimeterSound: "Geigerzähler-Ton",
+		dosimeterRange: "Messbereich",
+		dosimeterSensitivity: "Empfindlichkeit",
 		legal: {
 			linkLabel: "Impressum & Datenschutz",
 			back: "Zurück zur Übersicht",
@@ -508,6 +521,12 @@ const STRINGS: Record<Lang, Strings> = {
 		layerMask: "Boundary mask",
 		layerZones: "Zones",
 		layerHqs: "Headquarters",
+		dosimeter: "Open dosimeter",
+		dosimeterClose: "Close dosimeter",
+		dosimeterDial: "Meter dial, 0 to 5, times the range",
+		dosimeterSound: "Geiger counter sound",
+		dosimeterRange: "Range",
+		dosimeterSensitivity: "Sensitivity",
 		legal: {
 			linkLabel: "Legal notice & privacy",
 			back: "Back to the overview",

@@ -123,4 +123,14 @@ export interface Scenario {
 	headquarters?: Headquarters[];
 	/** Open frontlines / boundary lines from the printed map. */
 	lines?: BoundaryLine[];
+	/**
+	 * Offer the prop radiation dosimeter (`src/dosimeter-view.ts`) from the map's top
+	 * row. For the Stalker games; it measures nothing and is driven by a slider.
+	 */
+	dosimeter?: boolean;
+	/**
+	 * Which PoIs lift the dosimeter's GPS reading as a player walks up to them. Omit
+	 * for every PoI shown on the map. The `biohazard` zones always count.
+	 */
+	radiatingPois?: string[];
 }
