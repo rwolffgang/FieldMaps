@@ -86,9 +86,16 @@ type RangeMode = "auto" | number;
 const ALARM_LEVEL = 60;
 /** A source's lamp lights once it lifts the reading this far above background. */
 const LAMP_THRESHOLD = 6;
-/** СКАН: where the ramp tops out (red, alarm), and how long up and back down take. */
+/**
+ * СКАН, in two parts so a press answers at once and still builds for a while: a fast
+ * attack up to `SCAN_ATTACK` of the way (yellow, ~0.1 мР/ч, within half a second),
+ * then a steady build to the peak (red) — the alarm at ~4 s, the top at ~9 s.
+ * Letting go falls back over `SCAN_FALL_S`.
+ */
 const SCAN_PEAK_LEVEL = 88;
-const SCAN_RISE_S = 3;
+const SCAN_ATTACK = 0.4;
+const SCAN_ATTACK_S = 0.3;
+const SCAN_BUILD_S = 8;
 const SCAN_FALL_S = 2;
 /** АВТО steps up above this share of full scale, and down below this share of the next range down. */
 const AUTO_UP = 0.92;
@@ -97,6 +104,8 @@ const AUTO_DOWN = 0.6;
 const TICK_MS = 120;
 /** Clicks per second never exceed this; above it a real tube is a steady crackle anyway. */
 const MAX_CLICK_RATE = 160;
+/** The click timer re-reads the rate at least this often, so a change is heard at once. */
+const CLICK_RECHECK_MS = 50;
 /** Set once the instruction slip has been read. */
 const MANUAL_KEY = "field-map-dosimeter-manual-seen";
 
@@ -209,11 +218,6 @@ function formatReading(value: number, full: number): string {
 	return value.toFixed(digits).replace(".", ",");
 }
 
-/** 0→1 with a soft start and end, so the СКАН ramp swells rather than jumps. */
-function smoothstep(x: number): number {
-	return x * x * (3 - 2 * x);
-}
-
 // Dial geometry: pivot (180, 220), scale arc ±50°, radius 170. Fixed, so built once.
 const TICKS = Array.from({ length: 51 }, (_, i) => {
 	const angle = ((-50 + i * 2) * Math.PI) / 180;
@@ -261,7 +265,7 @@ export class DosimeterView extends LitElement {
 	@state() private autoRange = 0;
 	@state() private sound = lastSound;
 	@state() private jitter = 0;
-	/** How far the СКАН ramp has got, 0–1, and whether the button is held. */
+	/** How far the СКАН ramp has got, 0–1 of the way to its peak, and whether the button is held. */
 	@state() private scan = 0;
 	private scanning = false;
 	@state() private manualOpen = !manualSeen();
@@ -303,10 +307,15 @@ export class DosimeterView extends LitElement {
 
 		if (this.twitch) this.jitter = (Math.random() - 0.5) * 1.6;
 
-		const target = this.scanning ? 1 : 0;
-		if (this.scan !== target) {
-			const step = dt / (this.scanning ? SCAN_RISE_S : SCAN_FALL_S);
-			this.scan = this.scanning ? Math.min(1, this.scan + step) : Math.max(0, this.scan - step);
+		// Held: close in on the attack level fast, and build steadily on top. Written as a
+		// rate rather than a curve over time, so a press that catches the fall halfway
+		// picks up from wherever the needle is.
+		if (this.scanning && this.scan < 1) {
+			const attack = Math.max(0, SCAN_ATTACK - this.scan) / SCAN_ATTACK_S;
+			const build = (1 - SCAN_ATTACK) / SCAN_BUILD_S;
+			this.scan = Math.min(1, this.scan + (attack + build) * dt);
+		} else if (!this.scanning && this.scan > 0) {
+			this.scan = Math.max(0, this.scan - dt / SCAN_FALL_S);
 		}
 
 		// One range step per tick at most, with a gap between the up and down
@@ -328,7 +337,7 @@ export class DosimeterView extends LitElement {
 			object:
 				fix && !guide ? radiationLevelAt(fix.lat, fix.lng, [], this.points) : BACKGROUND_LEVEL,
 			guide: guide ? levelForBearing(guide.relativeDeg) : BACKGROUND_LEVEL,
-			scan: BACKGROUND_LEVEL + (SCAN_PEAK_LEVEL - BACKGROUND_LEVEL) * smoothstep(this.scan),
+			scan: BACKGROUND_LEVEL + (SCAN_PEAK_LEVEL - BACKGROUND_LEVEL) * this.scan,
 		};
 	}
 
@@ -359,7 +368,21 @@ export class DosimeterView extends LitElement {
 			// No live pointer to capture (a synthetic event): the press still counts.
 		}
 		event.preventDefault();
+		this.beginScan();
+	}
+
+	/**
+	 * Start the СКАН ramp, with a click on the instant: random clicks can leave a gap of
+	 * half a second at the start, which on a button reads as lag. The click timer then
+	 * restarts so the rising rate is heard straight away.
+	 */
+	private beginScan() {
+		if (this.scanning) return;
 		this.scanning = true;
+		if (!this.sound) return;
+		this.playClick();
+		window.clearTimeout(this.clickTimer);
+		this.scheduleClick();
 	}
 
 	private stopScan() {
@@ -369,7 +392,7 @@ export class DosimeterView extends LitElement {
 	private onScanKey(event: KeyboardEvent) {
 		if (event.key !== " " && event.key !== "Enter") return;
 		event.preventDefault();
-		if (event.type === "keydown") this.scanning = true;
+		if (event.type === "keydown") this.beginScan();
 		else this.scanning = false;
 	}
 
@@ -399,17 +422,26 @@ export class DosimeterView extends LitElement {
 		source.start();
 	}
 
-	/** Next click after an exponentially distributed wait: that is what decay sounds like. */
+	/**
+	 * Next click after an exponentially distributed wait: that is what decay sounds like.
+	 *
+	 * The wait is cut off at `CLICK_RECHECK_MS` and re-rolled at the rate of that moment.
+	 * At background the mean wait is over a second, and an uncut one would hold the old
+	 * rate for all of it — pressing СКАН or walking into the zone would go unheard until
+	 * that quiet stretch ran out. An exponential wait has no memory, so cutting it short
+	 * and rolling again is statistically the same thing, just responsive.
+	 */
 	private scheduleClick() {
 		if (!this.sound) return;
 		const rate = clickRateFor(this.currentLevel());
-		const waitMs = (-Math.log(1 - Math.random()) / rate) * 1000;
+		const waitMs = Math.max(5, (-Math.log(1 - Math.random()) / rate) * 1000);
+		const due = waitMs <= CLICK_RECHECK_MS;
 		this.clickTimer = window.setTimeout(
 			() => {
-				this.playClick();
+				if (due) this.playClick();
 				this.scheduleClick();
 			},
-			Math.max(5, waitMs),
+			due ? waitMs : CLICK_RECHECK_MS,
 		);
 	}
 
