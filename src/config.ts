@@ -64,7 +64,7 @@ export interface MapDefinition {
 	lines?: BoundaryLine[];
 	/** Whether the map's top row offers the prop dosimeter. */
 	dosimeter?: boolean;
-	/** PoI ids that lift the dosimeter's GPS reading; omitted = every PoI on the map. */
+	/** PoI ids that radiate for the dosimeter, besides the headquarters; omitted = none. */
 	radiatingPois?: string[];
 }
 

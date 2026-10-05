@@ -2152,21 +2152,24 @@ export class MapView extends LitElement {
 	}
 
 	/**
-	 * What the dosimeter's GPS reading is computed from: the map's `biohazard` zones
-	 * and its radiating PoIs (`radiatingPois`, or every PoI on the map). Memoised on
-	 * the map id, so the device is handed the same arrays and does not re-render on a
-	 * render of this view that changed neither.
+	 * What the dosimeter's GPS reading is computed from: the map's `biohazard` zones,
+	 * and its radiating objects — every headquarters plus the `radiatingPois`. Memoised
+	 * on the map id, so the device is handed the same arrays and does not re-render on
+	 * a render of this view that changed neither.
 	 */
 	private dosimeterSources(): { zones: LatLng[][]; points: RadiationPoint[] } {
 		if (this.dosimeterSourcesFor?.mapId !== this.selectedMapId) {
 			const definition = getMapById(this.selectedMapId);
-			const radiating = definition.radiatingPois ? new Set(definition.radiatingPois) : null;
+			const radiating = new Set(definition.radiatingPois ?? []);
 			this.dosimeterSourcesFor = {
 				mapId: this.selectedMapId,
 				zones: (definition.zones ?? [])
 					.filter((zone) => zone.style === "biohazard")
 					.map((zone) => zone.points),
-				points: this.currentPointsOfInterest().filter((poi) => !radiating || radiating.has(poi.id)),
+				points: [
+					...(definition.headquarters ?? []),
+					...this.currentPointsOfInterest().filter((poi) => radiating.has(poi.id)),
+				],
 			};
 		}
 		return this.dosimeterSourcesFor;

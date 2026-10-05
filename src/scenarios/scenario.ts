@@ -129,8 +129,9 @@ export interface Scenario {
 	 */
 	dosimeter?: boolean;
 	/**
-	 * Which PoIs lift the dosimeter's GPS reading as a player walks up to them. Omit
-	 * for every PoI shown on the map. The `biohazard` zones always count.
+	 * PoIs that radiate for the dosimeter (its ОБЪЕКТ lamp) — pick a few that fit the
+	 * story; with many the counter is always yellow and stops meaning anything. The
+	 * faction headquarters always radiate, and so do the `biohazard` zones (ЗОНА).
 	 */
 	radiatingPois?: string[];
 }

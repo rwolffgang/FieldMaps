@@ -4,9 +4,7 @@ import {
 	EDGE_LEVEL,
 	PEAK_LEVEL,
 	GUIDE_LEVEL,
-	NOMINAL_SENSITIVITY,
 	levelForBearing,
-	applySensitivity,
 	radiationLevelAt,
 	signedDistanceToZoneM,
 } from "./radiation.js";
@@ -94,13 +92,6 @@ check("left and right are symmetric", Math.abs(levelForBearing(20) - levelForBea
 check("negative angles wrap", Math.abs(levelForBearing(-20) - levelForBearing(340)) < 1e-9);
 check("never reaches the alarm (60)", GUIDE_LEVEL < 60);
 check("stays inside the ×0,1 range (≤ 0.5 мР/ч, level ≤ 54)", GUIDE_LEVEL <= 54);
-
-console.log("sensitivity");
-check("nominal leaves a reading alone", applySensitivity(45, NOMINAL_SENSITIVITY) === 45);
-check("zero reads background", applySensitivity(85, 0) === BACKGROUND_LEVEL);
-check("full doubles the excess", applySensitivity(45, 100) === 80);
-check("full clamps at 100", applySensitivity(90, 100) === 100);
-check("background stays background", applySensitivity(BACKGROUND_LEVEL, 100) === BACKGROUND_LEVEL);
 
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

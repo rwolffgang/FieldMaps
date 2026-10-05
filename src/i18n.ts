@@ -182,10 +182,24 @@ interface Strings {
 	dosimeterDial: string;
 	dosimeterSound: string;
 	dosimeterRange: string;
-	dosimeterSensitivity: string;
 	/** The one-time callout when a navigation first starts on a map with a dosimeter. */
-	/** Taped to the device: the clicks need the phone's sound on. */
-	dosimeterMuteNote: string;
+	/** The device's handwritten tape labels, in the player's language. */
+	dosimeterTapes: {
+		zone: string;
+		object: string;
+		guide: string;
+		scan: string;
+		sound: string;
+		hold: string;
+	};
+	dosimeterSources: string;
+	dosimeterLampOn: string;
+	dosimeterScan: string;
+	/** The instruction slip shown the first time the device opens. */
+	dosimeterManualTitle: string;
+	dosimeterManualLines: string[];
+	dosimeterManualOk: string;
+	dosimeterManualOpen: string;
 	dosimeterHint: string;
 	dosimeterHintDismiss: string;
 }
@@ -290,8 +304,26 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterDial: "Zeigerinstrument, 0 bis 5, mal Messbereich",
 		dosimeterSound: "Geigerzähler-Ton",
 		dosimeterRange: "Messbereich",
-		dosimeterSensitivity: "Empfindlichkeit",
-		dosimeterMuteNote: "Kein Ton? Handy nicht stumm & Lautstärke hoch",
+		dosimeterTapes: {
+			zone: "Zone",
+			object: "Objekt",
+			guide: "Peilung",
+			scan: "Scan",
+			sound: "Ton",
+			hold: "gedrückt halten",
+		},
+		dosimeterSources: "Was gerade ausschlägt",
+		dosimeterLampOn: "aktiv",
+		dosimeterScan: "Scannen – gedrückt halten",
+		dosimeterManualTitle: "So funktioniert der Geigerzähler",
+		dosimeterManualLines: [
+			"Er tickt schneller, je näher du der Strahlung kommst: verstrahlten Zonen, Hauptquartieren und besonderen Gebäuden. Die grünen Lampen zeigen, was gerade ausschlägt.",
+			"Beim Navigieren: Handy langsam drehen – in Richtung Ziel tickt es am stärksten.",
+			"СКАН gedrückt halten, um ein Objekt zu scannen – zum Rollenspiel.",
+			"Kein Ton? Handy nicht stumm schalten und Lautstärke hoch.",
+		],
+		dosimeterManualOk: "Verstanden",
+		dosimeterManualOpen: "Bedienungsanleitung",
 		dosimeterHint: "Navigiere mit dem Geigerzähler",
 		dosimeterHintDismiss: "Hinweis schließen",
 		legal: {
@@ -534,8 +566,26 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterDial: "Meter dial, 0 to 5, times the range",
 		dosimeterSound: "Geiger counter sound",
 		dosimeterRange: "Range",
-		dosimeterSensitivity: "Sensitivity",
-		dosimeterMuteNote: "No sound? Unmute the phone & turn the volume up",
+		dosimeterTapes: {
+			zone: "Zone",
+			object: "Object",
+			guide: "Bearing",
+			scan: "Scan",
+			sound: "Sound",
+			hold: "press & hold",
+		},
+		dosimeterSources: "What is reading right now",
+		dosimeterLampOn: "active",
+		dosimeterScan: "Scan – press and hold",
+		dosimeterManualTitle: "How the Geiger counter works",
+		dosimeterManualLines: [
+			"It ticks faster the closer you get to radiation: irradiated zones, headquarters and special buildings. The green lamps show what is reading right now.",
+			"While navigating: turn the phone slowly – it ticks loudest towards the target.",
+			"Press and hold СКАН to scan an object – for roleplay.",
+			"No sound? Unmute the phone and turn the volume up.",
+		],
+		dosimeterManualOk: "Got it",
+		dosimeterManualOpen: "Instructions",
 		dosimeterHint: "Navigate using the Geiger counter",
 		dosimeterHintDismiss: "Dismiss hint",
 		legal: {

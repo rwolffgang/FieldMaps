@@ -123,19 +123,6 @@ export function levelForBearing(relativeDeg: number): number {
 	return BACKGROUND_LEVEL + (GUIDE_LEVEL - BACKGROUND_LEVEL) * lobe;
 }
 
-/** The sensitivity at which a reading is exactly what the model gives. */
-export const NOMINAL_SENSITIVITY = 50;
-
-/**
- * Scale a reading by the device's sensitivity knob (0–100, nominal 50): it gains
- * or loses only what is *above* background, so 0 reads background everywhere and
- * 100 doubles every source — a PoI then reaches orange, a zone pins the needle.
- */
-export function applySensitivity(level: number, sensitivity: number): number {
-	const gain = Math.max(0, sensitivity) / NOMINAL_SENSITIVITY;
-	return Math.min(100, BACKGROUND_LEVEL + (level - BACKGROUND_LEVEL) * gain);
-}
-
 /**
  * The dosimeter level (0–100) at a position: the hottest of the irradiated zones
  * and the points of interest. Neither means background everywhere.
