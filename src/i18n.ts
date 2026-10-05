@@ -181,7 +181,6 @@ interface Strings {
 	dosimeterClose: string;
 	dosimeterDial: string;
 	dosimeterSound: string;
-	dosimeterRange: string;
 	/** The one-time callout when a navigation first starts on a map with a dosimeter. */
 	/** The device's handwritten tape labels, in the player's language. */
 	dosimeterTapes: {
@@ -303,7 +302,6 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterClose: "Dosimeter schließen",
 		dosimeterDial: "Zeigerinstrument, 0 bis 5, mal Messbereich",
 		dosimeterSound: "Geigerzähler-Ton",
-		dosimeterRange: "Messbereich",
 		dosimeterTapes: {
 			zone: "Zone",
 			object: "Objekt",
@@ -565,7 +563,6 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterClose: "Close dosimeter",
 		dosimeterDial: "Meter dial, 0 to 5, times the range",
 		dosimeterSound: "Geiger counter sound",
-		dosimeterRange: "Range",
 		dosimeterTapes: {
 			zone: "Zone",
 			object: "Object",

@@ -1010,6 +1010,11 @@ legal-view {
 	max-height: 100dvh;
 	overflow: auto;
 	overscroll-behavior: contain;
+	/* Holding СКАН is a long press; keep iOS from turning it into a text selection
+	   anywhere in the dialog. */
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
 	/* showModal() focuses the dialog itself, and the browser rings it in blue. The
 	   device's own controls carry their focus ring, so the frame does not need one. */
 	outline: none;

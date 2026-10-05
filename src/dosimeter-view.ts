@@ -20,10 +20,11 @@
 // The hottest source wins (see `radiation.ts` for the curves). Without a fix the
 // field reads background, the panel says НЕТ GPS, and СКАН still works.
 //
-// The dial reads 0–5 and a range switch multiplies it (full scale 0.05–500 мР/ч).
-// АВТО, the default, steps the range so the needle stays on the scale; a manual
-// range pins the needle and lights ПЕРЕГРУЗ above full scale, like the real thing.
-// ТРЕВОГА (alarm) blinks from 1 мР/ч, the dosimeter's 60.
+// The dial reads 0–5 times a range (full scale 0.05–500 мР/ч), which the device
+// steps by itself (АВТО) so the needle stays on the scale; the dial shows which.
+// There is deliberately no range switch: manual ranges, and the overload lamp that
+// came with them, were one more thing a player had to understand before the needle
+// meant anything. ТРЕВОГА (alarm) blinks from 1 мР/ч, the dosimeter's 60.
 //
 // The Geiger clicks are synthesised with Web Audio — a few milliseconds of shaped
 // noise per click at random (Poisson) intervals whose rate follows the reading —
@@ -79,9 +80,6 @@ const RANGES = [
 	{ full: 500, label: "×100" },
 ] as const;
 
-/** `"auto"`, or the index of a manual range in `RANGES`. */
-type RangeMode = "auto" | number;
-
 /** Level (0–100, see `radiation.ts`) from which ТРЕВОГА blinks: 1 мР/ч. */
 const ALARM_LEVEL = 60;
 /** A source's lamp lights once it lifts the reading this far above background. */
@@ -110,7 +108,6 @@ const CLICK_RECHECK_MS = 50;
 const MANUAL_KEY = "field-map-dosimeter-manual-seen";
 
 // Kept at module level so closing and reopening the device keeps its settings.
-let lastRangeMode: RangeMode = "auto";
 let lastSound = true;
 
 function manualSeen(): boolean {
@@ -260,8 +257,7 @@ export class DosimeterView extends LitElement {
 	/** Set by the map while a navigation runs, on every compass or position change. */
 	@property({ attribute: false }) guidance: DosimeterGuidance | null = null;
 
-	@state() private rangeMode: RangeMode = lastRangeMode;
-	/** The range АВТО has settled on; only meaningful while `rangeMode` is "auto". */
+	/** The range the device has stepped to, an index into `RANGES`. */
 	@state() private autoRange = 0;
 	@state() private sound = lastSound;
 	@state() private jitter = 0;
@@ -320,12 +316,10 @@ export class DosimeterView extends LitElement {
 
 		// One range step per tick at most, with a gap between the up and down
 		// thresholds so a reading sitting on a boundary does not flap.
-		if (this.rangeMode === "auto") {
-			const dose = milliroentgenFor(this.currentLevel());
-			const index = this.autoRange;
-			if (index < RANGES.length - 1 && dose > RANGES[index].full * AUTO_UP) this.autoRange++;
-			else if (index > 0 && dose < RANGES[index - 1].full * AUTO_DOWN) this.autoRange--;
-		}
+		const dose = milliroentgenFor(this.currentLevel());
+		const index = this.autoRange;
+		if (index < RANGES.length - 1 && dose > RANGES[index].full * AUTO_UP) this.autoRange++;
+		else if (index > 0 && dose < RANGES[index - 1].full * AUTO_DOWN) this.autoRange--;
 	}
 
 	private sources(): Sources {
@@ -345,11 +339,6 @@ export class DosimeterView extends LitElement {
 	private currentLevel(sources = this.sources()): number {
 		const hottest = Math.max(sources.zone, sources.object, sources.guide, sources.scan);
 		return Math.min(100, Math.max(0, hottest + this.jitter));
-	}
-
-	private pickRange(mode: RangeMode) {
-		this.rangeMode = lastRangeMode = mode;
-		if (mode === "auto") this.autoRange = autoRangeFor(milliroentgenFor(this.currentLevel()));
 	}
 
 	private toggleSound() {
@@ -384,6 +373,17 @@ export class DosimeterView extends LitElement {
 		window.clearTimeout(this.clickTimer);
 		this.scheduleClick();
 	}
+
+	/**
+	 * Cancel the browser's own long-press handling on СКАН — iOS otherwise starts a text
+	 * selection (or the callout) under the finger after half a second. Non-passive so
+	 * `preventDefault` is honoured; the press itself runs on pointer events, which this
+	 * does not stop.
+	 */
+	private blockTouchGesture = {
+		handleEvent: (event: TouchEvent) => event.preventDefault(),
+		passive: false,
+	};
 
 	private stopScan() {
 		this.scanning = false;
@@ -452,9 +452,7 @@ export class DosimeterView extends LitElement {
 	render() {
 		const sources = this.sources();
 		const level = this.currentLevel(sources);
-		const auto = this.rangeMode === "auto";
-		const rangeIndex = auto ? this.autoRange : (this.rangeMode as number);
-		const range = RANGES[rangeIndex];
+		const range = RANGES[this.autoRange];
 		const dose = milliroentgenFor(level);
 		const fraction = dose / range.full;
 		const over = fraction > 1;
@@ -466,7 +464,7 @@ export class DosimeterView extends LitElement {
 		const panelLabel = this.guidance
 			? `ПЕЛЕНГ · ${Math.round(this.guidance.distanceM)} м`
 			: this.position
-				? "ПОДДИАПАЗОН"
+				? "МОЩНОСТЬ ДОЗЫ"
 				: "НЕТ GPS";
 
 		const lamps = [
@@ -516,7 +514,7 @@ export class DosimeterView extends LitElement {
 							<g class="ticks">${TICKS}</g>
 							<g class="labels">${LABELS}</g>
 							<text class="unit" x="180" y="150">мР/ч</text>
-							<text class="range" x="180" y="170">${auto ? "АВТО " : ""}${range.label}</text>
+							<text class="range" x="180" y="170">АВТО ${range.label}</text>
 							<g class="needle" style="transform:rotate(${angle.toFixed(2)}deg)">
 								<line x1="180" y1="220" x2="180" y2="44"></line>
 							</g>
@@ -538,10 +536,6 @@ export class DosimeterView extends LitElement {
 					<div class="lamp-wrap">
 						<span class="lamp alarm ${alarm ? "on" : ""}"></span>
 						<span>ТРЕВОГА</span>
-					</div>
-					<div class="lamp-wrap">
-						<span class="lamp over ${over ? "on" : ""}"></span>
-						<span>ПЕРЕГРУЗ</span>
 					</div>
 					<button
 						type="button"
@@ -577,30 +571,6 @@ export class DosimeterView extends LitElement {
 						<span>${panelLabel}</span>
 						<span class="mono">${readout}</span>
 					</div>
-					<div class="ranges" role="group" aria-label=${t.dosimeterRange}>
-						<button
-							type="button"
-							class="auto ${auto ? "picked" : ""}"
-							aria-pressed=${auto ? "true" : "false"}
-							@click=${() => this.pickRange("auto")}
-						>
-							АВТО
-						</button>
-						${RANGES.map(
-							(r, i) => html`
-								<button
-									type="button"
-									class="${!auto && i === this.rangeMode ? "picked" : ""} ${
-										auto && i === this.autoRange ? "auto-on" : ""
-									}"
-									aria-pressed=${!auto && i === this.rangeMode ? "true" : "false"}
-									@click=${() => this.pickRange(i)}
-								>
-									${r.label}
-								</button>
-							`,
-						)}
-					</div>
 				</div>
 
 				<button
@@ -615,6 +585,7 @@ export class DosimeterView extends LitElement {
 					@keyup=${this.onScanKey}
 					@blur=${this.stopScan}
 					@contextmenu=${(event: Event) => event.preventDefault()}
+					@touchstart=${this.blockTouchGesture}
 				>
 					<span>СКАН</span>
 					<span class="tape tape-scan" aria-hidden="true">${t.dosimeterTapes.hold}</span>
@@ -652,6 +623,11 @@ export class DosimeterView extends LitElement {
 
 	static styles = css`
 		:host {
+			/* A device, not a document: nothing on it is text to select, and on iOS a long
+			   press (holding СКАН) would otherwise start a selection on the nearest label. */
+			user-select: none;
+			-webkit-user-select: none;
+			-webkit-touch-callout: none;
 			--mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 			--narrow:
 				"PT Sans Narrow", "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", system-ui,
@@ -852,7 +828,7 @@ export class DosimeterView extends LitElement {
 
 		.lamps {
 			display: grid;
-			grid-template-columns: repeat(3, minmax(0, 1fr));
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 			gap: 10px;
 			font-size: 13px;
 			font-weight: 700;
@@ -879,13 +855,6 @@ export class DosimeterView extends LitElement {
 			background: #ff3b26;
 			box-shadow: 0 0 12px rgba(255, 59, 38, 0.85);
 			animation: blink 0.5s steps(1) infinite;
-		}
-		.lamp.over {
-			background: #4a3a17;
-		}
-		.lamp.over.on {
-			background: #ffb02e;
-			box-shadow: 0 0 12px rgba(255, 176, 46, 0.8);
 		}
 		@keyframes blink {
 			50% {
@@ -995,38 +964,6 @@ export class DosimeterView extends LitElement {
 			font-weight: 700;
 			letter-spacing: 2px;
 			color: #cfc6a2;
-		}
-		.ranges {
-			display: grid;
-			grid-template-columns: 1.3fr repeat(5, minmax(0, 1fr));
-			gap: 5px;
-		}
-		.ranges button {
-			height: 44px;
-			padding: 0;
-			border: 2px solid #0e0f0b;
-			border-radius: 4px;
-			background: #55594a;
-			color: #e2d9b8;
-			font-family: var(--mono);
-			font-size: 12px;
-			box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.4);
-		}
-		.ranges button.auto {
-			font-family: var(--narrow);
-			font-size: 14px;
-			font-weight: 700;
-			letter-spacing: 1px;
-		}
-		.ranges button.picked {
-			background: #b8a46a;
-			color: #1a1b15;
-		}
-		/* The range АВТО has picked: marked, but quieter than a chosen one. */
-		.ranges button.auto-on {
-			box-shadow:
-				inset 0 0 0 2px #b8a46a,
-				inset 0 -3px 0 rgba(0, 0, 0, 0.4);
 		}
 
 		.scan {
