@@ -930,6 +930,77 @@ legal-view {
 	border-color: #f3d34a;
 }
 
+/* The one-time callout pointing at the trefoil when a navigation first starts. It
+   hangs off the top row (which is a flex row), taking a line of its own under the
+   buttons, its arrow aimed up at the dosimeter button just left of the gear. */
+.top-row {
+	flex-wrap: wrap;
+}
+.dosimeter-hint {
+	pointer-events: auto;
+	position: relative;
+	flex: 0 0 auto;
+	margin-left: auto;
+	margin-right: 34px;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 4px 4px 0;
+	border: 2px solid #f3d34a;
+	border-radius: 12px;
+	background: rgba(22, 29, 38, 0.97);
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+	animation: dosimeter-hint-in 0.25s ease-out;
+}
+.dosimeter-hint::before {
+	content: "";
+	position: absolute;
+	top: -9px;
+	/* Over the trefoil's centre: gear 46 + gap 10 + half a button 23, less this box's
+	   own 34 px inset and half the arrow. */
+	right: 38px;
+	width: 14px;
+	height: 14px;
+	background: inherit;
+	border-top: 2px solid #f3d34a;
+	border-left: 2px solid #f3d34a;
+	transform: rotate(45deg);
+}
+.dosimeter-hint button {
+	min-height: 44px;
+	border: 0;
+	background: transparent;
+	color: #fff;
+	font: inherit;
+	cursor: pointer;
+}
+.dosimeter-hint-go {
+	padding: 0 6px 0 14px;
+	font-size: 15px;
+	font-weight: 600;
+}
+.dosimeter-hint-close {
+	width: 40px;
+	font-size: 22px;
+	opacity: 0.75;
+}
+.dosimeter-hint button:focus-visible {
+	outline: 2px solid #f3d34a;
+	outline-offset: -2px;
+	border-radius: 8px;
+}
+@keyframes dosimeter-hint-in {
+	from {
+		opacity: 0;
+		transform: translateY(-6px);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.dosimeter-hint {
+		animation: none;
+	}
+}
+
 /* The prop dosimeter's dialog: no chrome of its own, the device is the card. */
 .dosimeter-sheet {
 	padding: 12px;

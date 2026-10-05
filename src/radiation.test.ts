@@ -3,7 +3,9 @@ import {
 	POI_LEVEL,
 	EDGE_LEVEL,
 	PEAK_LEVEL,
+	GUIDE_LEVEL,
 	NOMINAL_SENSITIVITY,
+	levelForBearing,
 	applySensitivity,
 	radiationLevelAt,
 	signedDistanceToZoneM,
@@ -81,6 +83,17 @@ check("a PoI reaches yellow (≥ 40)", near(-500) >= 40);
 check("a PoI fades out by 60 m", near(-440) < BACKGROUND_LEVEL + 2, `got ${near(-440)}`);
 check("closer to a PoI reads higher", near(-470) > near(-450));
 check("a PoI does not lower a zone's reading", near(100) === level(100, 100));
+
+console.log("direction finding");
+check("dead ahead reads GUIDE_LEVEL", levelForBearing(0) === GUIDE_LEVEL);
+check("facing away is background", levelForBearing(180) === BACKGROUND_LEVEL);
+check("90° off is background", levelForBearing(90) === BACKGROUND_LEVEL);
+check("dead ahead beats 30° off", levelForBearing(0) > levelForBearing(30));
+check("30° off still lifts it", levelForBearing(30) > BACKGROUND_LEVEL + 10);
+check("left and right are symmetric", Math.abs(levelForBearing(20) - levelForBearing(340)) < 1e-9);
+check("negative angles wrap", Math.abs(levelForBearing(-20) - levelForBearing(340)) < 1e-9);
+check("never reaches the alarm (60)", GUIDE_LEVEL < 60);
+check("stays inside the ×0,1 range (≤ 0.5 мР/ч, level ≤ 54)", GUIDE_LEVEL <= 54);
 
 console.log("sensitivity");
 check("nominal leaves a reading alone", applySensitivity(45, NOMINAL_SENSITIVITY) === 45);

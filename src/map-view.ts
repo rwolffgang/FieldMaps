@@ -28,7 +28,7 @@ import {
 	type TileScene,
 } from "./osm-map.js";
 import { BasemapLayer } from "./basemap-layer.js";
-import type { DosimeterView } from "./dosimeter-view.js";
+import type { DosimeterGuidance, DosimeterView } from "./dosimeter-view.js";
 import { primeDosimeterAudio } from "./dosimeter-view.js";
 import type { RadiationPoint } from "./radiation.js";
 import type { LatLng } from "./scenarios/scenario.js";
@@ -50,6 +50,18 @@ const t = strings();
 
 const STORAGE_KEY = "field-map-selected-id";
 const TOGGLES_KEY = "field-map-toggles";
+/** Set once the "navigate with the Geiger counter" hint has been shown. */
+const DOSIMETER_HINT_KEY = "field-map-dosimeter-hint-seen";
+/** How long that hint stays up before it gets out of the way by itself. */
+const DOSIMETER_HINT_MS = 10_000;
+
+function dosimeterHintSeen(): boolean {
+	try {
+		return localStorage.getItem(DOSIMETER_HINT_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
 const ARRIVED_DISTANCE_M = 8;
 
 /**
@@ -367,6 +379,14 @@ export class MapView extends LitElement {
 	@state() private togglesOpen = false;
 	/** The prop dosimeter's dialog, on a map whose scenario offers one. */
 	@state() private dosimeterOpen = false;
+	/**
+	 * The one-time callout under the trefoil, shown on the first navigation started on
+	 * a map with a dosimeter: the direction finder is otherwise invisible until someone
+	 * happens to open the device mid-route. `dosimeterHintDone` is the remembered flag,
+	 * kept here too so a browser without storage still shows it only once a session.
+	 */
+	@state() private dosimeterHint = false;
+	private dosimeterHintDone = dosimeterHintSeen();
 
 	// --- The install nudge. The landing page's card is the real pitch; this is the
 	// backstop for everyone who arrived on a shared ?map= link and so has never seen
@@ -498,6 +518,7 @@ export class MapView extends LitElement {
 		this.selectedMapId = definition.id;
 		// The dosimeter belongs to the map it was opened on, and the next one may not have one.
 		this.dosimeterOpen = false;
+		this.dosimeterHint = false;
 		try {
 			localStorage.setItem(STORAGE_KEY, definition.id);
 		} catch {
@@ -965,6 +986,23 @@ export class MapView extends LitElement {
 		this.updateNavigation();
 		this.fitUserAndPoi();
 		this.updateStatus();
+		this.offerDosimeterHint();
+	}
+
+	/** Show the Geiger-counter callout, the first time a navigation starts on a dosimeter map. */
+	private offerDosimeterHint() {
+		if (this.dosimeterHintDone || this.dosimeterOpen) return;
+		if (!getMapById(this.selectedMapId).dosimeter) return;
+		this.dosimeterHint = true;
+		this.dosimeterHintDone = true;
+		// It sits over the row below the top bar, which on iOS can be the compass
+		// prompt the direction finder needs, so it does not stay there for long.
+		window.setTimeout(() => (this.dosimeterHint = false), DOSIMETER_HINT_MS);
+		try {
+			localStorage.setItem(DOSIMETER_HINT_KEY, "1");
+		} catch {
+			// Storage unavailable — it still shows only once this session.
+		}
 	}
 
 	/**
@@ -1055,6 +1093,8 @@ export class MapView extends LitElement {
 		this.navDistanceM = 0;
 		this.navHint = "";
 		this.navArrowDeg = 0;
+		this.setDosimeterGuidance(null);
+		this.dosimeterHint = false;
 		if (this.poiMarker) {
 			this.map.removeLayer(this.poiMarker);
 			this.poiMarker = null;
@@ -1092,6 +1132,7 @@ export class MapView extends LitElement {
 	private updateNavigation(positionUnchanged = false) {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) {
+			this.setDosimeterGuidance(null);
 			this.navDistanceM = 0;
 			this.navHint = this.lastGps ? "" : t.waitingForGps;
 			return;
@@ -1123,6 +1164,15 @@ export class MapView extends LitElement {
 		} else {
 			this.navHint = t.navEnableCompass;
 		}
+
+		// The dosimeter's direction finder: it needs the compass to know where the phone
+		// points, and has nothing left to find once the player has arrived.
+		const heading = this.lastGps.heading;
+		this.setDosimeterGuidance(
+			heading != null && distance > ARRIVED_DISTANCE_M
+				? { relativeDeg: relativeBearingDegrees(targetBearing, heading), distanceM: distance }
+				: null,
+		);
 
 		// Nothing moved, and the line is already drawn between these two points.
 		if (positionUnchanged && this.routeLine && this.map.hasLayer(this.routeLine)) return;
@@ -1851,6 +1901,7 @@ export class MapView extends LitElement {
 			<div class="top-row">
 				<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>‹</button>
 				<div class="top-row-end">${this.renderDosimeterButton()} ${this.renderToggles()}</div>
+				${this.renderDosimeterHint()}
 			</div>
 			${this.renderDosimeter()}
 			<div class="hud">
@@ -2029,12 +2080,7 @@ export class MapView extends LitElement {
 				class="dosimeter-btn ${this.dosimeterOpen ? "on" : ""}"
 				aria-label=${t.dosimeter}
 				title=${t.dosimeter}
-				@click=${() => {
-					// Inside the tap, the one place a browser lets audio start: the device
-					// opens with its Geiger clicks already running.
-					primeDosimeterAudio();
-					this.dosimeterOpen = true;
-				}}
+				@click=${() => this.openDosimeter()}
 			>
 				<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
 					<circle cx="12" cy="12" r="2" fill="currentColor"></circle>
@@ -2055,6 +2101,33 @@ export class MapView extends LitElement {
 		`;
 	}
 
+	private openDosimeter() {
+		// Inside the tap, the one place a browser lets audio start: the device opens
+		// with its Geiger clicks already running.
+		primeDosimeterAudio();
+		this.dosimeterHint = false;
+		this.dosimeterOpen = true;
+	}
+
+	private renderDosimeterHint() {
+		if (!this.dosimeterHint) return "";
+		return html`
+			<div class="dosimeter-hint" role="status">
+				<button type="button" class="dosimeter-hint-go" @click=${() => this.openDosimeter()}>
+					${t.dosimeterHint}
+				</button>
+				<button
+					type="button"
+					class="dosimeter-hint-close"
+					aria-label=${t.dosimeterHintDismiss}
+					@click=${() => (this.dosimeterHint = false)}
+				>
+					×
+				</button>
+			</div>
+		`;
+	}
+
 	private renderDosimeter() {
 		if (!getMapById(this.selectedMapId).dosimeter) return "";
 		return html`
@@ -2069,6 +2142,7 @@ export class MapView extends LitElement {
 								.position=${this.lastGps}
 								.zones=${this.dosimeterSources().zones}
 								.points=${this.dosimeterSources().points}
+								.guidance=${this.dosimeterGuidance}
 								@close=${() => (this.dosimeterOpen = false)}
 							></dosimeter-view>`
 						: ""
@@ -2102,6 +2176,18 @@ export class MapView extends LitElement {
 		zones: LatLng[][];
 		points: RadiationPoint[];
 	} | null = null;
+
+	/**
+	 * The running navigation, for the dosimeter's direction finder. Written straight
+	 * onto the device rather than through a render of this view: it changes with every
+	 * compass reading, which is far more often than anything else here.
+	 */
+	private dosimeterGuidance: DosimeterGuidance | null = null;
+	private setDosimeterGuidance(guidance: DosimeterGuidance | null) {
+		this.dosimeterGuidance = guidance;
+		const dosimeter = this.querySelector<DosimeterView>("dosimeter-view");
+		if (dosimeter) dosimeter.guidance = guidance;
+	}
 
 	/** A tap on the backdrop (the dialog itself, not the device inside it) closes it. */
 	private onDosimeterBackdrop(event: MouseEvent) {

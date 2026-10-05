@@ -11,6 +11,12 @@
 // feel harmless or hot. Without a fix the needle rests on zero and the readout
 // says so.
 //
+// While a navigation runs it doubles as a direction finder (ПЕЛЕНГ): with the
+// compass, the reading lifts when the phone points at the destination and falls
+// as it turns away (`levelForBearing`), so a player can sweep for the way. It only
+// says which way, at any distance — a game tool, not physics; the distance is shown
+// beside ПЕЛЕНГ.
+//
 // Like the real thing the dial reads 0–5 and a range switch multiplies it: the
 // five ranges are full scale 0.05 to 500 мР/ч. A reading above the selected range
 // pins the needle and lights ПЕРЕГРУЗ (overload), so a player walking into the
@@ -35,10 +41,12 @@ import type { LatLng } from "./scenarios/scenario.js";
 import {
 	NOMINAL_SENSITIVITY,
 	applySensitivity,
+	levelForBearing,
 	radiationLevelAt,
 	type RadiationPoint,
 } from "./radiation.js";
 import { strings } from "./i18n.js";
+import { isIos } from "./install.js";
 
 const t = strings();
 
@@ -47,6 +55,16 @@ export interface DosimeterFix {
 	lat: number;
 	lng: number;
 	accuracy: number;
+}
+
+/**
+ * A running navigation, as the device needs it for direction finding: the target's
+ * bearing relative to where the phone points (0 = dead ahead, clockwise, 0–360) and
+ * its distance. Null when nothing is being navigated to or there is no compass.
+ */
+export interface DosimeterGuidance {
+	relativeDeg: number;
+	distanceM: number;
 }
 
 /** The range switch: full scale in мР/ч, and the label engraved on it. */
@@ -81,19 +99,69 @@ let clickNoise: AudioBuffer | null = null;
  * that is the only place a browser lets audio start.
  */
 export function primeDosimeterAudio() {
+	// iOS puts Web Audio in the "ambient" category by default, so the ring/silent switch
+	// mutes it outright — on a phone in a pocket on silent, which is most of them on a
+	// game day, the device would never make a sound. "playback" is the category a music
+	// player uses, which plays regardless of the switch. Safari 17+; elsewhere a no-op.
+	const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+	if (session) session.type = "playback";
+	// Before iOS 17 there is no such switch, but the same thing happens while a media
+	// element is playing: the whole page moves to the media category, the one a video
+	// plays in, and Web Audio goes with it. So a silent clip loops for as long as the
+	// device is open. iOS only — elsewhere it would just put a media notification up.
+	else if (isIos()) startSilentKeepalive();
+
 	if (!audio) {
 		const Context =
 			window.AudioContext ??
 			(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 		if (!Context) return;
 		audio = new Context();
-		// One click: 4 ms of noise with a fast decay, reused for every click.
-		const length = Math.floor(audio.sampleRate * 0.004);
+		// One click: 6 ms of noise with a fast decay, reused for every click. Long and
+		// loud enough to carry on a phone speaker, which drops most of a shorter one.
+		const length = Math.floor(audio.sampleRate * 0.006);
 		clickNoise = audio.createBuffer(1, length, audio.sampleRate);
 		const data = clickNoise.getChannelData(0);
 		for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 3;
 	}
 	void audio.resume();
+}
+
+/** Release the audio while the device is put away: no clicks, and no media session held. */
+function releaseDosimeterAudio() {
+	void audio?.suspend();
+	keepalive?.pause();
+}
+
+// The silent clip behind the pre-iOS-17 route above: half a second of 8 kHz silence,
+// written as a WAV in memory so there is still no sound file to ship.
+let keepalive: HTMLAudioElement | null = null;
+function startSilentKeepalive() {
+	if (!keepalive) {
+		const samples = 4000;
+		const wav = new DataView(new ArrayBuffer(44 + samples));
+		const text = (offset: number, value: string) =>
+			[...value].forEach((char, i) => wav.setUint8(offset + i, char.charCodeAt(0)));
+		text(0, "RIFF");
+		wav.setUint32(4, 36 + samples, true);
+		text(8, "WAVEfmt ");
+		wav.setUint32(16, 16, true); // fmt chunk size
+		wav.setUint16(20, 1, true); // PCM
+		wav.setUint16(22, 1, true); // mono
+		wav.setUint32(24, 8000, true); // sample rate
+		wav.setUint32(28, 8000, true); // byte rate
+		wav.setUint16(32, 1, true); // block align
+		wav.setUint16(34, 8, true); // 8-bit
+		text(36, "data");
+		wav.setUint32(40, samples, true);
+		for (let i = 0; i < samples; i++) wav.setUint8(44 + i, 128); // 8-bit silence is 128
+		keepalive = new Audio(URL.createObjectURL(new Blob([wav], { type: "audio/wav" })));
+		keepalive.loop = true;
+		keepalive.setAttribute("playsinline", "");
+	}
+	void keepalive.play().catch(() => {
+		// Refused (no gesture, Low Power Mode): the clicks still play, just not through the switch.
+	});
 }
 
 /** Dosimeter level (0–100, one decade per 20) → мР/ч. 10 is background, 3 µР/ч. */
@@ -142,6 +210,8 @@ export class DosimeterView extends LitElement {
 	@property({ attribute: false }) zones: LatLng[][] = [];
 	/** The PoIs that lift the reading as the player approaches. */
 	@property({ attribute: false }) points: readonly RadiationPoint[] = [];
+	/** Set by the map while a navigation runs, on every compass or position change. */
+	@property({ attribute: false }) guidance: DosimeterGuidance | null = null;
 
 	@state() private sensitivity = lastSensitivity;
 	@state() private range = lastRange;
@@ -165,14 +235,18 @@ export class DosimeterView extends LitElement {
 		super.disconnectedCallback();
 		window.clearInterval(this.jitterTimer);
 		window.clearTimeout(this.clickTimer);
-		void audio?.suspend();
+		releaseDosimeterAudio();
 	}
 
 	/** The level the needle shows now, or null without a fix. */
 	private currentLevel(): number | null {
 		const fix = this.position;
 		if (!fix) return null;
-		const modelled = radiationLevelAt(fix.lat, fix.lng, this.zones, this.points);
+		const guide = this.guidance;
+		const modelled = Math.max(
+			radiationLevelAt(fix.lat, fix.lng, this.zones, this.points),
+			guide ? levelForBearing(guide.relativeDeg) : 0,
+		);
 		const scaled = applySensitivity(modelled, this.sensitivity);
 		return Math.min(100, Math.max(0, scaled + this.jitter));
 	}
@@ -202,9 +276,9 @@ export class DosimeterView extends LitElement {
 		source.buffer = clickNoise;
 		const filter = audio.createBiquadFilter();
 		filter.type = "highpass";
-		filter.frequency.value = 1800 + Math.random() * 1200;
+		filter.frequency.value = 1200 + Math.random() * 800;
 		const gain = audio.createGain();
-		gain.gain.value = 0.5;
+		gain.gain.value = 0.9;
 		source.connect(filter).connect(gain).connect(audio.destination);
 		source.start();
 	}
@@ -311,7 +385,9 @@ export class DosimeterView extends LitElement {
 
 				<div class="panel">
 					<div class="panel-head">
-						<span>ПОДДИАПАЗОН</span>
+						<span
+							>${this.guidance ? `ПЕЛЕНГ · ${Math.round(this.guidance.distanceM)} м` : "ПОДДИАПАЗОН"}</span
+						>
 						<span class="mono">${readout}</span>
 					</div>
 					<div class="ranges" role="group" aria-label=${t.dosimeterRange}>
@@ -350,6 +426,8 @@ export class DosimeterView extends LitElement {
 						КАЛИБРОВКА · 50 %
 					</button>
 				</div>
+
+				<p class="tape tape-note">${t.dosimeterMuteNote}</p>
 
 				<footer>
 					<span>РЕКВИЗИТ · НЕ ИЗМЕРЯЕТ</span>
@@ -725,6 +803,17 @@ export class DosimeterView extends LitElement {
 			font-size: 13px;
 			font-weight: 700;
 			letter-spacing: 1px;
+		}
+
+		.tape-note {
+			align-self: center;
+			max-width: 100%;
+			margin: -4px 0 0;
+			padding: 4px 12px;
+			font-size: 14px;
+			white-space: normal;
+			text-align: center;
+			transform: rotate(-1.5deg);
 		}
 
 		footer {

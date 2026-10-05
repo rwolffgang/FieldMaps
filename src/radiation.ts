@@ -22,6 +22,13 @@
 //   ~20 m away              ~30  ~0.3 µSv/h
 //   ~50 m away              ~16  background again
 //
+// While a navigation runs the device also works as a direction finder: point the
+// phone at the destination and the needle lifts and the clicks quicken, turn away
+// and it falls back. Not realistic, a game tool: it only says which way, the same at
+// 20 m as at 2 km. The lobe is narrow (half strength at ~33° off) and peaks at
+// ~0.3 мР/ч — below the alarm and well inside the ×0,1 range, so the needle has room
+// to show the sweep and ТРЕВОГА keeps meaning the zone.
+//
 // Distances come from a local flat projection around the player. Over a zone a few
 // hundred metres across that is accurate to well under a metre — far below what GPS
 // under trees delivers (5–15 m) and the hand-traced zone edges (tens of metres).
@@ -46,6 +53,11 @@ const RISE_INSIDE_M = 25;
 export const POI_LEVEL = 45;
 /** Metres over which a PoI's reading falls back toward background (1/e). */
 const FALLOFF_POI_M = 18;
+
+/** Direction finding: the reading when facing the target dead ahead, at any distance. */
+export const GUIDE_LEVEL = 50;
+/** Sharpness of the lobe around the target's bearing: cos(off-angle) to this power. */
+const GUIDE_LOBE_POWER = 4;
 
 /** A point that lifts the reading as the player approaches it. */
 export interface RadiationPoint {
@@ -96,6 +108,19 @@ export function levelForSignedDistance(signedM: number): number {
 /** The dosimeter level (0–100) at a given distance from a point of interest. */
 export function levelForPoiDistance(distanceM: number): number {
 	return BACKGROUND_LEVEL + (POI_LEVEL - BACKGROUND_LEVEL) * Math.exp(-distanceM / FALLOFF_POI_M);
+}
+
+/**
+ * The direction-finding level (0–100) while navigating: `relativeDeg` is the
+ * target's bearing relative to where the phone points (0 = dead ahead, 0–360).
+ * Distance plays no part. Background when facing more than 90° away.
+ */
+export function levelForBearing(relativeDeg: number): number {
+	const wrapped = ((relativeDeg % 360) + 360) % 360;
+	const offDeg = Math.min(wrapped, 360 - wrapped);
+	if (offDeg >= 90) return BACKGROUND_LEVEL;
+	const lobe = Math.cos(offDeg * DEG) ** GUIDE_LOBE_POWER;
+	return BACKGROUND_LEVEL + (GUIDE_LEVEL - BACKGROUND_LEVEL) * lobe;
 }
 
 /** The sensitivity at which a reading is exactly what the model gives. */

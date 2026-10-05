@@ -183,6 +183,11 @@ interface Strings {
 	dosimeterSound: string;
 	dosimeterRange: string;
 	dosimeterSensitivity: string;
+	/** The one-time callout when a navigation first starts on a map with a dosimeter. */
+	/** Taped to the device: the clicks need the phone's sound on. */
+	dosimeterMuteNote: string;
+	dosimeterHint: string;
+	dosimeterHintDismiss: string;
 }
 
 const STRINGS: Record<Lang, Strings> = {
@@ -286,6 +291,9 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterSound: "Geigerzähler-Ton",
 		dosimeterRange: "Messbereich",
 		dosimeterSensitivity: "Empfindlichkeit",
+		dosimeterMuteNote: "Kein Ton? Handy nicht stumm & Lautstärke hoch",
+		dosimeterHint: "Navigiere mit dem Geigerzähler",
+		dosimeterHintDismiss: "Hinweis schließen",
 		legal: {
 			linkLabel: "Impressum & Datenschutz",
 			back: "Zurück zur Übersicht",
@@ -527,6 +535,9 @@ const STRINGS: Record<Lang, Strings> = {
 		dosimeterSound: "Geiger counter sound",
 		dosimeterRange: "Range",
 		dosimeterSensitivity: "Sensitivity",
+		dosimeterMuteNote: "No sound? Unmute the phone & turn the volume up",
+		dosimeterHint: "Navigate using the Geiger counter",
+		dosimeterHintDismiss: "Dismiss hint",
 		legal: {
 			linkLabel: "Legal notice & privacy",
 			back: "Back to the overview",
