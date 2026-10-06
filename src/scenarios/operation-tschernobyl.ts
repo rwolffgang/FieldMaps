@@ -23,8 +23,8 @@ import type { Scenario } from "./scenario.js";
 export const operationTschernobyl: Scenario = {
 	id: "opt",
 	name: "Operation Tschernobyl",
-	blurb: "Stalker-Szenario in der Zone: sechs Fraktionen, Sperrgebiet, Anomalien.",
-	blurbEn: "Stalker scenario in the Zone: six factions, an exclusion area, anomalies.",
+	blurb: "Stalker-Szenario in der Zone: sieben Fraktionen, Sperrgebiet, Anomalien.",
+	blurbEn: "Stalker scenario in the Zone: seven factions, an exclusion area, anomalies.",
 	schedule: { start: [10, 8], end: [10, 11] },
 	accent: "#e6c24d",
 	base: { kind: "osm" },
@@ -97,6 +97,17 @@ export const operationTschernobyl: Scenario = {
 			lng: 11.824478,
 			color: "#e9edf2",
 			logo: "logos/tno-wissenschaftler.png",
+		},
+		{
+			// The triangle with three circles just south-west of 616. Like the Baltische
+			// Brigade it stands in the open, so it gets its own marker; the emblem was
+			// redrawn from the printed symbol.
+			id: "sekte",
+			name: "Die Sekte",
+			lat: 52.380702,
+			lng: 11.823755,
+			color: "#9b6fd6",
+			logo: "logos/tno-sekte.png",
 		},
 	],
 	zones: [
