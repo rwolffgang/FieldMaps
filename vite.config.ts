@@ -39,6 +39,10 @@ export default defineConfig({
 	define: {
 		__BUILD_ID__: JSON.stringify(buildId()),
 	},
+	server: {
+		// Lets a launcher hand the dev server a free port; Vite's default otherwise.
+		port: Number(process.env.PORT) || undefined,
+	},
 	preview: {
 		host: true,
 		port: 5100,
