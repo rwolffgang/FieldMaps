@@ -44,8 +44,8 @@ const CHANGES: Release[] = [
 		changes: [
 			{
 				glyph: CHECKPOINT_GLYPH,
-				de: "Neu auf der Karte: die Schranke an der Straße nördlich von Windrad Bravo. Antippen, um hinzunavigieren.",
-				en: "New on the map: the barrier (Schranke) on the road north of turbine Bravo. Tap it to navigate there.",
+				de: "Neu auf der OP-Tschernobyl-Karte: die Schranke an der Straße nördlich von Windrad Bravo. Antippen, um hinzunavigieren.",
+				en: "New on the OP Tschernobyl map: the barrier (Schranke) on the road north of turbine Bravo. Tap it to navigate there.",
 			},
 			{
 				glyph: `<svg class="whats-new-cal" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

@@ -132,7 +132,8 @@ export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	{ id: "827", lat: 52.380615, lng: 11.831598 },
 	{ id: "830", lat: 52.381917, lng: 11.829239 },
 
-	// --- Placed from a GPS reading on the ground, not read off a map.
+	// --- Placed from a GPS reading on the ground, not read off a map. Not in the
+	// default labels: only the scenarios that name it show it.
 	{ id: "Schranke", lat: 52.3831897, lng: 11.8285109 },
 ];
 
@@ -193,7 +194,6 @@ export const DEFAULT_POI_NAMES: Record<string, string> = {
 	"508": "Ruine",
 	"808": "Panzerstraße",
 	"824": "Plantagen",
-	Schranke: "Schranke",
 };
 
 /**
