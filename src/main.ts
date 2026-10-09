@@ -1,8 +1,10 @@
 import "./styles.css";
+import "./whats-new.js";
 import "./map-view.js";
 import "./landing-view.js";
 import "./legal-view.js";
 import type { MapView } from "./map-view.js";
+import type { WhatsNewView } from "./whats-new.js";
 import { watch, type Fix } from "./geo.js";
 import { watchHeading, needsPermission, requestPermission } from "./heading.js";
 import { getMapById, runningMap, GPS_HEADING_SPEED } from "./config.js";
@@ -80,6 +82,11 @@ function openRunningEvent() {
 	goToMap(map.id);
 }
 openRunningEvent();
+
+// --- What changed, once, after an update that brought something ---
+// Decided after the route, so it opens over whichever screen the launch landed on —
+// on an event day that is the map, which is where the news is about.
+(document.querySelector("whats-new-view") as WhatsNewView).showIfDue();
 
 // --- Staying on the deployed build ---
 // `update.ts` does the finding; this decides when the swap is allowed to happen.

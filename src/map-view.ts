@@ -13,6 +13,7 @@ import {
 	type LabeledPointOfInterest,
 } from "./config.js";
 import { comparePointsOfInterest, isCheckpoint, isWindTurbine } from "./points-of-interest.js";
+import { CHECKPOINT_GLYPH } from "./glyphs.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
 	bakeOsm,
@@ -1305,12 +1306,7 @@ export class MapView extends LitElement {
 		const label = idLabel ? `<span class="poi-dot-label">${idLabel}</span>` : "";
 		return L.divIcon({
 			className: "checkpoint-marker",
-			html: `<div class="checkpoint-hit"><svg class="checkpoint-glyph" viewBox="0 0 44 26" width="38" height="22" aria-hidden="true">
-					<rect class="checkpoint-post" x="3" y="6" width="6" height="19" rx="1" />
-					<rect class="checkpoint-arm" x="6" y="7" width="36" height="6" rx="1.5" />
-					<path class="checkpoint-stripes" d="M14 7h5l-3 6h-5zM24 7h5l-3 6h-5zM34 7h5l-3 6h-5z" />
-					<circle class="checkpoint-post" cx="6" cy="10" r="3.2" />
-				</svg>${label}</div>`,
+			html: `<div class="checkpoint-hit">${CHECKPOINT_GLYPH}${label}</div>`,
 			iconSize: [38, 22],
 			iconAnchor: [19, 11],
 			// Centred, so labels float above the arm rather than across it.

@@ -155,6 +155,9 @@ interface Strings {
 	mapLoadFailed: string;
 	/** Only ever seen over a live map — off the map an update applies itself. */
 	updateReady: string;
+	/** Heading and button of the dialog listing what changed (see whats-new.ts). */
+	whatsNewTitle: string;
+	whatsNewOk: string;
 	enableCompass: string;
 	compassDenied: string;
 	backToOverview: string;
@@ -272,6 +275,8 @@ const STRINGS: Record<Lang, Strings> = {
 		mapLoading: "Karte wird geladen…",
 		mapLoadFailed: "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen",
 		updateReady: "Neue Version verfügbar — tippen zum Aktualisieren",
+		whatsNewTitle: "Neu in Field Maps",
+		whatsNewOk: "Verstanden",
 		enableCompass: "Kompass aktivieren",
 		compassDenied: "Kompass-Freigabe abgelehnt",
 		backToOverview: "Zur Übersicht",
@@ -533,6 +538,8 @@ const STRINGS: Record<Lang, Strings> = {
 		mapLoading: "Loading map…",
 		mapLoadFailed: "⚠ Map could not be loaded — tap to retry",
 		updateReady: "New version available — tap to update",
+		whatsNewTitle: "What's new in Field Maps",
+		whatsNewOk: "Got it",
 		enableCompass: "Enable compass",
 		compassDenied: "Compass permission denied",
 		backToOverview: "Back to the overview",

@@ -359,6 +359,66 @@ landing-view {
 
 /* The sheet. A native <dialog>, so the backdrop, the focus trap and Escape all
    come from the browser. */
+/* "What's new" (src/whats-new.ts): the share sheet's surface, but read as a list. */
+.whats-new {
+	width: min(22rem, calc(100vw - 2.5rem));
+	padding: 1.3rem 1.3rem 1.1rem;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 18px;
+	background: #121a22;
+	color: #e6edf4;
+}
+.whats-new::backdrop {
+	background: rgba(4, 8, 12, 0.72);
+}
+.whats-new-title {
+	margin: 0 0 0.9rem;
+	font-size: 1.05rem;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+.whats-new-list {
+	display: grid;
+	gap: 0.85rem;
+	margin: 0 0 1.2rem;
+	padding: 0;
+	list-style: none;
+	font-size: 0.9rem;
+	line-height: 1.4;
+}
+.whats-new-list li {
+	display: grid;
+	grid-template-columns: 2.4rem 1fr;
+	gap: 0.6rem;
+	align-items: start;
+}
+.whats-new-glyph {
+	display: flex;
+	justify-content: center;
+	padding-top: 0.1rem;
+}
+.whats-new-cal {
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 1.8;
+	stroke-linecap: round;
+}
+.whats-new-ok {
+	width: 100%;
+	min-height: 44px;
+	border: 0;
+	border-radius: 10px;
+	background: var(--accent);
+	color: #fff;
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+.whats-new-ok:active {
+	transform: translateY(1px);
+}
+
 .share-sheet {
 	position: relative;
 	width: min(21rem, calc(100vw - 2.5rem));
