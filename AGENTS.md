@@ -77,6 +77,8 @@ Event cards are real `<a href="?map=…">` elements with the click intercepted �
 
 `src/event-schedule.ts` stores each event as month/day only (no year), because they recur annually — that keeps the scenario files from going stale every January. `mapsByDate()` sorts the overview soonest-first, counting a running event as zero days away, so the map you need is at the top on the day you need it. Style variants (no `schedule`) sort last. It is a function, not a constant, because the answer depends on today's date and people leave this open for a whole weekend.
 
+While an event is running, a bare launch (`/`, no `?map=` or `?page=`) **opens that event's map directly** (`runningMap()` in `config.ts`, `openRunningEvent` in `main.ts`). It pushes the map on top of the overview, so Back and the ‹ button still reach the list; it happens once per tab (`field-map-auto-opened` in `sessionStorage`), so going back to the overview sticks, even through the silent update reload; and it only fires when exactly one event is running, since two overlapping ones would make it a guess.
+
 ## Invariants — do not break these
 
 1. **Pixel convention.** Everywhere except the Leaflet boundary, a pixel is an _image_ pixel: origin top-left, x right, y **down**. `toPixel` returns image pixels. Keep it that way; it's the debuggable convention.

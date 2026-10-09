@@ -50,7 +50,7 @@ nothing on the device, identifies nobody, and never fires without a network. See
 
 ## Events covered
 
-Six scenarios, ordered on the overview screen by how soon they start:
+Six scenarios, ordered on the overview screen by how soon they start. While one of them is running, opening the app goes straight to its map (Back still leads to the overview):
 
 | Event                 | When           | Id    |
 | --------------------- | -------------- | ----- |

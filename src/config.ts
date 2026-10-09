@@ -13,7 +13,7 @@ import {
 	type Zone,
 } from "./scenarios/index.js";
 import type { OsmThemeName } from "./osm-map.js";
-import { compareBySchedule, type EventSchedule } from "./event-schedule.js";
+import { compareBySchedule, isRunning, type EventSchedule } from "./event-schedule.js";
 
 // =============================================================================
 //  Scenarios live in src/scenarios/ (labels + play area) and points of interest
@@ -120,6 +120,16 @@ export const MAPS: MapDefinition[] = SCENARIOS.map(scenarioToMap);
  */
 export function mapsByDate(now = new Date()): MapDefinition[] {
 	return [...MAPS].sort((a, b) => compareBySchedule(a, b, now));
+}
+
+/**
+ * The event that is on today, if exactly one is. Two overlapping events (none today)
+ * would make "the" map a guess, so that case answers null and leaves the choice to
+ * the overview.
+ */
+export function runningMap(now = new Date()): MapDefinition | null {
+	const running = MAPS.filter((map) => map.schedule != null && isRunning(map.schedule, now));
+	return running.length === 1 ? running[0] : null;
 }
 
 /** Which map loads on first visit (before any saved preference or URL). */

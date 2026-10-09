@@ -5,8 +5,8 @@ import "./legal-view.js";
 import type { MapView } from "./map-view.js";
 import { watch, type Fix } from "./geo.js";
 import { watchHeading, needsPermission, requestPermission } from "./heading.js";
-import { getMapById, GPS_HEADING_SPEED } from "./config.js";
-import { onRouteChange, routedMapId, routedLegal } from "./router.js";
+import { getMapById, runningMap, GPS_HEADING_SPEED } from "./config.js";
+import { goToMap, onRouteChange, routedMapId, routedLegal } from "./router.js";
 import { applyDocumentLang, strings } from "./i18n.js";
 import { startUpdates } from "./update.js";
 import { startAnalytics } from "./analytics.js";
@@ -57,6 +57,29 @@ function applyRoute() {
 
 onRouteChange(applyRoute);
 applyRoute();
+
+// --- On an event day, the app opens on that event's map ---
+// Someone launching Field Maps from the home screen while a game is running wants
+// the map, not a list with the map at the top of it. Only a bare launch (no ?map=,
+// no ?page=) is redirected, and only once per tab: the map is pushed on top of the
+// overview, so Back and the ‹ button still reach the list, and a later reload of the
+// overview — the silent update does exactly that — leaves the player where they chose
+// to be. sessionStorage is what survives that reload; if it is unavailable the
+// redirect simply happens again, which is the lesser failure.
+const AUTO_OPEN_KEY = "field-map-auto-opened";
+function openRunningEvent() {
+	if (routedMapId() != null || routedLegal()) return;
+	const map = runningMap();
+	if (!map) return;
+	try {
+		if (sessionStorage.getItem(AUTO_OPEN_KEY)) return;
+		sessionStorage.setItem(AUTO_OPEN_KEY, "1");
+	} catch {
+		// Storage blocked: open anyway.
+	}
+	goToMap(map.id);
+}
+openRunningEvent();
 
 // --- Staying on the deployed build ---
 // `update.ts` does the finding; this decides when the swap is allowed to happen.
