@@ -1227,6 +1227,39 @@ legal-view {
 	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
 }
 
+/* Checkpoint (barrier) glyph: a red-and-white boom on a post. Like the turbine it
+   replaces the dot, so its box is the tap target. */
+.checkpoint-marker {
+	background: none;
+	border: none;
+}
+.checkpoint-hit {
+	position: relative;
+	width: 38px;
+	height: 22px;
+}
+.checkpoint-hit .poi-dot-label {
+	left: 36px;
+}
+.checkpoint-glyph {
+	display: block;
+	stroke-linejoin: round;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
+}
+.checkpoint-glyph .checkpoint-arm {
+	fill: #f2ede3;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+}
+.checkpoint-glyph .checkpoint-stripes {
+	fill: #d8342c;
+}
+.checkpoint-glyph .checkpoint-post {
+	fill: #3a3a3a;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+}
+
 /* The out-of-bounds hatch and the per-zone stripes are painted into the basemap's
    tiles now (see `paintTile`), so the shapes themselves have no CSS. What is left
    here is the chrome that stayed in the DOM: the zone names. */

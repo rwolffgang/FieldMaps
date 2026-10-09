@@ -28,6 +28,17 @@ export function isWindTurbine(id: string): boolean {
 	return WIND_TURBINE_IDS.has(id);
 }
 
+/**
+ * Barriers across the field's roads — places a player is stopped, not buildings —
+ * drawn as a boom-gate glyph rather than a dot. Like the turbines they carry a name
+ * for an id, not a building number.
+ */
+export const CHECKPOINT_IDS = new Set(["Schranke"]);
+
+export function isCheckpoint(id: string): boolean {
+	return CHECKPOINT_IDS.has(id);
+}
+
 /** Every physical point of interest on the field, keyed by a stable id. */
 export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	{ id: "204", lat: 52.379127, lng: 11.823623 },
@@ -120,6 +131,9 @@ export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	{ id: "823", lat: 52.380642, lng: 11.833624 },
 	{ id: "827", lat: 52.380615, lng: 11.831598 },
 	{ id: "830", lat: 52.381917, lng: 11.829239 },
+
+	// --- Placed from a GPS reading on the ground, not read off a map.
+	{ id: "Schranke", lat: 52.3831897, lng: 11.8285109 },
 ];
 
 /**
@@ -179,6 +193,7 @@ export const DEFAULT_POI_NAMES: Record<string, string> = {
 	"508": "Ruine",
 	"808": "Panzerstraße",
 	"824": "Plantagen",
+	Schranke: "Schranke",
 };
 
 /**
@@ -265,13 +280,13 @@ export function labelPointsOfInterest(poiNames: Record<string, string>): Labeled
 
 /**
  * Order for a list a player scans by eye: the numbered buildings in ascending
- * numeric order, then the wind turbines (which have names, not numbers) grouped
- * at the end, alphabetically.
+ * numeric order, then the other named places (the checkpoints), then the wind
+ * turbines grouped at the end — each named group alphabetically.
  */
 export function comparePointsOfInterest(a: PointOfInterest, b: PointOfInterest): number {
-	const aTurbine = isWindTurbine(a.id);
-	const bTurbine = isWindTurbine(b.id);
-	if (aTurbine !== bTurbine) return aTurbine ? 1 : -1;
-	if (aTurbine) return a.id.localeCompare(b.id);
-	return Number(a.id) - Number(b.id);
+	const group = (id: string) => (isWindTurbine(id) ? 2 : /^\d+$/.test(id) ? 0 : 1);
+	const byGroup = group(a.id) - group(b.id);
+	if (byGroup) return byGroup;
+	if (group(a.id) === 0) return Number(a.id) - Number(b.id);
+	return a.id.localeCompare(b.id);
 }
