@@ -12,7 +12,8 @@ import {
 	type MapDefinition,
 	type LabeledPointOfInterest,
 } from "./config.js";
-import { comparePointsOfInterest, isWindTurbine } from "./points-of-interest.js";
+import { comparePointsOfInterest, isCheckpoint, isWindTurbine } from "./points-of-interest.js";
+import { CHECKPOINT_GLYPH } from "./glyphs.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
 	bakeOsm,
@@ -1296,8 +1297,27 @@ export class MapView extends LitElement {
 		});
 	}
 
+	/**
+	 * A barrier, drawn as a boom gate: a striped arm on a post, the sign every
+	 * player reads as "you get stopped here". Centred on its coordinate — the arm
+	 * spans the road, so the point is the barrier as a whole, not the post's foot.
+	 */
+	private makeCheckpointIcon(idLabel?: string) {
+		const label = idLabel ? `<span class="poi-dot-label">${idLabel}</span>` : "";
+		return L.divIcon({
+			className: "checkpoint-marker",
+			html: `<div class="checkpoint-hit">${CHECKPOINT_GLYPH}${label}</div>`,
+			iconSize: [38, 22],
+			iconAnchor: [19, 11],
+			// Centred, so labels float above the arm rather than across it.
+			tooltipAnchor: [0, -11],
+			popupAnchor: [0, -11],
+		});
+	}
+
+	/** "630 · Tower"; a place whose id already is its name is not named twice. */
 	private poiLabel(poi: LabeledPointOfInterest) {
-		return `${poi.id} · ${poi.name}`;
+		return poi.id === poi.name ? poi.name : `${poi.id} · ${poi.name}`;
 	}
 
 	/**
@@ -1401,9 +1421,14 @@ export class MapView extends LitElement {
 			const idLabel = this.toggles.poiIds ? poi.id : undefined;
 			const pixel = this.transform.toPixel(poi.lat, poi.lng);
 			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
-				// A turbine is recognisable on its own; a plain building is not, so it gets
-				// the dot. Either way it is one marker, and the drawn shape is the target.
-				icon: isWindTurbine(poi.id) ? this.makeTurbineIcon(idLabel) : this.makePoiDotIcon(idLabel),
+				// A turbine or a barrier is recognisable on its own; a plain building is
+				// not, so it gets the dot. Either way it is one marker, and the drawn shape
+				// is the target.
+				icon: isWindTurbine(poi.id)
+					? this.makeTurbineIcon(idLabel)
+					: isCheckpoint(poi.id)
+						? this.makeCheckpointIcon(idLabel)
+						: this.makePoiDotIcon(idLabel),
 				interactive: true,
 			});
 			this.bindPoiInteractions(marker, poi);
@@ -1982,7 +2007,7 @@ export class MapView extends LitElement {
 														.sort(comparePointsOfInterest)
 														.map(
 															(poi) => html`
-																<option value=${poi.id}>${poi.id} · ${poi.name}</option>
+																<option value=${poi.id}>${this.poiLabel(poi)}</option>
 															`,
 														),
 												)}

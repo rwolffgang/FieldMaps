@@ -42,6 +42,7 @@ export const operationTschernobyl: Scenario = {
 			"714": "Unterschlupf",
 			"800": "Stützpunkt",
 			"820": "Strahlenbunker",
+			Schranke: "Schranke",
 		},
 		// Not printed on the OP Tschernobyl map.
 		["423", "500", "505", "508", "808", "825", "Tango"],
