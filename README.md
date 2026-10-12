@@ -34,10 +34,13 @@ nothing on the device, identifies nobody, and never fires without a network. See
   still, because metal replicas deflect a compass.
 - **Navigate to a point of interest.** Pick a building from the list, tap
   "Navigate here" in its popup, or double-tap its dot on the map.
+- **Your own marks, per map.** Long-press any spot and tap "Mark", or drop one where
+  you stand with the flag button by the recenter control. Marks can be renamed,
+  deleted and navigated to like any building, and stay on the phone.
 - **One map per event.** Labels, zones, headquarters, frontlines and colours change
   per event; the ground underneath is the same airfield every time.
 - **Layer toggles** for point-of-interest numbers, the grid, the out-of-bounds mask,
-  zones and headquarters. Your choices persist.
+  zones, headquarters and your own marks. Your choices persist.
 - **Sticky grid axis** so the column letters and row numbers stay on screen while
   the map scrolls under them.
 - **Both languages.** German and English, including the Impressum and privacy notice.
