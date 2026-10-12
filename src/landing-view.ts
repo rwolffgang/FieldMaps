@@ -162,8 +162,12 @@ export class LandingView extends LitElement {
 		}
 	}
 
-	/** Closed until the player opens it; remembered so a re-render does not shut it. */
-	private pastEventsOpen = false;
+	/**
+	 * The player's own choice, once they have made one; remembered so a re-render
+	 * does not undo it. Until then the section is closed while a game is coming
+	 * up and open when none is, since the past events are then all there is.
+	 */
+	private pastEventsOpen: boolean | null = null;
 
 	private onPastEventsToggle(event: Event) {
 		this.pastEventsOpen = (event.currentTarget as HTMLDetailsElement).open;
@@ -396,7 +400,7 @@ export class LandingView extends LitElement {
 						? html`
 								<details
 									class="past-events"
-									?open=${this.pastEventsOpen}
+									?open=${this.pastEventsOpen ?? soonest == null}
 									@toggle=${this.onPastEventsToggle}
 								>
 									<summary class="past-events-summary">
