@@ -14,13 +14,16 @@
 //   ~25 m inside            ~70  ~30 µSv/h    orange, the alarm starts
 //   deep inside             →90  ~300 µSv/h   red
 //
-// Points of interest give off a little too: walking up to one lifts the reading
-// into yellow ("ERHÖHT") but never into the alarm, so a building is something you
-// notice on the counter rather than something that sets it screaming:
+// Buildings give off a little too, in two strengths. Every building on the map lifts
+// the needle as you walk up to it — enough to swing it across the lowest range and
+// light the ОБЪЕКТ lamp, so the counter answers wherever the player goes. The few the
+// story makes hot (headquarters, `radiatingPois`) go further, into yellow ("ERHÖHT").
+// Neither reaches the alarm, which stays the zone's:
 //
-//   on a PoI                45   ~1.8 µSv/h   yellow
-//   ~20 m away              ~30  ~0.3 µSv/h
-//   ~50 m away              ~16  background again
+//                      any building    a hot one
+//   on it              32              45    yellow
+//   ~20 m away         ~17             ~22
+//   ~50 m away         background      ~12
 //
 // While a navigation runs the device also works as a direction finder: point the
 // phone at the destination and the needle lifts and the clicks quicken, turn away
@@ -49,8 +52,13 @@ export const PEAK_LEVEL = 90;
 const FALLOFF_OUTSIDE_M = 35;
 /** Inside: metres of depth over which the reading climbs toward the peak (1/e). */
 const RISE_INSIDE_M = 25;
-/** Standing on a point of interest: yellow, below the alarm threshold (60). */
+/** Standing on a hot object (HQ, `radiatingPois`): yellow, below the alarm threshold (60). */
 export const POI_LEVEL = 45;
+/**
+ * Standing on any other building: a clear lift over background — the needle near the
+ * top of the lowest range — without reaching yellow, so the hot ones still stand out.
+ */
+export const BUILDING_LEVEL = 32;
 /** Metres over which a PoI's reading falls back toward background (1/e). */
 const FALLOFF_POI_M = 18;
 
@@ -63,6 +71,8 @@ const GUIDE_LOBE_POWER = 4;
 export interface RadiationPoint {
 	lat: number;
 	lng: number;
+	/** The reading standing on it; `POI_LEVEL` when left out. */
+	level?: number;
 }
 
 /**
@@ -105,9 +115,9 @@ export function levelForSignedDistance(signedM: number): number {
 	return EDGE_LEVEL + (PEAK_LEVEL - EDGE_LEVEL) * (1 - Math.exp(signedM / RISE_INSIDE_M));
 }
 
-/** The dosimeter level (0–100) at a given distance from a point of interest. */
-export function levelForPoiDistance(distanceM: number): number {
-	return BACKGROUND_LEVEL + (POI_LEVEL - BACKGROUND_LEVEL) * Math.exp(-distanceM / FALLOFF_POI_M);
+/** The dosimeter level (0–100) at a given distance from a point peaking at `peak`. */
+export function levelForPoiDistance(distanceM: number, peak = POI_LEVEL): number {
+	return BACKGROUND_LEVEL + (peak - BACKGROUND_LEVEL) * Math.exp(-distanceM / FALLOFF_POI_M);
 }
 
 /**
@@ -141,7 +151,7 @@ export function radiationLevelAt(
 	for (const point of points) {
 		const east = (point.lng - lng) * DEG * EARTH_RADIUS_M * cosLat;
 		const north = (point.lat - lat) * DEG * EARTH_RADIUS_M;
-		level = Math.max(level, levelForPoiDistance(Math.hypot(east, north)));
+		level = Math.max(level, levelForPoiDistance(Math.hypot(east, north), point.level));
 	}
 	return level;
 }

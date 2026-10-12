@@ -9,8 +9,8 @@
 //
 //   ЗОНА     near or inside the scenario's irradiated (`biohazard`) zones — the only
 //            source that reaches the alarm.
-//   ОБЪЕКТ   near a radiating object: the faction headquarters and the scenario's
-//            `radiatingPois`. Yellow at most.
+//   ОБЪЕКТ   near a building: every one lifts the needle a little, the faction
+//            headquarters and the scenario's `radiatingPois` into yellow. No further.
 //   ПЕЛЕНГ   while a navigation runs: direction finding. The reading lifts when the
 //            phone points at the destination, at any distance — a game tool, not
 //            physics. Objects are ignored meanwhile, so the sweep is not muddied.
@@ -284,7 +284,7 @@ export class DosimeterView extends LitElement {
 	@property({ attribute: false }) position: DosimeterFix | null = null;
 	/** The scenario's irradiated zones (its `biohazard` zones). */
 	@property({ attribute: false }) zones: LatLng[][] = [];
-	/** The radiating objects: headquarters and `radiatingPois`. */
+	/** The radiating objects: every building, with HQs and `radiatingPois` stronger. */
 	@property({ attribute: false }) points: readonly RadiationPoint[] = [];
 	/** Set by the map while a navigation runs, on every compass or position change. */
 	@property({ attribute: false }) guidance: DosimeterGuidance | null = null;

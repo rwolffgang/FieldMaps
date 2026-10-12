@@ -31,7 +31,7 @@ import {
 import { BasemapLayer } from "./basemap-layer.js";
 import type { DosimeterGuidance, DosimeterView } from "./dosimeter-view.js";
 import { primeDosimeterAudio } from "./dosimeter-view.js";
-import type { RadiationPoint } from "./radiation.js";
+import { BUILDING_LEVEL, POI_LEVEL, type RadiationPoint } from "./radiation.js";
 import type { LatLng } from "./scenarios/scenario.js";
 import { goHome, routedMapId } from "./router.js";
 import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
@@ -2178,7 +2178,9 @@ export class MapView extends LitElement {
 
 	/**
 	 * What the dosimeter's GPS reading is computed from: the map's `biohazard` zones,
-	 * and its radiating objects — every headquarters plus the `radiatingPois`. Memoised
+	 * and its radiating objects — every headquarters and `radiatingPois` at full
+	 * strength, and every other building weaker. Turbines and road barriers are not
+	 * buildings and stay out. Memoised
 	 * on the map id, so the device is handed the same arrays and does not re-render on
 	 * a render of this view that changed neither.
 	 */
@@ -2193,7 +2195,13 @@ export class MapView extends LitElement {
 					.map((zone) => zone.points),
 				points: [
 					...(definition.headquarters ?? []),
-					...this.currentPointsOfInterest().filter((poi) => radiating.has(poi.id)),
+					...this.currentPointsOfInterest()
+						.filter((poi) => !isWindTurbine(poi.id) && !isCheckpoint(poi.id))
+						.map((poi) => ({
+							lat: poi.lat,
+							lng: poi.lng,
+							level: radiating.has(poi.id) ? POI_LEVEL : BUILDING_LEVEL,
+						})),
 				],
 			};
 		}

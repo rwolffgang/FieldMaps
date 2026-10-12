@@ -29,7 +29,8 @@ export const operationTschernobyl: Scenario = {
 	accent: "#e6c24d",
 	base: { kind: "osm" },
 	dosimeter: true,
-	// Besides the six HQs: the buildings the story makes hot. 700 Kraftwerk already
+	// Besides the six HQs: the buildings the story makes hot (every other building only
+	// lifts the needle a little). 700 Kraftwerk already
 	// carries the Freiheit HQ.
 	radiatingPois: ["607", "616", "820"],
 	poiNames: scenarioPoiNames(

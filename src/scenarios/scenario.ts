@@ -129,9 +129,10 @@ export interface Scenario {
 	 */
 	dosimeter?: boolean;
 	/**
-	 * PoIs that radiate for the dosimeter (its ОБЪЕКТ lamp) — pick a few that fit the
-	 * story; with many the counter is always yellow and stops meaning anything. The
-	 * faction headquarters always radiate, and so do the `biohazard` zones (ЗОНА).
+	 * PoIs that radiate strongly for the dosimeter (its ОБЪЕКТ lamp, into yellow) —
+	 * pick a few that fit the story; with many the counter is always yellow and stops
+	 * meaning anything. Every other building radiates weakly, the faction headquarters
+	 * always strongly, and the `biohazard` zones (ЗОНА) up to the alarm.
 	 */
 	radiatingPois?: string[];
 }
