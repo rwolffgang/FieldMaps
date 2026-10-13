@@ -65,6 +65,19 @@ map-view {
 	position: absolute;
 	inset: 0;
 }
+/* Nothing on the map screen is text anyone wants to copy, and a long press on the
+   map (pick a spot, set a mark) is a gesture iOS also reads as "select": it then
+   grabs the nearest text it can find — the back button, the status pill, the
+   toast — and puts its selection handles over the popup. The page shell's two
+   rows sit on the map too, so they opt out with it. The landing and legal pages
+   keep their text selectable (the contact address is meant to be copied). */
+map-view,
+#enable-compass,
+#toast {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
 /* Fixed on purpose here: Leaflet's panes climb to z-index 700, and the stacking
    context this creates keeps them under the chrome instead of beside it. */
 #map {
