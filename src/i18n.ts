@@ -128,6 +128,8 @@ interface Strings {
 	sectionEvents: string;
 	sectionEventsNote: string;
 	sectionPastEvents: string;
+	/** Stands in for the event list once the season's last game is over. */
+	seasonOver: string;
 	badgeRunning: string;
 	badgeInDays: (days: number) => string;
 	variant: string;
@@ -248,6 +250,7 @@ const STRINGS: Record<Lang, Strings> = {
 			"Alle Karten zeigen dasselbe Gelände — pro Event wechseln nur Beschriftungen, Zonen und " +
 			"Fraktionen. Andere Spielfelder sind nicht enthalten.",
 		sectionPastEvents: "Vergangene Events",
+		seasonOver: "Wir sehen uns nächstes Jahr in Mahlwinkel!",
 		badgeRunning: "Läuft jetzt",
 		badgeInDays: (days) => (days === 1 ? "Morgen" : `In ${days} Tagen`),
 		variant: "Variante",
@@ -511,6 +514,7 @@ const STRINGS: Record<Lang, Strings> = {
 			"Every map covers the same ground — only the labels, zones and factions change per " +
 			"event. Other fields are not included.",
 		sectionPastEvents: "Past Events",
+		seasonOver: "See you at Mahlwinkel next year!",
 		badgeRunning: "Running now",
 		badgeInDays: (days) => (days === 1 ? "Tomorrow" : `In ${days} days`),
 		variant: "Variant",

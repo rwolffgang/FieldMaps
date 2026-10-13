@@ -395,6 +395,7 @@ export class LandingView extends LitElement {
 							</ul>`
 						: nothing
 				}
+				${soonest == null ? html`<p class="season-over">${t.seasonOver}</p>` : nothing}
 				${
 					pastMaps.length
 						? html`
