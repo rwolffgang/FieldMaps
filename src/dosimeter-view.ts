@@ -123,6 +123,19 @@ function manualSeen(): boolean {
 // so making a fresh one per opening would eventually stop working.
 let audio: AudioContext | null = null;
 let clickNoise: AudioBuffer | null = null;
+/** Where every click goes: the saturator in front of the speaker (see `CLICK_DRIVE`). */
+let clickBus: AudioNode | null = null;
+
+/**
+ * How hard the clicks are driven into a soft clipper (tanh). A click is a spike: at
+ * full scale for an instant, then mostly quiet, and a phone speaker in a pocket on a
+ * windy field loses it. Driving it into a saturator flattens that spike, so far more of
+ * each click sits near full scale while no sample ever passes it — about 8–9 dB louder
+ * together with the fuller click below, roughly twice as loud to the ear. It also
+ * catches clicks overlapping at a high rate, which used to clip hard. The grit it adds
+ * is what a real Geiger counter sounds like anyway.
+ */
+const CLICK_DRIVE = 3;
 
 /**
  * Create or wake the dosimeter's audio. Call it synchronously from a tap handler:
@@ -147,12 +160,23 @@ export function primeDosimeterAudio() {
 			(window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 		if (!Context) return;
 		audio = new Context();
-		// One click: 6 ms of noise with a fast decay, reused for every click. Long and
-		// loud enough to carry on a phone speaker, which drops most of a shorter one.
-		const length = Math.floor(audio.sampleRate * 0.006);
+		// One click: 8 ms of noise with a fast decay, reused for every click. Long and
+		// full enough to carry on a phone speaker, which drops most of a shorter one.
+		const length = Math.floor(audio.sampleRate * 0.008);
 		clickNoise = audio.createBuffer(1, length, audio.sampleRate);
 		const data = clickNoise.getChannelData(0);
-		for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 3;
+		for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 2;
+
+		const curve = new Float32Array(1024);
+		for (let i = 0; i < curve.length; i++) {
+			const x = (i / (curve.length - 1)) * 2 - 1;
+			curve[i] = (0.95 * Math.tanh(x * CLICK_DRIVE)) / Math.tanh(CLICK_DRIVE);
+		}
+		const shaper = audio.createWaveShaper();
+		shaper.curve = curve;
+		shaper.oversample = "2x";
+		shaper.connect(audio.destination);
+		clickBus = shaper;
 	}
 	audioWanted = true;
 	void audio.resume();
@@ -444,15 +468,15 @@ export class DosimeterView extends LitElement {
 	}
 
 	private playClick() {
-		if (!audio || !clickNoise) return;
+		if (!audio || !clickNoise || !clickBus) return;
 		const source = audio.createBufferSource();
 		source.buffer = clickNoise;
 		const filter = audio.createBiquadFilter();
 		filter.type = "highpass";
 		filter.frequency.value = 1200 + Math.random() * 800;
 		const gain = audio.createGain();
-		gain.gain.value = 0.9;
-		source.connect(filter).connect(gain).connect(audio.destination);
+		gain.gain.value = 1;
+		source.connect(filter).connect(gain).connect(clickBus);
 		source.start();
 	}
 
