@@ -64,7 +64,7 @@ export interface MapDefinition {
 	lines?: BoundaryLine[];
 	/** Whether the map's top row offers the prop dosimeter. */
 	dosimeter?: boolean;
-	/** PoI ids that radiate for the dosimeter, besides the headquarters; omitted = none. */
+	/** PoI ids that radiate strongly for the dosimeter, besides the headquarters; every other building radiates weakly. */
 	radiatingPois?: string[];
 }
 

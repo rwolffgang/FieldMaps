@@ -1,6 +1,7 @@
 import {
 	BACKGROUND_LEVEL,
 	POI_LEVEL,
+	BUILDING_LEVEL,
 	EDGE_LEVEL,
 	PEAK_LEVEL,
 	GUIDE_LEVEL,
@@ -81,6 +82,18 @@ check("a PoI reaches yellow (≥ 40)", near(-500) >= 40);
 check("a PoI fades out by 60 m", near(-440) < BACKGROUND_LEVEL + 2, `got ${near(-440)}`);
 check("closer to a PoI reads higher", near(-470) > near(-450));
 check("a PoI does not lower a zone's reading", near(100) === level(100, 100));
+
+const building = [{ lat: poiLat, lng: poiLng, level: BUILDING_LEVEL }];
+const nearBuilding = (E: number) => radiationLevelAt(...at(E, 100), [], building);
+check(
+	"on a building reads BUILDING_LEVEL",
+	Math.abs(nearBuilding(-500) - BUILDING_LEVEL) < 0.01,
+	`got ${nearBuilding(-500)}`,
+);
+check("a building lights the ОБЪЕКТ lamp (≥ background + 6)", nearBuilding(-500) >= 16);
+check("a building stays below yellow (< 40)", BUILDING_LEVEL < 40);
+check("a building reads below a hot object", nearBuilding(-500) < near(-500));
+check("a building fades out by 60 m", nearBuilding(-440) < BACKGROUND_LEVEL + 1);
 
 console.log("direction finding");
 check("dead ahead reads GUIDE_LEVEL", levelForBearing(0) === GUIDE_LEVEL);

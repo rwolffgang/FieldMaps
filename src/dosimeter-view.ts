@@ -9,8 +9,8 @@
 //
 //   ЗОНА     near or inside the scenario's irradiated (`biohazard`) zones — the only
 //            source that reaches the alarm.
-//   ОБЪЕКТ   near a radiating object: the faction headquarters and the scenario's
-//            `radiatingPois`. Yellow at most.
+//   ОБЪЕКТ   near a building: every one lifts the needle a little, the faction
+//            headquarters and the scenario's `radiatingPois` into yellow. No further.
 //   ПЕЛЕНГ   while a navigation runs: direction finding. The reading lifts when the
 //            phone points at the destination, at any distance — a game tool, not
 //            physics. Objects are ignored meanwhile, so the sweep is not muddied.
@@ -154,13 +154,45 @@ export function primeDosimeterAudio() {
 		const data = clickNoise.getChannelData(0);
 		for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 3;
 	}
+	audioWanted = true;
 	void audio.resume();
+}
+
+/** Set while the device is open: the audio should be running, and is woken if it is not. */
+let audioWanted = false;
+
+/**
+ * Bring the audio back after something else stopped it. Locking an iPhone interrupts
+ * the context (and pauses the silent clip), and unlocking does not restart either: the
+ * device would sit there silent until it was closed and opened again. So this runs when
+ * the page comes back on screen — which iOS often honours — and on every tap while the
+ * device is open, which it always does.
+ */
+function wakeDosimeterAudio() {
+	if (!audioWanted || !audio) return;
+	if (audio.state !== "running") void audio.resume().catch(() => {});
+	if (keepalive?.paused) void keepalive.play().catch(() => {});
 }
 
 /** Release the audio while the device is put away: no clicks, and no media session held. */
 function releaseDosimeterAudio() {
+	audioWanted = false;
 	void audio?.suspend();
 	keepalive?.pause();
+}
+
+/** The events `wakeDosimeterAudio` listens for while the device is open. */
+const WAKE_ON_RETURN = ["visibilitychange", "pageshow", "focus"] as const;
+const WAKE_ON_GESTURE = ["touchend", "pointerup", "click", "keydown"] as const;
+
+function listenForAudioWake(add: boolean) {
+	const method = add ? "addEventListener" : "removeEventListener";
+	for (const type of WAKE_ON_RETURN) window[method](type, onReturn);
+	for (const type of WAKE_ON_GESTURE) window[method](type, wakeDosimeterAudio, true);
+}
+
+function onReturn() {
+	if (document.visibilityState === "visible") wakeDosimeterAudio();
 }
 
 // The silent clip behind the pre-iOS-17 route above: half a second of 8 kHz silence,
@@ -252,7 +284,7 @@ export class DosimeterView extends LitElement {
 	@property({ attribute: false }) position: DosimeterFix | null = null;
 	/** The scenario's irradiated zones (its `biohazard` zones). */
 	@property({ attribute: false }) zones: LatLng[][] = [];
-	/** The radiating objects: headquarters and `radiatingPois`. */
+	/** The radiating objects: every building, with HQs and `radiatingPois` stronger. */
 	@property({ attribute: false }) points: readonly RadiationPoint[] = [];
 	/** Set by the map while a navigation runs, on every compass or position change. */
 	@property({ attribute: false }) guidance: DosimeterGuidance | null = null;
@@ -277,6 +309,7 @@ export class DosimeterView extends LitElement {
 		this.lastTick = performance.now();
 		this.tickTimer = window.setInterval(() => this.tick(), TICK_MS);
 		if (this.sound) this.scheduleClick();
+		listenForAudioWake(true);
 	}
 
 	disconnectedCallback() {
@@ -284,6 +317,7 @@ export class DosimeterView extends LitElement {
 		window.clearInterval(this.tickTimer);
 		window.clearTimeout(this.clickTimer);
 		this.scanning = false;
+		listenForAudioWake(false);
 		releaseDosimeterAudio();
 	}
 
