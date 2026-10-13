@@ -168,6 +168,17 @@ interface Strings {
 	/** The same spot when the grid is drawn, named by the square it falls in. */
 	gridSquare: (label: string) => string;
 	navStop: string;
+	/** The player's own marks — see `src/marks.ts`. */
+	markHere: string;
+	markMyPosition: string;
+	/** A new mark's name before the player gives it one. */
+	markName: (n: number) => string;
+	markRename: string;
+	markRenamePrompt: string;
+	markDelete: string;
+	/** The delete button's second state: a mark is the player's own work, so it asks once. */
+	markDeleteConfirm: string;
+	marksGroup: string;
 	navArrived: string;
 	navEnableCompass: string;
 	navOffField: string;
@@ -179,6 +190,7 @@ interface Strings {
 	layerMask: string;
 	layerZones: string;
 	layerHqs: string;
+	layerMarks: string;
 	/** The top-row button that opens the prop dosimeter on the Stalker maps. */
 	dosimeter: string;
 	dosimeterClose: string;
@@ -285,6 +297,14 @@ const STRINGS: Record<Lang, Strings> = {
 		markedPosition: "Markierte Position",
 		gridSquare: (label) => `Feld ${label}`,
 		navStop: "Navigation beenden",
+		markHere: "Markieren",
+		markMyPosition: "Meine Position markieren",
+		markName: (n) => `Markierung ${n}`,
+		markRename: "Umbenennen",
+		markRenamePrompt: "Name der Markierung",
+		markDelete: "Löschen",
+		markDeleteConfirm: "Wirklich löschen?",
+		marksGroup: "Eigene Markierungen",
 		navArrived: "Du bist da",
 		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
 		navOffField: "Du stehst außerhalb dieses Spielfelds",
@@ -303,6 +323,7 @@ const STRINGS: Record<Lang, Strings> = {
 		layerMask: "Spielfeldgrenze",
 		layerZones: "Zonen",
 		layerHqs: "Hauptquartiere",
+		layerMarks: "Eigene Markierungen",
 		dosimeter: "Dosimeter öffnen",
 		dosimeterClose: "Dosimeter schließen",
 		dosimeterDial: "Zeigerinstrument, 0 bis 5, mal Messbereich",
@@ -548,6 +569,14 @@ const STRINGS: Record<Lang, Strings> = {
 		markedPosition: "Marked position",
 		gridSquare: (label) => `Square ${label}`,
 		navStop: "End navigation",
+		markHere: "Mark",
+		markMyPosition: "Mark my position",
+		markName: (n) => `Mark ${n}`,
+		markRename: "Rename",
+		markRenamePrompt: "Name of the mark",
+		markDelete: "Delete",
+		markDeleteConfirm: "Really delete?",
+		marksGroup: "My marks",
 		navArrived: "You have arrived",
 		navEnableCompass: "Enable compass for turn hints",
 		navOffField: "You are outside this field",
@@ -566,6 +595,7 @@ const STRINGS: Record<Lang, Strings> = {
 		layerMask: "Boundary mask",
 		layerZones: "Zones",
 		layerHqs: "Headquarters",
+		layerMarks: "My marks",
 		dosimeter: "Open dosimeter",
 		dosimeterClose: "Close dosimeter",
 		dosimeterDial: "Meter dial, 0 to 5, times the range",

@@ -44,6 +44,15 @@ import {
 	snoozeInstallNudge,
 	type InstallMethod,
 } from "./install.js";
+import {
+	addMark,
+	deleteMark,
+	loadMarks,
+	markIdFromTarget,
+	markTargetId,
+	renameMark,
+	type Mark,
+} from "./marks.js";
 
 // There is no in-app language switcher — the browser's choice is fixed for the
 // session — so resolving the strings once at module load is enough.
@@ -164,9 +173,18 @@ interface Toggles {
 	zones: boolean;
 	/** Show the faction headquarters emblems. */
 	hqs: boolean;
+	/** Show the player's own marks (see `src/marks.ts`). */
+	marks: boolean;
 }
 
-const DEFAULT_TOGGLES: Toggles = { poiIds: false, grid: true, mask: true, zones: true, hqs: true };
+const DEFAULT_TOGGLES: Toggles = {
+	poiIds: false,
+	grid: true,
+	mask: true,
+	zones: true,
+	hqs: true,
+	marks: true,
+};
 
 /**
  * Centroid of a CRS.Simple ring, for placing a zone's label. The plain vertex mean
@@ -313,6 +331,8 @@ export class MapView extends LitElement {
 	private hqLayer: L.LayerGroup | null = null;
 	private poiMarker: L.Marker | null = null;
 	private poiDotsLayer: L.LayerGroup | null = null;
+	/** The player's own marks, one marker each — see `syncMarks`. */
+	private marksLayer: L.LayerGroup | null = null;
 	private routeLine: L.Polyline | null = null;
 	private lastPixel: { px: number; py: number } | null = null;
 	private lastGps: { lat: number; lng: number; accuracy: number; heading: number | null } | null =
@@ -374,6 +394,8 @@ export class MapView extends LitElement {
 	 * new spot replaces it.
 	 */
 	@state() private customTarget: LabeledPointOfInterest | null = null;
+	/** The player's own marks on the current map. Replaced, never mutated (see `marks.ts`). */
+	@state() private marks: readonly Mark[] = [];
 	@state() private navDistanceM = 0;
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
@@ -512,6 +534,11 @@ export class MapView extends LitElement {
 
 	private getSelectedPoi(): LabeledPointOfInterest | null {
 		if (this.selectedPoiId === CUSTOM_TARGET_ID) return this.customTarget;
+		const markId = markIdFromTarget(this.selectedPoiId);
+		if (markId != null) {
+			const mark = this.marks.find((candidate) => candidate.id === markId);
+			return mark ? this.markAsPoi(mark) : null;
+		}
 		return this.currentPointsOfInterest().find((poi) => poi.id === this.selectedPoiId) ?? null;
 	}
 
@@ -602,6 +629,8 @@ export class MapView extends LitElement {
 		}
 
 		this.syncPoiDots();
+		this.marks = loadMarks(definition.id);
+		this.syncMarks();
 	}
 
 	/**
@@ -929,6 +958,7 @@ export class MapView extends LitElement {
 		// other toggle is either a basemap repaint or one layer coming and going, so there
 		// is no reason to tear down and rebuild ~80 marker elements for it.
 		if (key === "poiIds" || key === "hqs") this.syncPoiDots();
+		if (key === "marks") this.syncMarks();
 	}
 
 	/** Apply the current toggle states to the live layers. */
@@ -1064,7 +1094,11 @@ export class MapView extends LitElement {
 		this.applyPopupPadding(popup);
 		popup
 			.setLatLng(this.px2ll(px, py))
-			.setContent(this.makeNavPopupBody(target.name, () => this.startCustomNavigation(target)))
+			.setContent(
+				this.makeNavPopupBody(target.name, () => this.startCustomNavigation(target), [
+					{ label: t.markHere, run: () => this.createMark(lat, lng) },
+				]),
+			)
 			.openOn(this.map);
 	}
 
@@ -1338,7 +1372,11 @@ export class MapView extends LitElement {
 	 * A name and the one thing you want from a place on the ground. Shared by the PoI
 	 * dots and by a spot picked off the map, so both ask the question the same way.
 	 */
-	private makeNavPopupBody(label: string, navigateTo: () => void): HTMLElement {
+	private makeNavPopupBody(
+		label: string,
+		navigateTo: () => void,
+		extra: { label: string; run: (button: HTMLButtonElement) => void }[] = [],
+	): HTMLElement {
 		const body = document.createElement("div");
 		body.className = "poi-popup-body";
 
@@ -1353,6 +1391,22 @@ export class MapView extends LitElement {
 		navigate.addEventListener("click", navigateTo);
 
 		body.append(title, navigate);
+
+		// The lesser actions (mark, rename, delete) sit in a row under the one that
+		// matters, quieter, so the orange button stays the obvious thing to tap.
+		if (extra.length > 0) {
+			const row = document.createElement("div");
+			row.className = "poi-popup-actions";
+			for (const action of extra) {
+				const button = document.createElement("button");
+				button.type = "button";
+				button.className = "poi-popup-action";
+				button.textContent = action.label;
+				button.addEventListener("click", () => action.run(button));
+				row.append(button);
+			}
+			body.append(row);
+		}
 		return body;
 	}
 
@@ -1389,6 +1443,128 @@ export class MapView extends LitElement {
 			top: Math.ceil(top) + 12,
 			bottom: Math.ceil(hud?.height ?? 0) + 12,
 		};
+	}
+
+	// --- The player's own marks ------------------------------------------------------
+	//
+	// Set down from a long press (the same popup that offers a route there) or at the
+	// player's own position from the HUD button, kept per map in `src/marks.ts`. A mark
+	// navigates like a PoI — it joins that machinery under a reserved id, the way a
+	// picked spot does — but it is the player's, so its popup can also rename and
+	// delete it. Markers, not basemap paint: they come and go at a tap, and their names
+	// have to stay upright and screen-sized like every other label here.
+
+	/** A mark as the navigation code sees it: a PoI with a reserved id. */
+	private markAsPoi(mark: Mark): LabeledPointOfInterest {
+		return { id: markTargetId(mark), name: mark.name, lat: mark.lat, lng: mark.lng };
+	}
+
+	private createMark(lat: number, lng: number) {
+		this.map.closePopup();
+		const mark = addMark(this.selectedMapId, { name: this.nextMarkName(), lat, lng });
+		this.marks = loadMarks(this.selectedMapId);
+		// A mark nobody can see is a mark that was not set, so a hidden layer comes back.
+		if (!this.toggles.marks) this.toggle("marks");
+		else this.syncMarks();
+		// Open it straight away: the new name is the one thing they will want to change.
+		this.markMarkers.get(mark.id)?.openPopup();
+	}
+
+	/** Drop a mark where the player is standing. */
+	private markMyPosition() {
+		if (!this.lastGps || this.offMap) return;
+		this.createMark(this.lastGps.lat, this.lastGps.lng);
+	}
+
+	/** "Mark N", with the lowest N no mark on this map is already called. */
+	private nextMarkName(): string {
+		const taken = new Set(this.marks.map((mark) => mark.name));
+		let n = this.marks.length + 1;
+		while (taken.has(t.markName(n))) n++;
+		return t.markName(n);
+	}
+
+	private renameMark(mark: Mark) {
+		this.map.closePopup();
+		const name = window.prompt(t.markRenamePrompt, mark.name)?.trim();
+		if (!name || name === mark.name) return;
+		renameMark(this.selectedMapId, mark.id, name);
+		this.marks = loadMarks(this.selectedMapId);
+		this.syncMarks();
+		// The status pill names the target, so a renamed destination shows up at once.
+		if (this.selectedPoiId === markTargetId(mark)) this.updateStatus();
+	}
+
+	private deleteMark(mark: Mark) {
+		this.map.closePopup();
+		if (this.selectedPoiId === markTargetId(mark)) this.startNavigation("");
+		deleteMark(this.selectedMapId, mark.id);
+		this.marks = loadMarks(this.selectedMapId);
+		this.syncMarks();
+	}
+
+	/** The live mark markers by mark id, so a new one can open its popup. */
+	private markMarkers = new Map<string, L.Marker>();
+
+	private syncMarks() {
+		if (this.marksLayer) {
+			this.map.removeLayer(this.marksLayer);
+			this.marksLayer = null;
+		}
+		this.markMarkers.clear();
+		if (!this.transform || !this.toggles.marks || this.marks.length === 0) return;
+
+		this.marksLayer = L.layerGroup();
+		for (const mark of this.marks) {
+			const { px, py } = this.transform.toPixel(mark.lat, mark.lng);
+			const label = document.createElement("span");
+			label.className = "mark-label";
+			label.textContent = mark.name;
+			const marker = L.marker(this.px2ll(px, py), {
+				icon: L.divIcon({
+					className: "mark-marker",
+					html: `<div class="mark-hit"><div class="mark-flag"></div>${label.outerHTML}</div>`,
+					iconSize: [24, 24],
+					iconAnchor: [12, 12],
+				}),
+				interactive: true,
+			});
+			marker.bindPopup(
+				() => {
+					const popup = marker.getPopup();
+					if (popup) this.applyPopupPadding(popup);
+					return this.makeNavPopupBody(mark.name, () => this.startNavigation(markTargetId(mark)), [
+						{ label: t.markRename, run: () => this.renameMark(mark) },
+						{
+							label: t.markDelete,
+							// Twice: a mark is the player's own work, and the button sits right
+							// where a thumb lands reaching for "Rename".
+							run: (button) => {
+								if (button.dataset.armed) this.deleteMark(mark);
+								else {
+									button.dataset.armed = "1";
+									button.textContent = t.markDeleteConfirm;
+									button.classList.add("danger");
+									// The longer label does not fit beside "Rename", so the
+									// confirm takes the row while it is asked. The popup keeps
+									// its laid-out width, which the one button now fills.
+									for (const sibling of button.parentElement?.children ?? []) {
+										if (sibling !== button) (sibling as HTMLElement).hidden = true;
+									}
+								}
+							},
+						},
+					]);
+				},
+				{ className: "poi-popup", closeButton: false, offset: [0, -6] },
+			);
+			marker.on("dblclick", () => this.startNavigation(markTargetId(mark)));
+			// A long press on a mark means that mark, not a new spot under it.
+			marker.on("contextmenu", () => marker.openPopup());
+			marker.addTo(this.marksLayer);
+			this.markMarkers.set(mark.id, marker);
+		}
+		this.marksLayer.addTo(this.map);
 	}
 
 	private clearPoiDots() {
@@ -1950,7 +2126,7 @@ export class MapView extends LitElement {
 				<div class="hud-controls">
 					<div class="hud-left">
 						${
-							pointsOfInterest.length > 0 || selectedPoi
+							pointsOfInterest.length > 0 || selectedPoi || this.marks.length > 0
 								? html`
 										<div class="poi-panel">
 											${
@@ -1997,6 +2173,20 @@ export class MapView extends LitElement {
 															`
 														: ""
 												}
+												<!-- The player's own marks, also outside the guard: they change at a tap. -->
+												${
+													this.marks.length > 0
+														? html`
+																<optgroup label=${t.marksGroup}>
+																	${this.marks.map(
+																		(mark) => html`
+																			<option value=${markTargetId(mark)}>${mark.name}</option>
+																		`,
+																	)}
+																</optgroup>
+															`
+														: ""
+												}
 												<!-- Guarded on the map id: the list only changes when the map does, and
 												     without this every render walked all ~80 options. That includes the
 												     one \`dragstart\` triggers by clearing \`following\`, which put a
@@ -2018,6 +2208,21 @@ export class MapView extends LitElement {
 						}
 					</div>
 					<div class="hud-right">
+						${
+							this.locatedOnce && !this.offMap
+								? html`
+										<button
+											type="button"
+											class="mark-me"
+											title=${t.markMyPosition}
+											aria-label=${t.markMyPosition}
+											@click=${this.markMyPosition}
+										>
+											<span class="mark-flag" aria-hidden="true"></span>
+										</button>
+									`
+								: ""
+						}
 						<button class="recenter ${this.following ? "on" : ""}" @click=${this.recenter}>
 							◎
 						</button>
@@ -2260,6 +2465,7 @@ export class MapView extends LitElement {
 									${this.hasMask ? row("mask", t.layerMask) : ""}
 									${this.hasZones ? row("zones", t.layerZones) : ""}
 									${this.hasHqs ? row("hqs", t.layerHqs) : ""}
+									${this.marks.length > 0 ? row("marks", t.layerMarks) : ""}
 								</div>
 							`
 						: ""

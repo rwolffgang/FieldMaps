@@ -65,6 +65,19 @@ map-view {
 	position: absolute;
 	inset: 0;
 }
+/* Nothing on the map screen is text anyone wants to copy, and a long press on the
+   map (pick a spot, set a mark) is a gesture iOS also reads as "select": it then
+   grabs the nearest text it can find — the back button, the status pill, the
+   toast — and puts its selection handles over the popup. The page shell's two
+   rows sit on the map too, so they opt out with it. The landing and legal pages
+   keep their text selectable (the contact address is meant to be copied). */
+map-view,
+#enable-compass,
+#toast {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
 /* Fixed on purpose here: Leaflet's panes climb to z-index 700, and the stacking
    context this creates keeps them under the chrome instead of beside it. */
 #map {
@@ -1766,4 +1779,82 @@ legal-view {
 	border-right: 9px solid transparent;
 	border-bottom: 20px solid var(--accent);
 	filter: drop-shadow(0 0 1px #fff);
+}
+
+/* The player's own marks (src/marks.ts): a small flag, in the brand orange because
+   it is a place on the ground, but square-cornered and white-cored so it never
+   reads as one of the organiser's numbered PoIs. */
+.mark-marker {
+	background: none;
+	border: none;
+}
+.mark-hit {
+	position: relative;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.mark-flag {
+	width: 12px;
+	height: 12px;
+	background: #fff;
+	border: 3px solid var(--accent-warm);
+	border-radius: 2px;
+	transform: rotate(45deg);
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+.mark-label {
+	position: absolute;
+	left: 22px;
+	top: 50%;
+	transform: translateY(-50%);
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 700;
+	color: #fff;
+	text-shadow:
+		0 0 2px #000,
+		0 0 3px #000,
+		0 1px 2px #000;
+	pointer-events: none;
+}
+/* "Mark my position", stacked beside the recenter control it shares a job with. */
+.mark-me {
+	pointer-events: auto;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: rgba(11, 15, 20, 0.9);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+.mark-me:active {
+	filter: brightness(1.3);
+}
+.poi-popup-actions {
+	display: flex;
+	gap: 6px;
+}
+.poi-popup-action {
+	flex: 1 1 auto;
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 600;
+	color: #e6edf3;
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 999px;
+	padding: 6px 10px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.poi-popup-action.danger {
+	color: #fff;
+	background: #c0392b;
+	border-color: #c0392b;
 }

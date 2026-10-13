@@ -40,6 +40,21 @@ interface Release {
 /** Newest first. Only the releases a player has not dismissed are shown. */
 const CHANGES: Release[] = [
 	{
+		id: "2026-10-13",
+		changes: [
+			{
+				// The mark's own diamond (`.mark-flag` in styles.css), so the dialog shows
+				// the symbol they will be looking for on the map.
+				glyph: `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+					<rect x="6.5" y="6.5" width="11" height="11" rx="1.5" transform="rotate(45 12 12)"
+						fill="#fff" stroke="var(--accent-warm)" stroke-width="3" />
+				</svg>`,
+				de: "Eigene Markierungen: Halte einen Punkt auf der Karte gedrückt und tippe „Markieren“ – oder setze mit dem Rauten-Knopf neben ◎ eine Markierung an deiner Position. Antippen zum Hinnavigieren, Umbenennen oder Löschen. Sie bleiben pro Karte auf deinem Handy gespeichert.",
+				en: "Your own marks: long-press a spot on the map and tap “Mark” – or drop one where you stand with the diamond button next to ◎. Tap a mark to navigate there, rename or delete it. They are kept per map, on your phone.",
+			},
+		],
+	},
+	{
 		id: "2026-10-09",
 		changes: [
 			{
