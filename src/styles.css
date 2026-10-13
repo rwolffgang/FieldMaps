@@ -601,6 +601,16 @@ landing-view {
 
 /* Past events start collapsed. Native <details> so it works without extra script
    and keeps its open state when Lit reuses the element. */
+.season-over {
+	margin: 0.25rem 0 0;
+	padding: 1rem 1.1rem;
+	border: 1px dashed #2c3a48;
+	border-radius: 12px;
+	font-size: 0.9375rem;
+	color: #b5c3d0;
+	max-width: 38rem;
+}
+
 .past-events {
 	margin-top: 2.5rem;
 }
