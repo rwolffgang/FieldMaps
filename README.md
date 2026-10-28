@@ -126,8 +126,11 @@ ships inside the package: [`packages/field-map/AGENTS.md`](packages/field-map/AG
 `npm run dev:component` serves a test page that embeds nothing but the element, with
 an event log, simulated players and two-tab sync.
 
-Releases go out as `npm pack` tarballs (`npm run build:packages`, then
-`npm pack --workspaces`) attached to a GitHub release.
+Releases go out as `npm pack` tarballs attached to a GitHub pre-release. Pushing a
+`field-map-v*` tag publishes one (`.github/workflows/field-map-release.yml`): it tests,
+builds and packs both packages, and writes the install URLs into the release notes.
+Put the new tag into `packages/field-map/LOVABLE.md` before tagging; the run refuses
+a release whose `LOVABLE.md` names another one.
 
 ## Licence
 
