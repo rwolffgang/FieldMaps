@@ -17,8 +17,9 @@ off these images. Keep them so the numbers can be re-derived or checked.
 | `light_sim_2026_taktikkarte.jpg` | LIGHT-SIM              | DE-39517-2026-7  | `/light-sim/taktikkarte`      |
 | `asd_2024_taktikkarte.jpg`       | Airsoft Days           | ASD-39517-2024-7 | `/airsoft-days/taktikkarte`   |
 | `lost_airfield_taktikkarte.jpg`  | Lost Airfield          | —                | `/lost-airfield/taktikkarte`  |
+| `fallen_2026_it-karte.jpg`       | FALLEN – Bad Lands     | IT-Karte v03     | fallen-larp.de, see below     |
 
-All base URLs are `https://airsofthelden-events.com`. Those paths are redirects to
+All base URLs are `https://airsofthelden-events.com`, except FALLEN's, which is a different organiser (Lost Ideas): `https://www.fallen-larp.de/wp-content/uploads/sites/10/2026/04/IT-Karte-Bad-Lands-v03-scaled.jpg`, announced at `/it-karte/`. A 76 MB print PDF of the same drawing is `.../2026/04/FALLEN-Bad-Lands-2250.pdf`; its legend is one revision older (42.03 unnamed, 42.07 "Stadtlichtung"). Those paths are redirects to
 the Shopify CDN and are the stable way to re-fetch — note that the Dark Emergency
 downloads page does _not_ link its map ("coming soon"), but the redirect still
 serves the current file.
@@ -35,5 +36,6 @@ of each source. Short version:
 - **Lost Airfield** fitted to 9.8 m RMS from 28 buildings shared with the other maps.
 - **Mission 24H 2026** fitted from 36 buildings and turbines.
 - **OP Tschernobyl 2026** fitted to 3.0 m RMS from the five named wind turbines.
+- **FALLEN** is a hand-drawn, not-to-scale illustration; its places were matched to registry buildings by hand, not fitted.
 - Play areas, zones and frontlines were traced by hand and are good to a few tens of
   metres only.

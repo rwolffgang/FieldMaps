@@ -109,6 +109,11 @@ export interface Scenario {
 	 */
 	poiNames: Record<string, string>;
 	/**
+	 * PoI id -> the number this event's own map gives the place, for an event that
+	 * numbers the field its own way (FALLEN). Shown in place of the site number.
+	 */
+	poiNumbers?: Record<string, string>;
+	/**
 	 * Boundary of the active play area, as an ordered ring of [lat, lng] points.
 	 * Everything OUTSIDE this polygon is covered by the out-of-bounds texture.
 	 * Leave empty ([]) to play the whole field with no mask.

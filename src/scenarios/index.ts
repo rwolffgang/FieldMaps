@@ -10,6 +10,7 @@ import { darkEmergency } from "./dark-emergency.js";
 import { airsoftDays } from "./airsoft-days.js";
 import { lightSim } from "./light-sim.js";
 import { lostAirfield } from "./lost-airfield.js";
+import { fallen } from "./fallen.js";
 
 export type { Scenario, LatLng, Zone, Headquarters, BoundaryLine } from "./scenario.js";
 
@@ -20,4 +21,5 @@ export const SCENARIOS: Scenario[] = [
 	lightSim,
 	airsoftDays,
 	lostAirfield,
+	fallen,
 ];

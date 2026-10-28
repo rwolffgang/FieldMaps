@@ -12,7 +12,12 @@ import {
 	type MapDefinition,
 	type LabeledPointOfInterest,
 } from "./config.js";
-import { comparePointsOfInterest, isCheckpoint, isWindTurbine } from "./points-of-interest.js";
+import {
+	comparePointsOfInterest,
+	isCheckpoint,
+	isWindTurbine,
+	poiNumber,
+} from "./points-of-interest.js";
 import { CHECKPOINT_GLYPH } from "./glyphs.js";
 import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
 import {
@@ -1351,7 +1356,8 @@ export class MapView extends LitElement {
 
 	/** "630 · Tower"; a place whose id already is its name is not named twice. */
 	private poiLabel(poi: LabeledPointOfInterest) {
-		return poi.id === poi.name ? poi.name : `${poi.id} · ${poi.name}`;
+		const number = poiNumber(poi);
+		return number === poi.name ? poi.name : `${number} · ${poi.name}`;
 	}
 
 	/**
@@ -1594,7 +1600,7 @@ export class MapView extends LitElement {
 		for (const poi of pointsOfInterest) {
 			if (headquarters.some((hq) => this.samePlace(hq, poi))) continue;
 
-			const idLabel = this.toggles.poiIds ? poi.id : undefined;
+			const idLabel = this.toggles.poiIds ? poiNumber(poi) : undefined;
 			const pixel = this.transform.toPixel(poi.lat, poi.lng);
 			const marker = L.marker(this.px2ll(pixel.px, pixel.py), {
 				// A turbine or a barrier is recognisable on its own; a plain building is
