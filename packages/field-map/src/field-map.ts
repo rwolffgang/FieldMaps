@@ -1736,7 +1736,9 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
 			this.navHint = this.t.navHints[navigationHint(relative)];
 		} else {
-			this.navHint = this.t.navEnableCompass;
+			// Without a compass the GPS course still gives a heading above walking pace.
+			this.navHint =
+				this.compassState === "unavailable" ? this.t.navNoCompass : this.t.navEnableCompass;
 		}
 
 		// Arrival, once per approach: the nav card says so for as long as the player
@@ -2320,7 +2322,13 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		} else if (state === "on") {
 			this.clearToast("compass");
 			this.emitPermission({ kind: "compass", state: "granted" });
+		} else if (state === "unavailable") {
+			// A laptop: nothing to enable and nothing to complain about. The nav card says
+			// how turn hints come instead (`navNoCompass`).
+			this.clearToast("compass");
+			this.emitPermission({ kind: "compass", state: "unavailable" });
 		}
+		if (this.selectedPoiId) this.updateNavigation(true);
 	}
 
 	private async enableCompass() {

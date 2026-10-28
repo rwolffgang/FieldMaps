@@ -147,11 +147,14 @@ export interface FieldMapInsets {
 export interface PermissionDetail {
 	kind: "geolocation" | "compass";
 	/**
-	 * - `granted`: a first fix arrived / the compass is running
+	 * - `granted`: a first fix arrived / the compass is delivering headings
 	 * - `denied`: the player refused; only the browser's site settings undo it
-	 * - `prompt`: the iOS compass needs a tap on the element's "Enable compass" button
+	 * - `prompt`: the compass needs a tap on the element's "Enable compass" button,
+	 *   which it shows (iOS, and phones whose browser gates the sensor)
+	 * - `unavailable` (compass only): the device has no compass — a laptop. Nothing is
+	 *   shown; turn hints come from the GPS course while the player walks.
 	 */
-	state: "granted" | "denied" | "prompt";
+	state: "granted" | "denied" | "prompt" | "unavailable";
 }
 
 /** Every event `<field-map>` dispatches, by name. All bubble and cross shadow roots. */

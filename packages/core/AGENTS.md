@@ -32,7 +32,7 @@ Coordinates are WGS84 `[lat, lng]` (`LatLng`) or `{ lat, lng }`. PoI ids are phy
 
 - `distanceMeters(lat1, lng1, lat2, lng2)`, `bearingDegrees(…)`, `relativeBearingDegrees(target, heading)`, `navigationHint(relative)` → `"ahead" | "bearRight" | …`
 - `solveTransform(controlPoints)` → `{ toPixel, toLatLng, metersToPixels, pixelsToMeters, bearingToScreenDeg, scale, rmsMeters }` — a least-squares similarity fit (translation, rotation, uniform scale; never shear).
-- `watch(onFix, onError, { smoothing?, snapDistanceM? })` — `navigator.geolocation.watchPosition` with light smoothing that snaps on jumps; `watchHeading(onHeading)`, `needsPermission()`, `requestPermission()` for the compass (iOS needs a tap).
+- `watch(onFix, onError, { smoothing?, snapDistanceM? })` — `navigator.geolocation.watchPosition` with light smoothing that snaps on jumps; `watchHeading(onHeading, smoothing?, onNoReading?)` for the compass — `onNoReading` fires when the browser delivers an empty orientation event, which is how a device without a compass shows itself; `needsPermission()` says only that the tap-to-allow API exists (iOS and recent Chromium, laptops included); `requestPermission()` answers `"granted" | "denied" | "prompt"`, and only `"denied"` is a refusal.
 - `THEMES`, `extendTheme(base, overrides)`, `resolveTheme`, `osmSurroundColor` — the basemap's looks (see the element's guide, §7).
 - `markStore(key)` — the player's marks in `localStorage`, per scenario.
 - Types: `Scenario`, `Zone`, `Headquarters`, `BoundaryLine`, `MapDefinition`, `PointOfInterest`, `LabeledPointOfInterest`, `Fix`, `Mark`, `OsmTheme`, …

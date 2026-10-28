@@ -4,17 +4,29 @@
 
 type Cb = (headingDeg: number) => void;
 
-/** iOS 13+ gates device orientation behind an explicit permission call. */
+/**
+ * Whether the browser has the API that gates device orientation behind a tap. iOS 13+
+ * does, and so does recent Chromium — including on laptops with no compass at all — so
+ * this alone does not mean a tap is needed: see `watchHeading`'s `onNoReading`.
+ */
 export function needsPermission(): boolean {
-	return typeof (DeviceOrientationEvent as any)?.requestPermission === "function";
+	return (
+		typeof DeviceOrientationEvent !== "undefined" &&
+		typeof (DeviceOrientationEvent as any).requestPermission === "function"
+	);
 }
 
-export async function requestPermission(): Promise<boolean> {
+/**
+ * Ask for the compass. Must be called inside a user gesture. Only "denied" is a
+ * refusal: Chromium answers "prompt" when there is nothing to grant (no sensor, or no
+ * decision taken), which is not the player saying no.
+ */
+export async function requestPermission(): Promise<"granted" | "denied" | "prompt"> {
 	try {
-		const res = await (DeviceOrientationEvent as any).requestPermission();
-		return res === "granted";
+		const result = await (DeviceOrientationEvent as any).requestPermission();
+		return result === "granted" || result === "denied" ? result : "prompt";
 	} catch {
-		return false;
+		return "prompt";
 	}
 }
 
@@ -47,9 +59,20 @@ class AngleSmoother {
  */
 export const HEADING_SMOOTHING = 0.25;
 
-/** Start listening to the compass. Returns a stop() function. */
-export function watchHeading(onHeading: Cb, smoothing = HEADING_SMOOTHING): () => void {
+/**
+ * Start listening to the compass. Returns a stop() function.
+ *
+ * `onNoReading` is called (once) when the browser delivers an orientation event that
+ * carries no heading at all — what Chromium does as soon as a listener is added on a
+ * device without the sensor. iOS without permission delivers nothing instead.
+ */
+export function watchHeading(
+	onHeading: Cb,
+	smoothing = HEADING_SMOOTHING,
+	onNoReading?: () => void,
+): () => void {
 	const smoother = new AngleSmoother(smoothing);
+	let reportedEmpty = false;
 
 	const handler = (e: DeviceOrientationEvent) => {
 		let heading: number | null = null;
@@ -62,7 +85,13 @@ export function watchHeading(onHeading: Cb, smoothing = HEADING_SMOOTHING): () =
 			// Android absolute orientation: alpha is CCW from north -> flip it.
 			heading = 360 - (e.alpha as number);
 		}
-		if (heading == null) return;
+		if (heading == null) {
+			if (e.alpha == null && !reportedEmpty) {
+				reportedEmpty = true;
+				onNoReading?.();
+			}
+			return;
+		}
 
 		// Compensate for the device's screen rotation (portrait/landscape).
 		const scr = (screen.orientation && screen.orientation.angle) || 0;

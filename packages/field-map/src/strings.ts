@@ -49,6 +49,8 @@ export interface FieldMapStrings {
 	lastSeen: (seconds: number) => string;
 	navArrived: string;
 	navEnableCompass: string;
+	/** The same line on a device with no compass at all: the GPS course takes over when moving. */
+	navNoCompass: string;
 	navOffField: string;
 	navHints: Record<NavigationHint, string>;
 	scale: string;
@@ -90,6 +92,7 @@ export const FIELD_MAP_STRINGS: Record<FieldMapLang, FieldMapStrings> = {
 			seconds < 60 ? `vor ${seconds} s` : `vor ${Math.floor(seconds / 60)} min`,
 		navArrived: "Du bist da",
 		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
+		navNoCompass: "Richtungshinweise beim Gehen",
 		navOffField: "Du stehst außerhalb dieses Spielfelds",
 		navHints: {
 			ahead: "Geradeaus",
@@ -136,6 +139,7 @@ export const FIELD_MAP_STRINGS: Record<FieldMapLang, FieldMapStrings> = {
 			seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`,
 		navArrived: "You have arrived",
 		navEnableCompass: "Enable compass for turn hints",
+		navNoCompass: "Turn hints appear as you walk",
 		navOffField: "You are outside this field",
 		navHints: {
 			ahead: "Straight ahead",

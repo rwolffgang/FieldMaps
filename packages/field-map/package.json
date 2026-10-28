@@ -32,7 +32,7 @@
 	],
 	"scripts": {
 		"build": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
-		"test": "tsx src/marker-diff.test.ts && tsx src/strings.test.ts && tsx scripts/check-docs.ts && tsx scripts/check-boundaries.ts"
+		"test": "tsx src/marker-diff.test.ts && tsx src/compass-decision.test.ts && tsx src/strings.test.ts && tsx scripts/check-docs.ts && tsx scripts/check-boundaries.ts"
 	},
 	"dependencies": {
 		"@fieldmaps/core": "0.1.0"

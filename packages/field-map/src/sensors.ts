@@ -7,6 +7,7 @@
 // -----------------------------------------------------------------------------
 
 import { needsPermission, requestPermission, watch, watchHeading, type Fix } from "@fieldmaps/core";
+import { COMPASS_PROBE_MS, decideCompass } from "./compass-decision.js";
 
 /**
  * Core Location hands Safari a plain "kCLErrorDomain error 0" the moment a watch
@@ -18,8 +19,13 @@ import { needsPermission, requestPermission, watch, watchHeading, type Fix } fro
  */
 const GPS_GRACE_MS = 12000;
 
-/** Where the compass stands, as far as the player is concerned. */
-export type CompassState = "off" | "needs-permission" | "on" | "denied";
+/**
+ * Where the compass stands, as far as the player is concerned.
+ * - `probing`: listening, no answer yet (shows nothing)
+ * - `needs-permission`: a tap on "Enable compass" may switch it on
+ * - `unavailable`: no compass to be had (a laptop) — nothing to show, nothing to ask
+ */
+export type CompassState = "off" | "probing" | "needs-permission" | "on" | "unavailable" | "denied";
 
 /** What the GPS has to say that is worth putting on screen. */
 export type GpsProblem = "denied" | "no-fix" | null;
@@ -35,6 +41,9 @@ export class DeviceSensors {
 	private stopGps: (() => void) | null = null;
 	private stopCompass: (() => void) | null = null;
 	private gpsErrorTimer = 0;
+	/** What the compass listener has seen so far — see `compass-decision.ts`. */
+	private evidence = { sawHeading: false, sawEmptyReading: false, timedOut: false, granted: false };
+	private probeTimer = 0;
 	private wakeLock: { release(): Promise<void> } | null = null;
 	private wantAwake = false;
 	compass: CompassState = "off";
@@ -74,20 +83,30 @@ export class DeviceSensors {
 			},
 		);
 
-		if (needsPermission()) {
-			// iOS: the compass can only be switched on from inside a tap.
-			this.setCompass("needs-permission");
-		} else {
-			this.startCompass();
-		}
+		// Listen first and ask only if that turns out to be needed: the permission API
+		// alone no longer says much (Chromium has it on laptops without a compass).
+		this.listenToCompass();
 	}
 
-	/** Ask iOS for the compass. Must be called from inside a user gesture. */
-	async requestCompass(): Promise<boolean> {
-		const granted = await requestPermission();
-		if (granted) this.startCompass();
-		else this.setCompass("denied");
-		return granted;
+	/**
+	 * Ask for the compass, from the "Enable compass" button. Must be called inside a user
+	 * gesture. Only an explicit "denied" counts as a refusal; anything else leaves the
+	 * button where it was.
+	 */
+	async requestCompass(): Promise<"granted" | "denied" | "prompt"> {
+		const result = await requestPermission();
+		if (result === "granted") {
+			this.evidence.granted = true;
+			// Listen again from scratch: a browser that was holding readings back starts
+			// sending them now, and one without a sensor answers with an empty one.
+			this.stopCompass?.();
+			this.stopCompass = null;
+			this.evidence.sawEmptyReading = false;
+			this.listenToCompass();
+		} else if (result === "denied") {
+			this.setCompass("denied");
+		}
+		return result;
 	}
 
 	stop() {
@@ -95,6 +114,9 @@ export class DeviceSensors {
 		this.stopGps = null;
 		this.stopCompass?.();
 		this.stopCompass = null;
+		clearTimeout(this.probeTimer);
+		this.probeTimer = 0;
+		this.evidence = { sawHeading: false, sawEmptyReading: false, timedOut: false, granted: false };
 		this.disarmGpsError();
 		this.keepAwake(false);
 		this.setCompass("off");
@@ -138,10 +160,46 @@ export class DeviceSensors {
 		if (document.visibilityState === "visible" && this.wantAwake) this.keepAwake(true);
 	}
 
-	private startCompass() {
-		if (this.stopCompass) return;
-		this.stopCompass = watchHeading((heading) => this.callbacks.onHeading(heading));
-		this.setCompass("on");
+	private listenToCompass() {
+		if (!this.stopCompass) {
+			this.stopCompass = watchHeading(
+				(heading) => {
+					if (!this.evidence.sawHeading) {
+						this.evidence.sawHeading = true;
+						this.decideCompass();
+					}
+					this.callbacks.onHeading(heading);
+				},
+				undefined,
+				() => {
+					this.evidence.sawEmptyReading = true;
+					this.decideCompass();
+				},
+			);
+		}
+		// Silence is an answer too, after a while (iOS before permission sends nothing).
+		this.evidence.timedOut = false;
+		clearTimeout(this.probeTimer);
+		this.probeTimer = window.setTimeout(() => {
+			this.evidence.timedOut = true;
+			this.decideCompass();
+		}, COMPASS_PROBE_MS);
+		this.decideCompass();
+	}
+
+	private decideCompass() {
+		const decision = decideCompass({
+			...this.evidence,
+			hasPermissionApi: needsPermission(),
+			coarsePointer: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
+		});
+		// A refusal stands until a reading proves otherwise.
+		if (this.compass === "denied" && decision !== "on") return;
+		this.setCompass(decision === "wait" ? "probing" : decision);
+		if (decision !== "wait") {
+			clearTimeout(this.probeTimer);
+			this.probeTimer = 0;
+		}
 	}
 
 	private setCompass(state: CompassState) {
