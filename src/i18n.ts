@@ -9,10 +9,6 @@
 // English; there is no in-app switcher, the browser already knows.
 // -----------------------------------------------------------------------------
 
-// Type-only import: erased at build time, so this does not create a runtime cycle
-// with geo -> config -> event-schedule -> i18n.
-import type { NavigationHint } from "./geo.js";
-
 export type Lang = "de" | "en";
 
 /** The browser's preferred language, as far as we care about it. */
@@ -147,52 +143,12 @@ interface Strings {
 
 	// --- The map screen. The HUD goes through here too: a player who gets a German
 	// overview must not then land on a half-English map. ---
-	waitingForGps: string;
-	/** Permission refused: actionable, and shown the moment it happens. */
-	gpsDenied: string;
-	/** No fix yet. Transient on iOS, so only shown once it has lasted (see `main.ts`). */
-	gpsNoFix: string;
-	offMap: string;
-	mapLoading: string;
-	mapLoadFailed: string;
 	/** Only ever seen over a live map — off the map an update applies itself. */
 	updateReady: string;
 	/** Heading and button of the dialog listing what changed (see whats-new.ts). */
 	whatsNewTitle: string;
 	whatsNewOk: string;
-	enableCompass: string;
-	compassDenied: string;
 	backToOverview: string;
-	navigateTo: string;
-	navigateHere: string;
-	/** A spot the player long-pressed, on a map whose grid is not on screen to name it. */
-	markedPosition: string;
-	/** The same spot when the grid is drawn, named by the square it falls in. */
-	gridSquare: (label: string) => string;
-	navStop: string;
-	/** The player's own marks — see `src/marks.ts`. */
-	markHere: string;
-	markMyPosition: string;
-	/** A new mark's name before the player gives it one. */
-	markName: (n: number) => string;
-	markRename: string;
-	markRenamePrompt: string;
-	markDelete: string;
-	/** The delete button's second state: a mark is the player's own work, so it asks once. */
-	markDeleteConfirm: string;
-	marksGroup: string;
-	navArrived: string;
-	navEnableCompass: string;
-	navOffField: string;
-	navHints: Record<NavigationHint, string>;
-	scale: string;
-	layers: string;
-	layerPoiIds: string;
-	layerGrid: string;
-	layerMask: string;
-	layerZones: string;
-	layerHqs: string;
-	layerMarks: string;
 	/** The top-row button that opens the prop dosimeter on the Stalker maps. */
 	dosimeter: string;
 	dosimeterClose: string;
@@ -283,50 +239,10 @@ const STRINGS: Record<Lang, Strings> = {
 		metaDescription:
 			"Deine GPS-Position auf der Taktikkarte der Airsoft-Events auf dem Flugplatz Mahlwinkel — " +
 			"offline, ohne Empfang.",
-		waitingForGps: "Warte auf GPS…",
-		gpsDenied: "GPS-Freigabe abgelehnt — Standort in den Browser-Einstellungen erlauben",
-		gpsNoFix: "⚠ Kein GPS-Signal — unter freiem Himmel klappt es besser",
-		offMap: "⚠ Außerhalb der Karte — Position in der Kartenmitte angezeigt",
-		mapLoading: "Karte wird geladen…",
-		mapLoadFailed: "⚠ Karte konnte nicht geladen werden — tippen zum Wiederholen",
 		updateReady: "Neue Version verfügbar — tippen zum Aktualisieren",
 		whatsNewTitle: "Neu in Field Maps",
 		whatsNewOk: "Verstanden",
-		enableCompass: "Kompass aktivieren",
-		compassDenied: "Kompass-Freigabe abgelehnt",
 		backToOverview: "Zur Übersicht",
-		navigateTo: "Navigieren zu…",
-		navigateHere: "Hierhin navigieren",
-		markedPosition: "Markierte Position",
-		gridSquare: (label) => `Feld ${label}`,
-		navStop: "Navigation beenden",
-		markHere: "Markieren",
-		markMyPosition: "Meine Position markieren",
-		markName: (n) => `Markierung ${n}`,
-		markRename: "Umbenennen",
-		markRenamePrompt: "Name der Markierung",
-		markDelete: "Löschen",
-		markDeleteConfirm: "Wirklich löschen?",
-		marksGroup: "Eigene Markierungen",
-		navArrived: "Du bist da",
-		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
-		navOffField: "Du stehst außerhalb dieses Spielfelds",
-		navHints: {
-			ahead: "Geradeaus",
-			bearRight: "Halb rechts",
-			turnRight: "Rechts abbiegen",
-			behind: "Hinter dir",
-			turnLeft: "Links abbiegen",
-			bearLeft: "Halb links",
-		},
-		scale: "Maßstab",
-		layers: "Kartenebenen",
-		layerPoiIds: "PoI-Nummern",
-		layerGrid: "Gitternetz",
-		layerMask: "Spielfeldgrenze",
-		layerZones: "Zonen",
-		layerHqs: "Hauptquartiere",
-		layerMarks: "Eigene Markierungen",
 		dosimeter: "Dosimeter öffnen",
 		dosimeterClose: "Dosimeter schließen",
 		dosimeterDial: "Zeigerinstrument, 0 bis 5, mal Messbereich",
@@ -556,50 +472,10 @@ const STRINGS: Record<Lang, Strings> = {
 		metaDescription:
 			"Your GPS position on the tactical map of the airsoft events at Mahlwinkel airfield, " +
 			"Germany — offline, no signal needed.",
-		waitingForGps: "Waiting for GPS…",
-		gpsDenied: "Location permission denied — allow it in your browser settings",
-		gpsNoFix: "⚠ No GPS signal — it works better out in the open",
-		offMap: "⚠ Off map — outside this field; position shown at map center",
-		mapLoading: "Loading map…",
-		mapLoadFailed: "⚠ Map could not be loaded — tap to retry",
 		updateReady: "New version available — tap to update",
 		whatsNewTitle: "What's new in Field Maps",
 		whatsNewOk: "Got it",
-		enableCompass: "Enable compass",
-		compassDenied: "Compass permission denied",
 		backToOverview: "Back to the overview",
-		navigateTo: "Navigate to…",
-		navigateHere: "Navigate here",
-		markedPosition: "Marked position",
-		gridSquare: (label) => `Square ${label}`,
-		navStop: "End navigation",
-		markHere: "Mark",
-		markMyPosition: "Mark my position",
-		markName: (n) => `Mark ${n}`,
-		markRename: "Rename",
-		markRenamePrompt: "Name of the mark",
-		markDelete: "Delete",
-		markDeleteConfirm: "Really delete?",
-		marksGroup: "My marks",
-		navArrived: "You have arrived",
-		navEnableCompass: "Enable compass for turn hints",
-		navOffField: "You are outside this field",
-		navHints: {
-			ahead: "Straight ahead",
-			bearRight: "Bear right",
-			turnRight: "Turn right",
-			behind: "Behind you",
-			turnLeft: "Turn left",
-			bearLeft: "Bear left",
-		},
-		scale: "Scale",
-		layers: "Map layers",
-		layerPoiIds: "PoI numbers",
-		layerGrid: "Grid",
-		layerMask: "Boundary mask",
-		layerZones: "Zones",
-		layerHqs: "Headquarters",
-		layerMarks: "My marks",
 		dosimeter: "Open dosimeter",
 		dosimeterClose: "Close dosimeter",
 		dosimeterDial: "Meter dial, 0 to 5, times the range",

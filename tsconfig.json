@@ -3,6 +3,9 @@
 		"target": "ES2021",
 		"module": "ESNext",
 		"moduleResolution": "bundler",
+		// The workspace packages export their TypeScript source under this condition, so
+		// the app builds them from source instead of from a `dist/` that may not exist.
+		"customConditions": ["source"],
 		"lib": ["ES2021", "DOM", "DOM.Iterable"],
 		"strict": true,
 		"noUnusedLocals": true,
@@ -12,6 +15,6 @@
 		"verbatimModuleSyntax": false,
 		"types": ["vite/client", "vite-plugin-pwa/client"]
 	},
-	"include": ["src"],
-	"exclude": ["src/**/*.test.ts"]
+	"include": ["src", "packages/*/src", "packages/field-map/test-page"],
+	"exclude": ["src/**/*.test.ts", "packages/*/src/**/*.test.ts"]
 }

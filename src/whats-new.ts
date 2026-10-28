@@ -22,7 +22,7 @@ import { LitElement, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { currentLang, strings } from "./i18n.js";
-import { CHECKPOINT_GLYPH } from "./glyphs.js";
+import { CHECKPOINT_GLYPH } from "@fieldmaps/core";
 
 interface Change {
 	de: string;

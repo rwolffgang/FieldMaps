@@ -1,5 +1,5 @@
 import { scenarioPoiNames } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * Airsoft Days — Delta Unit vs Ghost Infantry, drawn in the event's bright green

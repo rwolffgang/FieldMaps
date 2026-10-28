@@ -23,7 +23,7 @@
 // -----------------------------------------------------------------------------
 
 import * as L from "leaflet";
-import { paintTile, type TileScene } from "./osm-map.js";
+import { paintTile, type TileScene } from "@fieldmaps/core";
 
 /**
  * Cap on how far above device resolution a tile is rasterized.

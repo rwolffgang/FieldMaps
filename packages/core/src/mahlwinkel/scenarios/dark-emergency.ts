@@ -1,5 +1,5 @@
 import { scenarioPoiNames } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * Dark Emergency — GOF vs KGG vs Miliz, on the OSM vector base in the event's own

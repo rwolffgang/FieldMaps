@@ -1,21 +1,11 @@
 // -----------------------------------------------------------------------------
-// points-of-interest.ts
+// mahlwinkel/points-of-interest.ts
 // The shared registry of physical field locations. GPS coordinates are the same
 // no matter which scenario you play — only the *labels* change per scenario (see
-// src/scenarios/). Add a point here once; reference it by id from a scenario.
+// ./scenarios/). Add a point here once; reference it by id from a scenario.
 // -----------------------------------------------------------------------------
 
-/** A physical location on the field. Coordinates are shared across all scenarios. */
-export interface PointOfInterest {
-	id: string;
-	lat: number;
-	lng: number;
-}
-
-/** A point of interest with the display label for a specific scenario. */
-export interface LabeledPointOfInterest extends PointOfInterest {
-	name: string;
-}
+import type { LabeledPointOfInterest, PointOfInterest, PoiKind } from "../poi.js";
 
 /**
  * The six wind turbines on the field. They are the tallest thing out there and
@@ -40,7 +30,7 @@ export function isCheckpoint(id: string): boolean {
 }
 
 /** Every physical point of interest on the field, keyed by a stable id. */
-export const POINTS_OF_INTEREST: PointOfInterest[] = [
+const REGISTRY: PointOfInterest[] = [
 	{ id: "204", lat: 52.379127, lng: 11.823623 },
 	{ id: "217", lat: 52.378079, lng: 11.824319 },
 	{ id: "502", lat: 52.381657, lng: 11.817742 },
@@ -136,6 +126,18 @@ export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	// default labels: only the scenarios that name it show it.
 	{ id: "Schranke", lat: 52.3831897, lng: 11.8285109 },
 ];
+
+function kindOf(id: string): PoiKind | undefined {
+	if (isWindTurbine(id)) return "turbine";
+	if (isCheckpoint(id)) return "checkpoint";
+	return undefined;
+}
+
+/** Every physical point of interest on the field, keyed by a stable id. */
+export const POINTS_OF_INTEREST: PointOfInterest[] = REGISTRY.map((poi) => {
+	const kind = kindOf(poi.id);
+	return kind ? { ...poi, kind } : poi;
+});
 
 /**
  * Canonical labels for the Mission 24 layout — the default naming most scenarios
@@ -276,17 +278,4 @@ export function labelPointsOfInterest(poiNames: Record<string, string>): Labeled
 		labelledCache.set(poiNames, labelled);
 	}
 	return labelled;
-}
-
-/**
- * Order for a list a player scans by eye: the numbered buildings in ascending
- * numeric order, then the other named places (the checkpoints), then the wind
- * turbines grouped at the end — each named group alphabetically.
- */
-export function comparePointsOfInterest(a: PointOfInterest, b: PointOfInterest): number {
-	const group = (id: string) => (isWindTurbine(id) ? 2 : /^\d+$/.test(id) ? 0 : 1);
-	const byGroup = group(a.id) - group(b.id);
-	if (byGroup) return byGroup;
-	if (group(a.id) === 0) return Number(a.id) - Number(b.id);
-	return a.id.localeCompare(b.id);
 }

@@ -2,14 +2,20 @@
 	"name": "airsoft-field-map",
 	"private": true,
 	"version": "0.1.0",
+	"license": "MIT",
 	"type": "module",
+	"workspaces": [
+		"packages/*"
+	],
 	"scripts": {
 		"dev": "vite --host",
 		"build": "tsc --noEmit && vite build",
 		"preview": "npm run build && wrangler dev",
 		"serve": "vite preview --host 0.0.0.0 --port 4173",
 		"tunnel": "npx --yes localtunnel --port 4173",
-		"test": "tsx src/transform.test.ts && tsx src/radiation.test.ts",
+		"test": "npm run test --workspaces && tsx src/radiation.test.ts",
+		"dev:component": "vite --config packages/field-map/vite.config.ts",
+		"build:packages": "npm run build --workspaces",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"prepare": "husky",
@@ -19,6 +25,8 @@
 		"*.{ts,tsx,js,jsx,json,css,html,md}": "prettier --write"
 	},
 	"dependencies": {
+		"@fieldmaps/core": "*",
+		"@fieldmaps/field-map": "*",
 		"leaflet": "^1.9.4",
 		"lit": "^3.2.1"
 	},

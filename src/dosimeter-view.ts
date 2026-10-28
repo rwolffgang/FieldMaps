@@ -42,7 +42,7 @@
 
 import { LitElement, css, html, svg, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import type { LatLng } from "./scenarios/scenario.js";
+import type { LatLng } from "@fieldmaps/core";
 import {
 	BACKGROUND_LEVEL,
 	levelForBearing,

@@ -1,5 +1,5 @@
 import { scenarioPoiNames } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * LIGHT-SIM — TERRA vs UCRF. The printed map (DE-39517-2026-7) is deliberately

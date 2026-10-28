@@ -1,5 +1,5 @@
 import { DEFAULT_POI_NAMES } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * Mission 24 — drawn on the shared OSM vector base in the cold "m24" look, which was

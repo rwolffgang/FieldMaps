@@ -1,5 +1,3 @@
-import { POSITION_SMOOTHING, SNAP_DISTANCE_M } from "./config.js";
-
 export interface Fix {
 	lat: number;
 	lng: number;
@@ -59,12 +57,31 @@ export function navigationHint(relativeDegrees: number): NavigationHint {
 	return "bearLeft";
 }
 
+export interface WatchOptions {
+	/**
+	 * How much of each new fix is taken on board, in `smoothed += k * (raw - smoothed)`.
+	 * So **1 = raw GPS (jumpy), 0 = frozen** at the first fix — lower means *more*
+	 * smoothing, not less.
+	 */
+	smoothing?: number;
+	/** If a new fix jumps more than this many meters, snap instead of smoothing. */
+	snapDistanceM?: number;
+}
+
+/** ~0.4 keeps the dot steady without making it visibly lag a walking player. */
+export const POSITION_SMOOTHING = 0.4;
+export const SNAP_DISTANCE_M = 25;
+
 /**
  * Watch position. Applies a light exponential smoother to lat/lng so the dot
  * doesn't jitter, but SNAPS on large jumps so it never lags real movement.
  * Returns a stop() function.
  */
-export function watch(onFix: Cb, onError: (e: GeolocationPositionError) => void): () => void {
+export function watch(
+	onFix: Cb,
+	onError: (e: GeolocationPositionError) => void,
+	{ smoothing = POSITION_SMOOTHING, snapDistanceM = SNAP_DISTANCE_M }: WatchOptions = {},
+): () => void {
 	if (!("geolocation" in navigator)) {
 		onError({
 			code: 2,
@@ -77,7 +94,7 @@ export function watch(onFix: Cb, onError: (e: GeolocationPositionError) => void)
 	}
 
 	let smoothed: Fix | null = null;
-	const k = POSITION_SMOOTHING;
+	const k = smoothing;
 
 	const id = navigator.geolocation.watchPosition(
 		(pos) => {
@@ -92,7 +109,7 @@ export function watch(onFix: Cb, onError: (e: GeolocationPositionError) => void)
 
 			if (
 				!smoothed ||
-				distanceMeters(smoothed.lat, smoothed.lng, raw.lat, raw.lng) > SNAP_DISTANCE_M
+				distanceMeters(smoothed.lat, smoothed.lng, raw.lat, raw.lng) > snapDistanceM
 			) {
 				smoothed = raw; // first fix or teleport: snap
 			} else {

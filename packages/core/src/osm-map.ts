@@ -16,10 +16,10 @@
 // warm tone wash over the whole field.
 // -----------------------------------------------------------------------------
 
-import type { ZoneStyle } from "./scenarios/scenario.js";
+import type { ZoneStyle } from "./scenario.js";
 
 /** Feature classes emitted by scripts/fetch-osm.mjs (property `k`). */
-type FeatureClass =
+export type FeatureClass =
 	| "grass"
 	| "farmland"
 	| "builtup"
@@ -50,14 +50,14 @@ export interface OsmFeatureCollection {
 	features: OsmFeature[];
 }
 
-interface AreaStyle {
+export interface AreaStyle {
 	kind: "area";
 	fillColor: string;
 	fillOpacity: number;
 	color?: string;
 	weight?: number;
 }
-interface LineStyle {
+export interface LineStyle {
 	kind: "line";
 	color: string;
 	weight: number;
@@ -65,10 +65,10 @@ interface LineStyle {
 	opacity?: number;
 	lineCap?: "butt" | "round" | "square";
 }
-type ClassStyle = AreaStyle | LineStyle;
+export type ClassStyle = AreaStyle | LineStyle;
 
 /** A complete look for the OSM vector map. */
-interface OsmTheme {
+export interface OsmTheme {
 	/** Ground fill under everything, so no background shows between features. */
 	ground: string;
 	/** Optional translucent wash over the whole field to unify the palette. */
@@ -81,7 +81,32 @@ interface OsmTheme {
 	edge: string;
 	/** Per-feature-class styling. */
 	styles: Record<FeatureClass, ClassStyle>;
+	/**
+	 * Everything outside the play area: a darkening wash plus a diagonal hatch, and a
+	 * dashed line along the boundary. Optional; every built-in theme uses the default.
+	 */
+	outOfBounds?: OutOfBoundsStyle;
 }
+
+export interface OutOfBoundsStyle {
+	/** The wash over the masked area, and how opaque it is. */
+	color: string;
+	opacity: number;
+	/** The diagonal stripes on top of it, and how opaque they are. */
+	hatch: string;
+	hatchOpacity: number;
+	/** The dashed line along the play-area boundary. */
+	boundary: string;
+}
+
+/** The out-of-bounds look every built-in theme shares. */
+const DEFAULT_OUT_OF_BOUNDS: OutOfBoundsStyle = {
+	color: "#05070a",
+	opacity: 0.55,
+	hatch: "#000000",
+	hatchOpacity: 0.3,
+	boundary: "#e8c24d",
+};
 
 // "Operation Tschernobyl" — warm, desaturated, satellite-photo sepia. Forest
 // darkens the olive-tan ground, clearings/sand lighten it; a warm wash unifies it.
@@ -281,25 +306,57 @@ const lafTheme: OsmTheme = {
 	},
 };
 
-const THEMES = {
+/** Name of a built-in OSM look, one per event's printed tactical map. */
+export type OsmThemeName = "opt" | "m24" | "de" | "asd" | "lso" | "laf";
+
+/** The built-in looks. Treat them as read-only; derive a new one with `extendTheme`. */
+export const THEMES: Readonly<Record<OsmThemeName, OsmTheme>> = {
 	opt: optTheme,
 	m24: m24Theme,
 	de: deTheme,
 	asd: asdTheme,
 	lso: lsoTheme,
 	laf: lafTheme,
-} as const;
-/** Name of an available OSM look. */
-export type OsmThemeName = keyof typeof THEMES;
+};
+
+/** A built-in theme by name, or a theme object as is. */
+export function resolveTheme(theme: OsmThemeName | OsmTheme = "opt"): OsmTheme {
+	return typeof theme === "string" ? THEMES[theme] : theme;
+}
+
+/** What `extendTheme` takes: any part of a theme, down to a single property of one class. */
+export type ThemeOverrides = Partial<Omit<OsmTheme, "styles" | "outOfBounds">> & {
+	styles?: Partial<Record<FeatureClass, Partial<AreaStyle> | Partial<LineStyle>>>;
+	outOfBounds?: Partial<OutOfBoundsStyle>;
+};
 
 /**
- * The theme's opaque surround color — the same fill `buildOsmFrame` paints outside the
+ * A new theme: `base` with `overrides` merged in. Feature classes merge property by
+ * property, so `{ styles: { road_major: { color: "#f00" } } }` recolours the main
+ * roads and keeps their width, dashes and everything else.
+ */
+export function extendTheme(base: OsmThemeName | OsmTheme, overrides: ThemeOverrides): OsmTheme {
+	const from = resolveTheme(base);
+	const styles = { ...from.styles };
+	for (const [klass, style] of Object.entries(overrides.styles ?? {})) {
+		const key = klass as FeatureClass;
+		styles[key] = { ...styles[key], ...style } as ClassStyle;
+	}
+	const outOfBounds =
+		overrides.outOfBounds || from.outOfBounds
+			? { ...DEFAULT_OUT_OF_BOUNDS, ...from.outOfBounds, ...overrides.outOfBounds }
+			: undefined;
+	return { ...from, ...overrides, styles, outOfBounds };
+}
+
+/**
+ * The theme's opaque surround color — the same fill `paintTile` paints outside the
  * grid rectangle. Used as the map container's background so panning past the field (or
  * past the drawn clip area during a fast fling) shows the map's own border color
  * instead of the app's dark blue.
  */
-export function osmSurroundColor(theme: OsmThemeName = "opt"): string {
-	return THEMES[theme].border;
+export function osmSurroundColor(theme: OsmThemeName | OsmTheme = "opt"): string {
+	return resolveTheme(theme).border;
 }
 
 // Paint order, bottom to top: broad land cover, then water, then buildings, then
@@ -464,7 +521,7 @@ export interface TileScene {
 	 * zones, frontlines) and stay transparent everywhere else.
 	 */
 	terrain: BakedGeometry | null;
-	theme: OsmThemeName;
+	theme: OsmTheme;
 	/** The canvas rectangle. Nothing is painted inside it that is not the map, and
 	 *  nothing is painted outside it that is not the surround. */
 	width: number;
@@ -492,7 +549,7 @@ export interface TileView {
 }
 
 /** Out-of-bounds hatch: perpendicular period and stripe width, in screen pixels. */
-const MASK_HATCH = { period: 9, width: 2.5, color: "#000000", alpha: 0.3 };
+const MASK_HATCH = { period: 9, width: 2.5 };
 /** Zone hatch, per the printed maps' safe-zone stripes. */
 const ZONE_HATCH = { period: 10, width: 3.5, alpha: 0.55 };
 /**
@@ -766,7 +823,7 @@ function paintFeature(
  * convention: origin top-left, y down.
  */
 export function paintTile(ctx: CanvasRenderingContext2D, scene: TileScene, view: TileView): void {
-	const theme = THEMES[scene.theme];
+	const theme = scene.theme;
 	const { minX, minY, maxX, maxY, scale } = view;
 	const terrain = scene.terrain;
 
@@ -831,16 +888,24 @@ export function paintTile(ctx: CanvasRenderingContext2D, scene: TileScene, view:
 		ctx.beginPath();
 		ctx.rect(0, 0, scene.width, scene.height);
 		traceShape(ctx, playArea, true);
-		ctx.globalAlpha = 0.55;
-		ctx.fillStyle = "#05070a";
+		const outOfBounds = theme.outOfBounds ?? DEFAULT_OUT_OF_BOUNDS;
+		ctx.globalAlpha = outOfBounds.opacity;
+		ctx.fillStyle = outOfBounds.color;
 		ctx.fill("evenodd");
-		fillHatch(ctx, view, MASK_HATCH.color, MASK_HATCH.alpha, MASK_HATCH.period, MASK_HATCH.width);
+		fillHatch(
+			ctx,
+			view,
+			outOfBounds.hatch,
+			outOfBounds.hatchOpacity,
+			MASK_HATCH.period,
+			MASK_HATCH.width,
+		);
 
 		if (overlaps(playArea, view, 4)) {
 			ctx.beginPath();
 			traceShape(ctx, playArea, true);
 			ctx.globalAlpha = 0.9;
-			ctx.strokeStyle = "#e8c24d";
+			ctx.strokeStyle = outOfBounds.boundary;
 			ctx.lineWidth = 2 / scale;
 			ctx.setLineDash([10 / scale, 6 / scale]);
 			ctx.stroke();

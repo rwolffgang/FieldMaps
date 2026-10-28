@@ -1,20 +1,32 @@
 // -----------------------------------------------------------------------------
-// scenarios/scenario.ts
+// scenario.ts
 // A "scenario" is one playable variant of the field: which base map it draws on,
 // which points of interest are active (and what they're called), and the boundary
 // of the active play area.
 //
-// The base is either the shared OpenStreetMap vector map (see src/osm-map.ts) or a
+// The base is either the shared OpenStreetMap vector map (see osm-map.ts) or a
 // pre-georeferenced photo image. Only the labels, the base, and the play-area
 // boundary change between scenarios.
 //
-// To add a scenario: copy an existing file in this folder, edit it, and register
-// it in ./index.ts. Nothing else needs to change.
+// The scenarios themselves live in mahlwinkel/scenarios/. To add one: copy an
+// existing file there, edit it, and register it in that folder's index.ts.
 // -----------------------------------------------------------------------------
 
-import type { ControlPoint } from "../transform.js";
-import type { OsmThemeName } from "../osm-map.js";
-import type { EventSchedule } from "../event-schedule.js";
+import type { ControlPoint } from "./transform.js";
+import type { OsmThemeName } from "./osm-map.js";
+
+/** [month, day] with month 1–12. */
+export type MonthDay = [number, number];
+
+/**
+ * When an event runs, as month/day only: the events recur every year, so storing a
+ * year would make every scenario file go stale each January.
+ */
+export interface EventSchedule {
+	start: MonthDay;
+	/** Last day of the event, inclusive. Omit for a one-day game. */
+	end?: MonthDay;
+}
 
 /** A [lat, lng] coordinate pair, as copied from Google Maps. */
 export type LatLng = [number, number];
@@ -69,7 +81,7 @@ export interface Headquarters {
 	lng: number;
 	/** Ring colour, matching the printed map. */
 	color: string;
-	/** Emblem file under /public/logos (omit for a plain ring). */
+	/** Emblem file, relative to the asset base (`logos/…`, see `assets/`); omit for a plain ring. */
 	logo?: string;
 }
 
@@ -124,8 +136,8 @@ export interface Scenario {
 	/** Open frontlines / boundary lines from the printed map. */
 	lines?: BoundaryLine[];
 	/**
-	 * Offer the prop radiation dosimeter (`src/dosimeter-view.ts`) from the map's top
-	 * row. For the Stalker games; it measures nothing and is driven by a slider.
+	 * Offer the prop radiation dosimeter from the map's top row. For the Stalker
+	 * games; it measures nothing. Field Maps' own feature: `<field-map>` ignores it.
 	 */
 	dosimeter?: boolean;
 	/**

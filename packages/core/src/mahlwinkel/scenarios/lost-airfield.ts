@@ -1,5 +1,5 @@
 import { LOST_AIRFIELD_ONLY_NAMES, scenarioPoiNames } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * Lost Airfield — the one-day game (PMC vs Rebellen), in a cool grey-green daytime

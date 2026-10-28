@@ -1,5 +1,5 @@
 import { scenarioPoiNames } from "../points-of-interest.js";
-import type { Scenario } from "./scenario.js";
+import type { Scenario } from "../../scenario.js";
 
 /**
  * Operation Tschernobyl — Stalker/Chernobyl themed game on the OpenStreetMap

@@ -37,7 +37,7 @@
 // under trees delivers (5–15 m) and the hand-traced zone edges (tens of metres).
 // -----------------------------------------------------------------------------
 
-import type { LatLng } from "./scenarios/scenario.js";
+import type { LatLng } from "@fieldmaps/core";
 
 const EARTH_RADIUS_M = 6378137;
 const DEG = Math.PI / 180;

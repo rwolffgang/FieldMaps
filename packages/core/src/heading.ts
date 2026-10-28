@@ -1,5 +1,3 @@
-import { HEADING_SMOOTHING } from "./config.js";
-
 // Cross-device compass is genuinely fiddly and airsoft fields make it worse
 // (metal replicas + batteries deflect the magnetometer). This is a pragmatic
 // best-effort; the orchestrator prefers GPS course when the user is moving.
@@ -43,9 +41,15 @@ class AngleSmoother {
 	}
 }
 
+/**
+ * Heading smoothing for the compass (low-pass on the angle): 1 = raw magnetometer,
+ * 0 = frozen — the same scale as `POSITION_SMOOTHING` in geo.ts.
+ */
+export const HEADING_SMOOTHING = 0.25;
+
 /** Start listening to the compass. Returns a stop() function. */
-export function watchHeading(onHeading: Cb): () => void {
-	const smoother = new AngleSmoother(HEADING_SMOOTHING);
+export function watchHeading(onHeading: Cb, smoothing = HEADING_SMOOTHING): () => void {
+	const smoother = new AngleSmoother(smoothing);
 
 	const handler = (e: DeviceOrientationEvent) => {
 		let heading: number | null = null;

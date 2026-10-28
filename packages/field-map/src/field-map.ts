@@ -1,78 +1,110 @@
-import { LitElement, html } from "lit";
-import { customElement, state } from "lit/decorators.js";
+// -----------------------------------------------------------------------------
+// field-map.ts
+// `<field-map>`: the Field Maps map as a custom element. It draws one scenario of
+// the Mahlwinkel airfield (picked by `scenario`), shows the player's position on it
+// from the device's GPS and compass, and navigates them to a point of interest, a
+// mark of their own, a live marker the host app set, or any spot on the map.
+//
+// The host app owns everything around it: what screen it sits on, the buttons it
+// puts in the top row, a server feeding it other players. It talks to the element
+// through properties, methods and `fieldmap-*` events — see `types.ts` and the
+// package's AGENTS.md.
+// -----------------------------------------------------------------------------
+
+import { LitElement, html, type PropertyValues } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
 import { guard } from "lit/directives/guard.js";
 import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import { solveTransform, type Transform } from "./transform.js";
+import leafletCss from "leaflet/dist/leaflet.css?inline";
+import fieldMapCss from "./field-map.css?inline";
 import {
-	MAPS,
-	DEFAULT_MAP_ID,
-	getMapById,
-	getPointsOfInterestForMap,
-	type MapDefinition,
-	type LabeledPointOfInterest,
-} from "./config.js";
-import { comparePointsOfInterest, isCheckpoint, isWindTurbine } from "./points-of-interest.js";
-import { CHECKPOINT_GLYPH } from "./glyphs.js";
-import { bearingDegrees, distanceMeters, navigationHint, relativeBearingDegrees } from "./geo.js";
-import {
+	solveTransform,
+	comparePointsOfInterest,
+	bearingDegrees,
+	distanceMeters,
+	navigationHint,
+	relativeBearingDegrees,
 	bakeOsm,
 	bakeShape,
 	gridColumnLabel,
 	osmSurroundColor,
+	resolveTheme,
 	GRID_STEP_M,
+	CHECKPOINT_GLYPH,
+	BRAND_BLUE,
+	BRAND_ORANGE,
+	markStore,
+	markIdFromTarget,
+	markTargetId,
+	type Transform,
+	type LabeledPointOfInterest,
+	type MapDefinition,
+	type Fix,
 	type BakedGeometry,
 	type BakedLine,
 	type BakedShape,
 	type BakedZone,
 	type OsmFeatureCollection,
+	type OsmTheme,
+	type OsmThemeName,
 	type TileScene,
-} from "./osm-map.js";
-import { BasemapLayer } from "./basemap-layer.js";
-import type { DosimeterGuidance, DosimeterView } from "./dosimeter-view.js";
-import { primeDosimeterAudio } from "./dosimeter-view.js";
-import { BUILDING_LEVEL, POI_LEVEL, type RadiationPoint } from "./radiation.js";
-import type { LatLng } from "./scenarios/scenario.js";
-import { goHome, routedMapId } from "./router.js";
-import { BRAND_BLUE, BRAND_ORANGE } from "./brand.js";
-import { strings } from "./i18n.js";
-import {
-	installMethod,
-	installNudgeSnoozed,
-	onInstallChange,
-	promptInstall,
-	snoozeInstallNudge,
-	type InstallMethod,
-} from "./install.js";
-import {
-	addMark,
-	deleteMark,
-	loadMarks,
-	markIdFromTarget,
-	markTargetId,
-	renameMark,
 	type Mark,
-} from "./marks.js";
+	type MarkStore,
+} from "@fieldmaps/core";
+import { getMap, labelPointsOfInterest } from "@fieldmaps/core/mahlwinkel";
+import { BasemapLayer } from "./basemap-layer.js";
+import { DeviceSensors, type CompassState, type GpsProblem } from "./sensors.js";
+import { LiveMarkerLayer } from "./markers.js";
+import { escapeHtml } from "./marker-diff.js";
+import { fieldMapStrings, type FieldMapLang, type FieldMapStrings } from "./strings.js";
+import type {
+	ExternalFix,
+	FieldMapEventMap,
+	FieldMapInsets,
+	GuidanceDetail,
+	MapMarker,
+	MarkerLayer,
+	NavigateOptions,
+	NavigationChangeReason,
+	NavigationSource,
+	NavigationState,
+	NavigationTarget,
+	PermissionDetail,
+	PositionFix,
+} from "./types.js";
 
-// There is no in-app language switcher — the browser's choice is fixed for the
-// session — so resolving the strings once at module load is enough.
-const t = strings();
-
-const STORAGE_KEY = "field-map-selected-id";
-const TOGGLES_KEY = "field-map-toggles";
-/** Set once the "navigate with the Geiger counter" hint has been shown. */
-const DOSIMETER_HINT_KEY = "field-map-dosimeter-hint-seen";
-/** How long that hint stays up before it gets out of the way by itself. */
-const DOSIMETER_HINT_MS = 10_000;
-
-function dosimeterHintSeen(): boolean {
-	try {
-		return localStorage.getItem(DOSIMETER_HINT_KEY) === "1";
-	} catch {
-		return false;
-	}
-}
 const ARRIVED_DISTANCE_M = 8;
+/**
+ * How far past the arrival radius the player has to walk away again before a second
+ * arrival is reported — so a fix wobbling on the 8 m line does not report one per
+ * second.
+ */
+const ARRIVED_RESET_M = 20;
+
+/** Above this ground speed (m/s) prefer GPS course over the (metal-noisy) compass. */
+const GPS_HEADING_SPEED = 0.7;
+
+/**
+ * The `selectedPoiId` prefix a live marker carries as a navigation target — the
+ * same trick as a mark's `__mark__:` and a picked spot's `__here__`. Internal: the
+ * public methods take the marker's own id.
+ */
+const MARKER_TARGET_PREFIX = "__marker__:";
+
+/**
+ * Leaflet's stylesheet and ours, as one `<style>` at the very *start* of `<head>`,
+ * added the first time any `<field-map>` connects. First, so that a host's own
+ * stylesheets come later and win a tie: every rule here is scoped as
+ * `field-map .something`, and a host that writes the same selector overrides it
+ * without `!important`.
+ */
+function injectStyles() {
+	if (document.querySelector("style[data-field-map]")) return;
+	const style = document.createElement("style");
+	style.dataset.fieldMap = "";
+	style.textContent = `${leafletCss}\n${fieldMapCss}`;
+	document.head.prepend(style);
+}
 
 /**
  * The `selectedPoiId` a spot picked off the map carries. Navigation is keyed by PoI
@@ -148,19 +180,6 @@ const GRID_AXIS_MIN_PX = 20;
  * level doubles what the basemap has to rasterize.
  */
 const MAX_ZOOM = 2;
-
-/**
- * Which map to show on first paint. The URL wins — a bookmarked `?map=…` must open
- * that map even if the user last looked at a different one — then the last used map,
- * then the first one registered.
- */
-function initialMapId(): string {
-	const routed = routedMapId();
-	if (routed != null) return routed;
-	const stored = localStorage.getItem(STORAGE_KEY);
-	if (stored != null && MAPS.some((map) => map.id === stored)) return stored;
-	return DEFAULT_MAP_ID;
-}
 
 interface Toggles {
 	/** Show the id (number) label on every PoI, not just on hover. */
@@ -282,9 +301,9 @@ function fillAxisStrip(strip: HTMLElement, count: number, label: (index: number)
 	}
 }
 
-function loadStoredToggles(): Toggles {
+function loadStoredToggles(key: string): Toggles {
 	try {
-		const raw = localStorage.getItem(TOGGLES_KEY);
+		const raw = localStorage.getItem(key);
 		if (raw) return { ...DEFAULT_TOGGLES, ...(JSON.parse(raw) as Partial<Toggles>) };
 	} catch {
 		// Ignore malformed/unavailable storage — fall back to defaults.
@@ -292,12 +311,118 @@ function loadStoredToggles(): Toggles {
 	return { ...DEFAULT_TOGGLES };
 }
 
-@customElement("map-view")
-export class MapView extends LitElement {
+/** Marker layers the player hid, by layer id — a set, persisted as an array. */
+function loadHiddenLayers(key: string): Set<string> {
+	try {
+		const raw = localStorage.getItem(key);
+		const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+		if (Array.isArray(parsed)) return new Set(parsed.filter((id) => typeof id === "string"));
+	} catch {
+		// Ignore malformed/unavailable storage.
+	}
+	return new Set();
+}
+
+/** The hooks a host fills with its own chrome; see the `top-start` & co. properties. */
+const SLOTS = {
+	"top-start": "topStart",
+	"top-end": "topEnd",
+	"top-notice": "topNotice",
+	"bottom-notice": "bottomNotice",
+} as const;
+
+@customElement("field-map")
+export class FieldMap extends LitElement {
 	// Light DOM: Leaflet ships global CSS that shadow DOM would wall off.
 	protected createRenderRoot() {
 		return this;
 	}
+
+	// --- Public properties ------------------------------------------------------------
+
+	/**
+	 * The scenario to draw, by id ("opt", "de", …): one event on the Mahlwinkel airfield,
+	 * from `SCENARIOS` in `@fieldmaps/core/mahlwinkel`. Everything on the map — terrain,
+	 * points of interest, play area, zones, headquarters — comes from it. Changing it
+	 * ends a running navigation.
+	 */
+	@property({ reflect: true }) scenario = "";
+
+	/**
+	 * How the basemap looks: a built-in theme name ("opt", "m24", "de", "asd", "lso",
+	 * "laf") or an `OsmTheme` object (see `extendTheme`). Default: the scenario's own.
+	 */
+	@property({ attribute: false }) theme: OsmThemeName | OsmTheme | undefined = undefined;
+
+	/**
+	 * Where the package's assets (`map_osm.geojson`, `logos/`) are served, as a URL or
+	 * a path relative to the page. Default: the page's own directory.
+	 */
+	@property({ attribute: "asset-base" }) assetBase = "";
+
+	/** "de" or "en". Default: the browser's language (German if it prefers German). */
+	@property() locale: FieldMapLang | undefined = undefined;
+
+	/** Replacements for any of the texts the element shows; see `FieldMapStrings`. */
+	@property({ attribute: false }) strings: Partial<FieldMapStrings> = {};
+
+	/**
+	 * Prefix of the `localStorage` keys the element keeps the player's marks and layer
+	 * switches under (`<prefix>-marks`, `<prefix>-toggles`, `<prefix>-marker-layers`).
+	 */
+	@property({ attribute: "storage-prefix" }) storagePrefix = "field-map";
+
+	/** Space the host's own chrome covers at the top and bottom of the screen, in px. */
+	@property({ attribute: false }) insets: FieldMapInsets = {};
+
+	/**
+	 * "device" (default): the element watches the device's GPS and compass itself,
+	 * asking for permission once it is first on screen. "external": it uses only what
+	 * the host passes to `setPosition()`.
+	 */
+	@property({ attribute: "position-source" }) positionSource: "device" | "external" = "device";
+
+	/** Keep the screen on while the map is visible. Set the attribute to "false" to stop it. */
+	@property({
+		attribute: "wake-lock",
+		converter: { fromAttribute: (value) => value !== "false" },
+	})
+	wakeLock = true;
+
+	/**
+	 * Show the "© OpenStreetMap" credit the map data's licence (ODbL) asks for. Turn it
+	 * off only if your app credits OpenStreetMap somewhere players will see it.
+	 */
+	@property({
+		attribute: "attribution",
+		converter: { fromAttribute: (value) => value !== "false" },
+	})
+	attribution = true;
+
+	/** Live markers: other players, objectives — see `MapMarker`. Replace the array to update. */
+	@property({ attribute: false }) markers: readonly MapMarker[] = [];
+
+	/** Rows of the ⚙ menu that show or hide the markers of one `layer`. */
+	@property({ attribute: false }) markerLayers: readonly MarkerLayer[] = [];
+
+	/** After how many milliseconds without an update a marker with `seenAt` fades. 0: never. */
+	@property({ type: Number, attribute: "stale-after-ms" }) staleAfterMs = 30_000;
+
+	/** Host elements placed in the top row, left. Or a child with `slot="top-start"`. */
+	@property({ attribute: false }) topStart: Element | null = null;
+	/** Host elements placed in the top row, right, before the ⚙ button. `slot="top-end"`. */
+	@property({ attribute: false }) topEnd: Element | null = null;
+	/** Host element placed under the top row (a notice, a banner). `slot="top-notice"`. */
+	@property({ attribute: false }) topNotice: Element | null = null;
+	/** Host element placed above the status pill at the bottom. `slot="bottom-notice"`. */
+	@property({ attribute: false }) bottomNotice: Element | null = null;
+
+	// --- Internals ----------------------------------------------------------------------
+
+	private t: FieldMapStrings = fieldMapStrings();
+	/** The scenario resolved; null while `scenario` is unset or names nothing. */
+	@state() private mapDef: MapDefinition | null = null;
+	private marksStore: MarkStore = markStore("field-map-marks");
 
 	private map!: L.Map;
 	private transform!: Transform;
@@ -341,22 +466,106 @@ export class MapView extends LitElement {
 	 * The fix the position layers are currently placed for — not the last one reported.
 	 *
 	 * A heading-only update carries the same position again, and re-placing for it is
-	 * pure cost (see `update_`). This is what says "already placed", so it is cleared by
+	 * pure cost (see `applyPosition`). This is what says "already placed", so it is cleared by
 	 * `loadMap`: a new map means a new calibration, and the same latitude and longitude
 	 * land on a different pixel.
 	 */
 	private placedFix: { lat: number; lng: number; accuracy: number } | null = null;
 
-	private stopWatchingInstall?: () => void;
+	/** The device's GPS and compass, in `position-source="device"` mode. */
+	private sensors = new DeviceSensors({
+		onFix: (fix) => {
+			if (this.positionSource !== "device") return;
+			this.pendingFix = fix;
+			if (!this.geolocationGranted) {
+				this.geolocationGranted = true;
+				this.emitPermission({ kind: "geolocation", state: "granted" });
+			}
+			this.schedulePush();
+		},
+		onHeading: (heading) => {
+			if (this.positionSource !== "device") return;
+			this.compassHeading = heading;
+			this.schedulePush();
+		},
+		onGpsProblem: (problem) => this.onGpsProblem(problem),
+		onCompassState: (state) => this.onCompassState(state),
+	});
+	private geolocationGranted = false;
+	/** The newest fix and compass reading, applied together once per frame (`schedulePush`). */
+	private pendingFix: Fix | null = null;
+	private compassHeading: number | null = null;
+	private pushFrame = 0;
+	/** Whether the container had a size at the last resize — i.e. the map is on screen. */
+	private visible = false;
+	/** The live markers on the map. Null until the Leaflet map exists. */
+	private live: LiveMarkerLayer | null = null;
+	private staleTimer = 0;
+	/** A `navigateTo*` call made before the map existed, applied once it does. */
+	private pendingNavigation: (() => void) | null = null;
+	/** Who started the running navigation, and when — see `navigation`. */
+	private navSource: NavigationSource = "user";
+	private navStartedAt = 0;
+	/** The state last reported in `fieldmap-navigation`, so the next one can say what it replaced. */
+	private reportedNavigation: NavigationState = null;
+	/** Whether this approach to the target has been reported in `fieldmap-arrived`. */
+	private arrivedReported = false;
+	/** The guidance last reported, so a reading that changed nothing does not fire again. */
+	private reportedGuidance: GuidanceDetail | null = null;
+
+	private onOnline = () => this.retryVectorMap();
+	private onVisibilityChange = () => this.sensors.onVisibilityChange();
 
 	connectedCallback() {
 		super.connectedCallback();
-		this.stopWatchingInstall = onInstallChange(() => (this.install = installMethod()));
+		injectStyles();
+		// A host that writes its chrome as children (`<button slot="top-start">`) gets it
+		// placed where the property would put it.
+		for (const child of Array.from(this.children)) {
+			const slot = child.getAttribute("slot") as keyof typeof SLOTS | null;
+			const key = slot ? SLOTS[slot] : undefined;
+			if (key && this[key] == null) this[key] = child;
+		}
+		// If the map data failed to load, take a returning network as the cue to retry
+		// without the player having to notice the pill.
+		window.addEventListener("online", this.onOnline);
+		document.addEventListener("visibilitychange", this.onVisibilityChange);
+		this.staleTimer = window.setInterval(() => this.live?.tick(), 5000);
 	}
 
 	disconnectedCallback() {
 		super.disconnectedCallback();
-		this.stopWatchingInstall?.();
+		window.removeEventListener("online", this.onOnline);
+		document.removeEventListener("visibilitychange", this.onVisibilityChange);
+		clearInterval(this.staleTimer);
+		cancelAnimationFrame(this.pushFrame);
+		this.pushFrame = 0;
+		this.sensors.stop();
+	}
+
+	/**
+	 * Resolve the public properties into internal state before a render reads them:
+	 * the scenario into its map definition, the language and overrides into strings,
+	 * the storage prefix into the stores.
+	 */
+	protected willUpdate(changed: PropertyValues) {
+		if (changed.has("locale") || changed.has("strings")) {
+			this.t = fieldMapStrings(this.locale || undefined, this.strings);
+			if (!this.lastGps && !this.vectorRetry && this.mapDef) this.status = this.t.waitingForGps;
+		}
+		if (changed.has("storagePrefix")) {
+			this.marksStore = markStore(`${this.storagePrefix}-marks`);
+			this.toggles = loadStoredToggles(`${this.storagePrefix}-toggles`);
+			this.hiddenLayers = loadHiddenLayers(`${this.storagePrefix}-marker-layers`);
+		}
+		if (changed.has("scenario")) {
+			const definition = this.scenario ? (getMap(this.scenario) ?? null) : null;
+			if (this.scenario && !definition) {
+				console.error(`[field-map] unknown scenario "${this.scenario}"`);
+				this.status = this.t.unknownScenario(this.scenario);
+			}
+			this.mapDef = definition;
+		}
 	}
 	/**
 	 * True between `zoomstart` and `zoomend` — a pinch, a wheel step, a `fitBounds`.
@@ -383,10 +592,9 @@ export class MapView extends LitElement {
 	 */
 	private framed = false;
 
-	@state() private status = t.waitingForGps;
+	@state() private status = this.t.waitingForGps;
 	@state() private following = true;
 	@state() private offMap = false;
-	@state() private selectedMapId = initialMapId();
 	@state() private selectedPoiId = "";
 	/**
 	 * The spot the player long-pressed, standing in as a PoI so the rest of the
@@ -400,33 +608,22 @@ export class MapView extends LitElement {
 	@state() private navHint = "";
 	@state() private navArrowDeg = 0;
 	@state() private togglesOpen = false;
-	/** The prop dosimeter's dialog, on a map whose scenario offers one. */
-	@state() private dosimeterOpen = false;
-	/**
-	 * The one-time callout under the trefoil, shown on the first navigation started on
-	 * a map with a dosimeter: the direction finder is otherwise invisible until someone
-	 * happens to open the device mid-route. `dosimeterHintDone` is the remembered flag,
-	 * kept here too so a browser without storage still shows it only once a session.
-	 */
-	@state() private dosimeterHint = false;
-	private dosimeterHintDone = dosimeterHintSeen();
-
-	// --- The install nudge. The landing page's card is the real pitch; this is the
-	// backstop for everyone who arrived on a shared ?map= link and so has never seen
-	// that page. It covers part of a live map, which buys it two obligations: it
-	// waits until the app has actually proved useful, and "Später" means it. ---
-	@state() private install: InstallMethod = installMethod();
-	/** True once a fix has been drawn: the app has just shown them where they are. */
+	/** True once a fix has been drawn — the "mark my position" button waits for it. */
 	@state() private locatedOnce = false;
-	@state() private installBarDismissed = installNudgeSnoozed();
-	/** iOS has no prompt to fire, so its bar unfolds into the gesture instead. */
-	@state() private installStepsOpen = false;
-	@state() private toggles: Toggles = loadStoredToggles();
+	@state() private toggles: Toggles = loadStoredToggles("field-map-toggles");
+	/** Marker layers the player switched off in the ⚙ menu. */
+	@state() private hiddenLayers: Set<string> = new Set();
+	/** The navigable live markers, for the target list; rebuilt when `markers` changes. */
+	@state() private navigableMarkers: MapMarker[] = [];
+	/** The compass, for the iOS "Enable compass" button. */
+	@state() private compassState: CompassState = "off";
+	/** One line of trouble from the sensors, shown under the top row; the last writer wins. */
+	@state() private toast: { text: string; owner: "gps" | "compass" } | null = null;
 	/** Set when the OSM data failed to load, so the user (or `online`) can retry it. */
 	@state() private vectorRetry: { definition: MapDefinition; dataUrl: string } | null = null;
 
 	firstUpdated() {
-		this.map = L.map(this.querySelector("#map") as HTMLElement, {
+		this.map = L.map(this.querySelector(".fm-leaflet") as HTMLElement, {
 			crs: L.CRS.Simple,
 			minZoom: -4,
 			maxZoom: MAX_ZOOM,
@@ -462,6 +659,27 @@ export class MapView extends LitElement {
 		// stacking the zones had when they were a vector layer of their own.
 		this.map.createPane("zone-labels");
 		this.map.getPane("zone-labels")!.style.zIndex = "320";
+
+		// Live markers: above the PoIs and the player's marks (the marker pane, 600), below
+		// the player's own position — which stays the one thing nothing can cover.
+		this.map.createPane("live-markers");
+		this.map.getPane("live-markers")!.style.zIndex = "610";
+		this.map.createPane("own-position");
+		this.map.getPane("own-position")!.style.zIndex = "620";
+		this.live = new LiveMarkerLayer({
+			map: this.map,
+			pane: "live-markers",
+			place: (lat, lng) => {
+				const { px, py } = this.transform.toPixel(lat, lng);
+				return this.px2ll(px, py);
+			},
+			metersToScreen: (meters) =>
+				this.transform.metersToPixels(meters) * this.map.getZoomScale(this.map.getZoom(), 0),
+			bearingToScreen: (bearing) => this.transform.bearingToScreenDeg(bearing),
+			onClick: (id) => this.emit("fieldmap-marker-click", { id }),
+			lastSeen: (minutes) => this.t.lastSeen(minutes),
+		});
+		this.map.on("zoom zoomend", () => this.live?.resizeRings());
 
 		// Leaflet fires `zoom` on every frame of a pinch and once per animated zoom, so
 		// the bar tracks the gesture rather than snapping to its result.
@@ -504,9 +722,14 @@ export class MapView extends LitElement {
 			fillColor: BRAND_BLUE,
 			fillOpacity: 0.15,
 		});
-		this.marker = L.marker(this.px2ll(0, 0), { icon: this.makeIcon(), interactive: false });
+		this.marker = L.marker(this.px2ll(0, 0), {
+			icon: this.makeIcon(),
+			interactive: false,
+			pane: "own-position",
+		});
+		this.refreshStyle();
 
-		this.loadMap(getMapById(this.selectedMapId));
+		if (this.mapDef) this.loadMap(this.mapDef);
 
 		// The container starts at 0×0 whenever the overview is the entry screen (this
 		// element is `hidden` until a map is routed to), and can also be 0×0 on a PWA
@@ -517,19 +740,60 @@ export class MapView extends LitElement {
 		// The observer must be held in a field: an unreferenced ResizeObserver is
 		// collectable even while it has live observations, and losing it here leaves the
 		// map stuck at min zoom with no way back.
-		const mapEl = this.querySelector("#map");
+		const mapEl = this.querySelector(".fm-leaflet");
 		if (mapEl) {
 			this.resizeObserver = new ResizeObserver(() => this.resyncSize());
 			this.resizeObserver.observe(mapEl);
 		}
+	}
 
-		// If the map data failed to load, take a returning network as the cue to retry
-		// without the user having to notice the pill.
-		window.addEventListener("online", () => this.retryVectorMap());
+	/** Leaflet side of a property change: the map, the theme, the live markers. */
+	protected updated(changed: PropertyValues) {
+		this.afterRender();
+		if (!this.map) return;
+		if (changed.has("mapDef") && this.mapDef && this.mapDef !== this.loadedDef) {
+			this.loadMap(this.mapDef);
+		}
+		if (changed.has("theme") && this.loadedDef) {
+			this.map.getContainer().style.background = this.loadedDef.vectorData
+				? osmSurroundColor(this.currentTheme())
+				: "";
+			this.syncBasemap();
+		}
+		if (changed.has("markers") || changed.has("staleAfterMs")) this.syncLiveMarkers();
+		if (changed.has("hiddenLayers")) this.live?.setHiddenLayers(this.hiddenLayers);
+		if (changed.has("positionSource")) {
+			if (this.positionSource === "device") this.startSensorsIfShown();
+			else this.sensors.stop();
+		}
+		if (changed.has("wakeLock")) this.sensors.keepAwake(this.wakeLock && this.visible);
+		if (changed.has("insets")) {
+			// On the element, so every fixed row inside (the grid letters too) can read them.
+			this.style.setProperty("--fm-host-top", `${this.insets.top ?? 0}px`);
+			this.style.setProperty("--fm-host-bottom", `${this.insets.bottom ?? 0}px`);
+			this.invalidateGridAxis();
+		}
+	}
+
+	/** The map definition the Leaflet side last loaded. */
+	private loadedDef: MapDefinition | null = null;
+
+	private currentTheme(): OsmTheme {
+		return resolveTheme(this.theme ?? this.loadedDef?.theme ?? "opt");
+	}
+
+	/** A path from the scenario data (`map_osm.geojson`, `logos/…`), resolved against `assetBase`. */
+	private assetUrl(path: string): string {
+		let base = new URL(document.baseURI);
+		if (this.assetBase) {
+			const dir = this.assetBase.endsWith("/") ? this.assetBase : `${this.assetBase}/`;
+			base = new URL(dir, document.baseURI);
+		}
+		return new URL(path, base).href;
 	}
 
 	private currentPointsOfInterest(): LabeledPointOfInterest[] {
-		return getPointsOfInterestForMap(this.selectedMapId);
+		return this.loadedDef ? labelPointsOfInterest(this.loadedDef.poiNames) : [];
 	}
 
 	private getSelectedPoi(): LabeledPointOfInterest | null {
@@ -539,21 +803,19 @@ export class MapView extends LitElement {
 			const mark = this.marks.find((candidate) => candidate.id === markId);
 			return mark ? this.markAsPoi(mark) : null;
 		}
+		if (this.selectedPoiId.startsWith(MARKER_TARGET_PREFIX)) {
+			const marker = this.live?.get(this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length));
+			return marker ? this.markerAsPoi(marker) : null;
+		}
 		return this.currentPointsOfInterest().find((poi) => poi.id === this.selectedPoiId) ?? null;
 	}
 
 	private loadMap(definition: MapDefinition) {
-		this.selectedMapId = definition.id;
-		// The dosimeter belongs to the map it was opened on, and the next one may not have one.
-		this.dosimeterOpen = false;
-		this.dosimeterHint = false;
-		try {
-			localStorage.setItem(STORAGE_KEY, definition.id);
-		} catch {
-			// Storage unavailable (private mode, quota, etc.) — session still works.
-		}
-
+		const previousDef = this.loadedDef;
+		this.loadedDef = definition;
+		// A navigation belongs to the map it was started on.
 		this.clearNavigation();
+		if (previousDef) this.reportNavigation("scenario-changed", "host");
 		// Any pending retry belonged to the map we are leaving. Keeping it would leave the
 		// pill offering to reload a map that is no longer on screen.
 		this.vectorRetry = null;
@@ -597,7 +859,7 @@ export class MapView extends LitElement {
 		// Match the container to the theme's surround, so everything past the edge of the
 		// field — where the basemap deliberately puts no tiles at all — is the border colour.
 		const container = this.map.getContainer();
-		container.style.background = definition.vectorData ? osmSurroundColor(definition.theme) : "";
+		container.style.background = definition.vectorData ? osmSurroundColor(this.currentTheme()) : "";
 
 		// The overlays traced off the printed map are bakeable straight away; the OSM base
 		// has to be fetched first and arrives through `loadVectorMap`.
@@ -608,15 +870,16 @@ export class MapView extends LitElement {
 		};
 
 		if (definition.vectorData) {
-			void this.loadVectorMap(definition, definition.vectorData);
+			void this.loadVectorMap(definition, this.assetUrl(definition.vectorData));
 		} else if (definition.image) {
 			// Below the basemap's tiles (see the `photo-base` pane), so the mask and the
 			// zones still paint over a photo map the way they do over the vector one.
-			this.imageOverlay = L.imageOverlay(definition.image, bounds, { pane: "photo-base" }).addTo(
-				this.map,
-			);
+			this.imageOverlay = L.imageOverlay(this.assetUrl(definition.image), bounds, {
+				pane: "photo-base",
+			}).addTo(this.map);
+			this.emit("fieldmap-ready", { scenario: definition.id });
 		}
-		this.syncBasemap(definition);
+		this.syncBasemap();
 		this.renderZoneLabels();
 		this.renderHeadquarters(definition);
 		this.fitInitial(definition);
@@ -625,12 +888,24 @@ export class MapView extends LitElement {
 		this.following = true;
 
 		if (this.lastGps) {
-			this.update_(this.lastGps.lat, this.lastGps.lng, this.lastGps.accuracy, this.lastGps.heading);
+			this.applyPosition(
+				this.lastGps.lat,
+				this.lastGps.lng,
+				this.lastGps.accuracy,
+				this.lastGps.heading,
+			);
 		}
 
 		this.syncPoiDots();
-		this.marks = loadMarks(definition.id);
+		this.marks = this.marksStore.load(definition.id);
 		this.syncMarks();
+		// The live markers keep their coordinates; the new calibration puts them elsewhere.
+		this.live?.replaceAll();
+		this.syncLiveMarkers();
+
+		const pending = this.pendingNavigation;
+		this.pendingNavigation = null;
+		pending?.();
 	}
 
 	/**
@@ -646,7 +921,7 @@ export class MapView extends LitElement {
 			}
 
 			// Guard against a map switch while the fetch was in flight.
-			if (this.selectedMapId !== definition.id || !this.transform || !this.baked) return;
+			if (this.loadedDef !== definition || !this.transform || !this.baked) return;
 
 			// Projected once, here, into canvas pixels. GeoJSON hands over (lng, lat).
 			this.baked.osm = bakeOsm(data, (lng, lat) => this.transform.toPixel(lat, lng));
@@ -656,15 +931,16 @@ export class MapView extends LitElement {
 			// this is the size they are counted off.
 			this.gridStepPx = this.transform.metersToPixels(GRID_STEP_M);
 			this.syncGridAxis();
-			this.syncBasemap(definition);
+			this.syncBasemap();
 
 			// Clear a previous failure. The GPS status normally owns this pill, so only
 			// take it back when there is no fix yet to report.
 			this.vectorRetry = null;
-			if (!this.lastGps) this.status = t.waitingForGps;
+			if (!this.lastGps) this.status = this.t.waitingForGps;
+			this.emit("fieldmap-ready", { scenario: definition.id });
 		} catch (err) {
-			console.error("[osm] failed to load vector map", err);
-			this.status = t.mapLoadFailed;
+			console.error("[field-map] failed to load the map data", err);
+			this.status = this.t.mapLoadFailed;
 			this.vectorRetry = { definition, dataUrl };
 		}
 	}
@@ -699,7 +975,7 @@ export class MapView extends LitElement {
 		const pending = this.vectorRetry;
 		if (!pending) return;
 		this.vectorRetry = null;
-		this.status = t.mapLoading;
+		this.status = this.t.mapLoading;
 		void this.loadVectorMap(pending.definition, pending.dataUrl);
 	}
 
@@ -718,7 +994,7 @@ export class MapView extends LitElement {
 	 * decide which of it is on. Called on a map load, when the OSM data lands, and on
 	 * every layer toggle — a repaint of the live tiles, not a rebuild of the layer.
 	 */
-	private syncBasemap(definition = getMapById(this.selectedMapId)) {
+	private syncBasemap() {
 		const baked = this.baked;
 		const nothingToPaint =
 			!baked ||
@@ -733,7 +1009,7 @@ export class MapView extends LitElement {
 
 		const scene: TileScene = {
 			terrain: baked.osm,
-			theme: definition.theme ?? "opt",
+			theme: this.currentTheme(),
 			width: this.mapWidth,
 			height: this.mapHeight,
 			gridStepPx: this.gridStepPx,
@@ -781,9 +1057,21 @@ export class MapView extends LitElement {
 		// this element is still hidden.
 		this.invalidateGridAxis();
 		this.updateGridAxis();
-		if (!this.following || (this.framed && this.lastGps)) return;
 
-		this.fitInitial(getMapById(this.selectedMapId));
+		// On screen for the first time (or again): this is when the device sensors may
+		// start and the screen should stay on — never while the element sits hidden
+		// behind a host's other screens.
+		const size = this.map.getSize();
+		const visible = size.x > 0 && size.y > 0;
+		if (visible !== this.visible) {
+			this.visible = visible;
+			this.sensors.keepAwake(this.wakeLock && visible);
+			if (visible) this.startSensorsIfShown();
+		}
+
+		if (!this.loadedDef || !this.following || (this.framed && this.lastGps)) return;
+
+		this.fitInitial(this.loadedDef);
 		// The 0×0 framing was at `minZoom`; this one is real, so the bar has to follow.
 		this.updateScale();
 		// A fix that landed while the container was still 0×0 was applied at the wrong
@@ -851,8 +1139,7 @@ export class MapView extends LitElement {
 			this.map.removeLayer(this.zoneLabelsLayer);
 			this.zoneLabelsLayer = null;
 		}
-		const definition = getMapById(this.selectedMapId);
-		const zones = (definition.zones ?? []).filter((zone) => zone.points.length >= 3);
+		const zones = (this.loadedDef?.zones ?? []).filter((zone) => zone.points.length >= 3);
 		if (zones.length === 0 || !this.transform) return;
 
 		this.zoneLabelsLayer = L.layerGroup();
@@ -862,7 +1149,10 @@ export class MapView extends LitElement {
 				pane: "zone-labels",
 				icon: L.divIcon({
 					className: "zone-label-marker",
-					html: `<span class="zone-label" style="color:${zone.color}">${zone.name}</span>`,
+					// The name is scenario markup, not text: "Militärisches<br>Sperrgebiet" breaks
+					// where the printed map does. Scenario data ships with the package, so it is
+					// trusted; only the colour is escaped, as it lands in an attribute.
+					html: `<span class="zone-label" style="color:${escapeHtml(zone.color)}">${zone.name}</span>`,
 					iconSize: [0, 0],
 				}),
 				interactive: false,
@@ -885,13 +1175,15 @@ export class MapView extends LitElement {
 		const pointsOfInterest = this.currentPointsOfInterest();
 		for (const hq of headquarters) {
 			const { px, py } = this.transform.toPixel(hq.lat, hq.lng);
-			const emblem = hq.logo ? `<img class="hq-logo" src="${hq.logo}" alt="" />` : "";
+			const emblem = hq.logo
+				? `<img class="hq-logo" src="${escapeHtml(this.assetUrl(hq.logo))}" alt="" />`
+				: "";
 			const marker = L.marker(this.px2ll(px, py), {
 				icon: L.divIcon({
 					className: "hq-marker",
 					html:
-						`<div class="hq-ring" style="border-color:${hq.color}">${emblem}</div>` +
-						`<span class="hq-name" style="color:${hq.color}">${hq.name}</span>`,
+						`<div class="hq-ring" style="border-color:${escapeHtml(hq.color)}">${emblem}</div>` +
+						`<span class="hq-name" style="color:${escapeHtml(hq.color)}">${hq.name}</span>`,
 					iconSize: [52, 52],
 					iconAnchor: [26, 26],
 					// Float labels just clear of the ring rather than out of its middle.
@@ -925,7 +1217,7 @@ export class MapView extends LitElement {
 
 	/** Whether the current map can show the grid / mask toggles. */
 	private get hasGrid(): boolean {
-		return getMapById(this.selectedMapId).vectorData != null;
+		return this.loadedDef?.vectorData != null;
 	}
 	/**
 	 * The axis labels name the squares of the grid, so they come and go with it: with
@@ -935,20 +1227,20 @@ export class MapView extends LitElement {
 		return this.hasGrid && this.toggles.grid;
 	}
 	private get hasMask(): boolean {
-		return (getMapById(this.selectedMapId).playArea?.length ?? 0) >= 3;
+		return (this.loadedDef?.playArea?.length ?? 0) >= 3;
 	}
 	private get hasZones(): boolean {
-		const map = getMapById(this.selectedMapId);
-		return (map.zones?.length ?? 0) + (map.lines?.length ?? 0) > 0;
+		const map = this.loadedDef;
+		return (map?.zones?.length ?? 0) + (map?.lines?.length ?? 0) > 0;
 	}
 	private get hasHqs(): boolean {
-		return (getMapById(this.selectedMapId).headquarters?.length ?? 0) > 0;
+		return (this.loadedDef?.headquarters?.length ?? 0) > 0;
 	}
 
 	private toggle(key: keyof Toggles) {
 		this.toggles = { ...this.toggles, [key]: !this.toggles[key] };
 		try {
-			localStorage.setItem(TOGGLES_KEY, JSON.stringify(this.toggles));
+			localStorage.setItem(`${this.storagePrefix}-toggles`, JSON.stringify(this.toggles));
 		} catch {
 			// Non-fatal — the toggle still applies for this session.
 		}
@@ -976,40 +1268,281 @@ export class MapView extends LitElement {
 		}
 	}
 
-	/** Show a map because the route changed. */
-	showRoutedMap(id: string) {
-		if (id !== this.selectedMapId) this.loadMap(getMapById(id));
-		// This element was `hidden` until now, so its container may still be 0×0 as far
-		// as Leaflet knows. The ResizeObserver catches that too, but only after layout —
-		// resync on the next frame so the first paint is already framed correctly.
-		requestAnimationFrame(() => this.resyncSize());
+	// --- Public API -----------------------------------------------------------------
+
+	/**
+	 * Tell Leaflet the element may have changed size. A host that shows the element
+	 * after it was hidden can call this in the next animation frame; the element also
+	 * notices by itself once layout has run.
+	 */
+	resize() {
+		this.resyncSize();
 	}
 
 	/**
-	 * Whether a navigation is running. The one piece of map state a reload would
-	 * destroy and the player would have to re-enter by hand — `main.ts` holds an
-	 * app update back over it.
+	 * Re-read the `--field-map-accent` / `--field-map-accent-warm` custom properties
+	 * into the parts of the map that are drawn in JavaScript (the accuracy circle, the
+	 * route line). CSS reaches everything else by itself.
 	 */
+	refreshStyle() {
+		const style = getComputedStyle(this);
+		const read = (name: string, fallback: string) =>
+			style.getPropertyValue(name).trim() || fallback;
+		this.accentColor = read("--field-map-accent", BRAND_BLUE);
+		this.routeColor = read("--field-map-accent-warm", BRAND_ORANGE);
+		this.accuracyCircle?.setStyle({ color: this.accentColor, fillColor: this.accentColor });
+		this.routeLine?.setStyle({ color: this.routeColor });
+	}
+	private accentColor = BRAND_BLUE;
+	private routeColor = BRAND_ORANGE;
+
+	/**
+	 * The position the element is placing the player at — smoothed, as drawn. Null
+	 * before the first fix.
+	 */
+	get fix(): PositionFix | null {
+		const fix = this.pushedFix;
+		return fix ? { ...fix } : null;
+	}
+	private pushedFix: PositionFix | null = null;
+
+	/**
+	 * Feed a position in `position-source="external"` mode (the host owns GPS, e.g. a
+	 * native layer). `heading` is where the phone points, in degrees from north; pass
+	 * null without a compass. Applied on the next animation frame.
+	 *
+	 * (Not `update()`: that name is Lit's render lifecycle.)
+	 */
+	setPosition(fix: ExternalFix, heading: number | null = null) {
+		if (![fix.lat, fix.lng, fix.accuracy].every(Number.isFinite)) {
+			throw new TypeError("setPosition(): lat, lng and accuracy must be finite numbers");
+		}
+		this.pendingFix = {
+			lat: fix.lat,
+			lng: fix.lng,
+			accuracy: fix.accuracy,
+			heading: fix.heading ?? null,
+			speed: fix.speed ?? null,
+		};
+		this.compassHeading = heading;
+		this.schedulePush();
+	}
+
+	/** The running navigation, or null. JSON-safe — send it to a server as it is. */
+	get navigation(): NavigationState {
+		const target = this.currentTarget();
+		return target ? { target, startedAt: this.navStartedAt, source: this.navSource } : null;
+	}
+
+	/** Whether a navigation is running. */
 	get navigating(): boolean {
 		return this.selectedPoiId !== "";
 	}
 
-	private onPoiSelect(event: Event) {
-		this.startNavigation((event.target as HTMLSelectElement).value);
+	/**
+	 * Navigate to a point of interest of the current scenario, by its physical id
+	 * ("630", "Lima", "Schranke"). Replaces a running navigation. Throws a RangeError
+	 * if the scenario does not show that PoI — `scenarioPoiIds(id)` in
+	 * `@fieldmaps/core/mahlwinkel` lists the ones it does.
+	 */
+	navigateToPoi(poiId: string, options: NavigateOptions = {}): NavigationState {
+		const definition = this.requireScenario("navigateToPoi");
+		const poi = labelPointsOfInterest(definition.poiNames).find((p) => p.id === poiId);
+		if (!poi) {
+			throw new RangeError(`navigateToPoi(): scenario "${definition.id}" has no PoI "${poiId}"`);
+		}
+		const source = options.source ?? "host";
+		return this.whenLoaded(definition, () => this.startNavigation(poi.id, source), {
+			target: { kind: "poi", id: poi.id, name: poi.name, lat: poi.lat, lng: poi.lng },
+			startedAt: Date.now(),
+			source,
+		});
 	}
 
 	/**
-	 * Start navigating to a PoI, whichever way the user asked for it: the select, the
-	 * "Navigate here" button in a dot's popup, or a double-click on the dot. Empty id
-	 * means the select's placeholder — that stops navigation.
+	 * Navigate to any coordinate — a waypoint from a server, a spot a squad lead picked.
+	 * `name` is what the player sees; by default the grid square, as for a long press.
+	 * A point off the field is allowed: the player is told they are off it.
 	 */
-	private startNavigation(poiId: string) {
+	navigateToCoordinates(
+		lat: number,
+		lng: number,
+		options: NavigateOptions & { name?: string } = {},
+	): NavigationState {
+		if (
+			!Number.isFinite(lat) ||
+			!Number.isFinite(lng) ||
+			Math.abs(lat) > 90 ||
+			Math.abs(lng) > 180
+		) {
+			throw new RangeError(`navigateToCoordinates(): not a coordinate: ${lat}, ${lng}`);
+		}
+		const definition = this.requireScenario("navigateToCoordinates");
+		const source = options.source ?? "host";
+		const start = () => {
+			const name = options.name ?? this.nameCoordinate(lat, lng);
+			this.startCustomNavigation({ id: CUSTOM_TARGET_ID, name, lat, lng }, source);
+		};
+		return this.whenLoaded(definition, start, {
+			target: { kind: "spot", id: spotId(lat, lng), name: options.name ?? "", lat, lng },
+			startedAt: Date.now(),
+			source,
+		});
+	}
+
+	/**
+	 * Navigate to a live marker (see `markers`) by its id, following it as it moves.
+	 * Throws a RangeError if no marker has that id. The navigation ends by itself
+	 * (`reason: "target-removed"`) when the marker leaves `markers`.
+	 */
+	navigateToMarker(markerId: string, options: NavigateOptions = {}): NavigationState {
+		const marker = this.markers.find((candidate) => candidate.id === markerId);
+		if (!marker) throw new RangeError(`navigateToMarker(): no marker "${markerId}"`);
+		const definition = this.requireScenario("navigateToMarker");
+		const source = options.source ?? "host";
+		return this.whenLoaded(
+			definition,
+			() => this.startNavigation(MARKER_TARGET_PREFIX + markerId, source),
+			{
+				target: {
+					kind: "marker",
+					id: marker.id,
+					name: marker.label ?? marker.id,
+					lat: marker.lat,
+					lng: marker.lng,
+				},
+				startedAt: Date.now(),
+				source,
+			},
+		);
+	}
+
+	/** End the running navigation, if there is one. */
+	stopNavigation(options: NavigateOptions = {}) {
+		this.pendingNavigation = null;
+		if (this.selectedPoiId) this.startNavigation("", options.source ?? "host");
+	}
+
+	addEventListener<K extends keyof FieldMapEventMap>(
+		type: K,
+		listener: (this: FieldMap, event: FieldMapEventMap[K]) => unknown,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | AddEventListenerOptions,
+	) {
+		super.addEventListener(type, listener, options);
+	}
+
+	removeEventListener<K extends keyof FieldMapEventMap>(
+		type: K,
+		listener: (this: FieldMap, event: FieldMapEventMap[K]) => unknown,
+		options?: boolean | EventListenerOptions,
+	): void;
+	removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | EventListenerOptions,
+	): void;
+	removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | EventListenerOptions,
+	) {
+		super.removeEventListener(type, listener, options);
+	}
+
+	// --- Navigation internals ---------------------------------------------------------
+
+	private requireScenario(method: string): MapDefinition {
+		const definition = this.mapDef ?? (this.scenario ? getMap(this.scenario) : undefined);
+		if (!definition) {
+			throw new Error(`${method}(): set \`scenario\` to a known scenario id first`);
+		}
+		return definition;
+	}
+
+	/**
+	 * Run `start` now if `definition` is the map on screen; otherwise hold it until that
+	 * map has loaded (a call made right after setting `scenario`, before the first
+	 * render). Answers with the state the navigation has — or will have.
+	 */
+	private whenLoaded(
+		definition: MapDefinition,
+		start: () => void,
+		expected: Exclude<NavigationState, null>,
+	): NavigationState {
+		if (this.map && this.loadedDef === definition && this.transform) {
+			start();
+			return this.navigation;
+		}
+		this.pendingNavigation = start;
+		return expected;
+	}
+
+	/** The running navigation's target, as the public API describes it. */
+	private currentTarget(): NavigationTarget | null {
+		const poi = this.getSelectedPoi();
+		if (!poi || !this.selectedPoiId) return null;
+		const { lat, lng, name } = poi;
+		if (this.selectedPoiId === CUSTOM_TARGET_ID) {
+			return { kind: "spot", id: spotId(lat, lng), name, lat, lng };
+		}
+		const markId = markIdFromTarget(this.selectedPoiId);
+		if (markId != null) return { kind: "mark", id: markId, name, lat, lng };
+		if (this.selectedPoiId.startsWith(MARKER_TARGET_PREFIX)) {
+			return {
+				kind: "marker",
+				id: this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length),
+				name,
+				lat,
+				lng,
+			};
+		}
+		return { kind: "poi", id: poi.id, name, lat, lng };
+	}
+
+	/** Tell the host what the navigation is now, and what it was. */
+	private reportNavigation(reason: NavigationChangeReason, source: NavigationSource) {
+		const state = this.navigation;
+		const previous = this.reportedNavigation;
+		if (state == null && previous == null) return;
+		this.reportedNavigation = state;
+		this.emit("fieldmap-navigation", { state, previous, reason, source });
+	}
+
+	private onPoiSelect(event: Event) {
+		this.startNavigation((event.target as HTMLSelectElement).value, "user");
+	}
+
+	/**
+	 * Start navigating to a PoI, whichever way it was asked for: the select, the
+	 * "Navigate here" button in a dot's popup, a double-click on the dot, or one of the
+	 * public `navigateTo*` methods. Empty id means the select's placeholder — that
+	 * stops navigation.
+	 */
+	private startNavigation(
+		poiId: string,
+		source: NavigationSource,
+		reason: NavigationChangeReason = poiId ? "started" : "stopped",
+	) {
 		this.selectedPoiId = poiId;
 		if (!poiId) {
 			this.clearNavigation();
 			this.updateStatus();
+			this.reportNavigation(reason, source);
 			return;
 		}
+		this.navSource = source;
+		this.navStartedAt = Date.now();
+		this.arrivedReported = false;
 		// The popup has done its job, and `fitUserAndPoi` is about to move the view out
 		// from under it.
 		this.map.closePopup();
@@ -1017,23 +1550,7 @@ export class MapView extends LitElement {
 		this.updateNavigation();
 		this.fitUserAndPoi();
 		this.updateStatus();
-		this.offerDosimeterHint();
-	}
-
-	/** Show the Geiger-counter callout, the first time a navigation starts on a dosimeter map. */
-	private offerDosimeterHint() {
-		if (this.dosimeterHintDone || this.dosimeterOpen) return;
-		if (!getMapById(this.selectedMapId).dosimeter) return;
-		this.dosimeterHint = true;
-		this.dosimeterHintDone = true;
-		// It sits over the row below the top bar, which on iOS can be the compass
-		// prompt the direction finder needs, so it does not stay there for long.
-		window.setTimeout(() => (this.dosimeterHint = false), DOSIMETER_HINT_MS);
-		try {
-			localStorage.setItem(DOSIMETER_HINT_KEY, "1");
-		} catch {
-			// Storage unavailable — it still shows only once this session.
-		}
+		this.reportNavigation(reason, source);
 	}
 
 	/**
@@ -1095,8 +1612,8 @@ export class MapView extends LitElement {
 		popup
 			.setLatLng(this.px2ll(px, py))
 			.setContent(
-				this.makeNavPopupBody(target.name, () => this.startCustomNavigation(target), [
-					{ label: t.markHere, run: () => this.createMark(lat, lng) },
+				this.makeNavPopupBody(target.name, () => this.startCustomNavigation(target, "user"), [
+					{ label: this.t.markHere, run: () => this.createMark(lat, lng) },
 				]),
 			)
 			.openOn(this.map);
@@ -1109,15 +1626,23 @@ export class MapView extends LitElement {
 	 * square against, so naming one would be a coordinate they cannot check.
 	 */
 	private namePickedPoint(px: number, py: number): string {
-		if (!this.showGridAxis || this.gridStepPx <= 0) return t.markedPosition;
+		if (!this.showGridAxis || this.gridStepPx <= 0) return this.t.markedPosition;
 		const column = gridColumnLabel(Math.floor(px / this.gridStepPx));
 		const row = Math.floor(py / this.gridStepPx) + 1;
-		return t.gridSquare(`${column}${row}`);
+		return this.t.gridSquare(`${column}${row}`);
 	}
 
-	private startCustomNavigation(target: LabeledPointOfInterest) {
+	/** `namePickedPoint` for a coordinate: the grid square while it is on the canvas. */
+	private nameCoordinate(lat: number, lng: number): string {
+		if (!this.transform) return this.t.markedPosition;
+		const pixel = this.transform.toPixel(lat, lng);
+		if (this.isOffMapPixel(pixel)) return this.t.markedPosition;
+		return this.namePickedPoint(pixel.px, pixel.py);
+	}
+
+	private startCustomNavigation(target: LabeledPointOfInterest, source: NavigationSource) {
 		this.customTarget = target;
-		this.startNavigation(CUSTOM_TARGET_ID);
+		this.startNavigation(CUSTOM_TARGET_ID, source);
 	}
 
 	private clearNavigation() {
@@ -1128,8 +1653,7 @@ export class MapView extends LitElement {
 		this.navDistanceM = 0;
 		this.navHint = "";
 		this.navArrowDeg = 0;
-		this.setDosimeterGuidance(null);
-		this.dosimeterHint = false;
+		this.setGuidance(null);
 		if (this.poiMarker) {
 			this.map.removeLayer(this.poiMarker);
 			this.poiMarker = null;
@@ -1167,9 +1691,9 @@ export class MapView extends LitElement {
 	private updateNavigation(positionUnchanged = false) {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) {
-			this.setDosimeterGuidance(null);
+			this.setGuidance(null);
 			this.navDistanceM = 0;
-			this.navHint = this.lastGps ? "" : t.waitingForGps;
+			this.navHint = this.lastGps ? "" : this.t.waitingForGps;
 			return;
 		}
 
@@ -1190,20 +1714,32 @@ export class MapView extends LitElement {
 		if (this.offMap) {
 			// Worth saying, because the line on screen starts at the map centre rather than
 			// under your feet — but the distance and the arrow above are real.
-			this.navHint = t.navOffField;
+			this.navHint = this.t.navOffField;
 		} else if (distance <= ARRIVED_DISTANCE_M) {
-			this.navHint = t.navArrived;
+			this.navHint = this.t.navArrived;
 		} else if (this.lastGps.heading != null) {
 			const relative = relativeBearingDegrees(targetBearing, this.lastGps.heading);
-			this.navHint = t.navHints[navigationHint(relative)];
+			this.navHint = this.t.navHints[navigationHint(relative)];
 		} else {
-			this.navHint = t.navEnableCompass;
+			this.navHint = this.t.navEnableCompass;
 		}
 
-		// The dosimeter's direction finder: it needs the compass to know where the phone
-		// points, and has nothing left to find once the player has arrived.
+		// Arrival, once per approach: the nav card says so for as long as the player
+		// stands there, but the host hears about it once, and again only after they have
+		// walked well clear and come back.
+		if (distance <= ARRIVED_DISTANCE_M && !this.arrivedReported) {
+			this.arrivedReported = true;
+			const target = this.currentTarget();
+			if (target) this.emit("fieldmap-arrived", { target });
+		} else if (distance > ARRIVED_RESET_M) {
+			this.arrivedReported = false;
+		}
+
+		// The direction finder (Field Maps' dosimeter listens): it needs the compass to
+		// know where the phone points, and has nothing left to find once the player has
+		// arrived.
 		const heading = this.lastGps.heading;
-		this.setDosimeterGuidance(
+		this.setGuidance(
 			heading != null && distance > ARRIVED_DISTANCE_M
 				? { relativeDeg: relativeBearingDegrees(targetBearing, heading), distanceM: distance }
 				: null,
@@ -1224,7 +1760,7 @@ export class MapView extends LitElement {
 
 		if (!this.routeLine) {
 			this.routeLine = L.polyline([userLatLng, poiLatLng], {
-				color: BRAND_ORANGE,
+				color: this.routeColor,
 				weight: 3,
 				dashArray: "8 8",
 				opacity: 0.85,
@@ -1365,7 +1901,7 @@ export class MapView extends LitElement {
 		// is the moment to re-measure the chrome the popup has to stay clear of.
 		const popup = marker.getPopup();
 		if (popup) this.applyPopupPadding(popup);
-		return this.makeNavPopupBody(this.poiLabel(poi), () => this.startNavigation(poi.id));
+		return this.makeNavPopupBody(this.poiLabel(poi), () => this.startNavigation(poi.id, "user"));
 	}
 
 	/**
@@ -1387,7 +1923,7 @@ export class MapView extends LitElement {
 		const navigate = document.createElement("button");
 		navigate.type = "button";
 		navigate.className = "poi-popup-nav";
-		navigate.textContent = t.navigateHere;
+		navigate.textContent = this.t.navigateHere;
 		navigate.addEventListener("click", navigateTo);
 
 		body.append(title, navigate);
@@ -1420,7 +1956,7 @@ export class MapView extends LitElement {
 	/**
 	 * How far the chrome intrudes on the map, top and bottom, with a margin. The top
 	 * rows come and go (compass prompt, a toast of any height) and the HUD grows with
-	 * a wrapped status line, the nav card and the install bar, so measure them instead
+	 * a wrapped status line, the nav card and a host notice, so measure them instead
 	 * of restating the CSS row arithmetic here.
 	 *
 	 * Only elements that really sit at the top belong in `top`: the PoI panel moved
@@ -1429,19 +1965,13 @@ export class MapView extends LitElement {
 	 * down to the bottom edge.
 	 */
 	private chromeInsets(): { top: number; bottom: number } {
-		const visibleBottom = (element: Element | null) =>
-			element instanceof HTMLElement && !element.hidden
-				? element.getBoundingClientRect().bottom
-				: 0;
-		const top = Math.max(
-			visibleBottom(this.querySelector(".top-row")),
-			visibleBottom(document.querySelector("#enable-compass")),
-			visibleBottom(document.querySelector("#toast")),
-		);
+		// The top stack holds everything up there — the buttons, the compass prompt, the
+		// toast, and whatever the host put in it — so its bottom edge is the whole answer.
+		const top = this.querySelector(".fm-top")?.getBoundingClientRect().bottom ?? 0;
 		const hud = this.querySelector(".hud")?.getBoundingClientRect();
 		return {
-			top: Math.ceil(top) + 12,
-			bottom: Math.ceil(hud?.height ?? 0) + 12,
+			top: Math.ceil(Math.max(top, this.insets.top ?? 0)) + 12,
+			bottom: Math.ceil((hud?.height ?? 0) + (this.insets.bottom ?? 0)) + 12,
 		};
 	}
 
@@ -1459,10 +1989,29 @@ export class MapView extends LitElement {
 		return { id: markTargetId(mark), name: mark.name, lat: mark.lat, lng: mark.lng };
 	}
 
+	/** A live marker as the navigation code sees it, the same way. */
+	private markerAsPoi(marker: MapMarker): LabeledPointOfInterest {
+		return {
+			id: MARKER_TARGET_PREFIX + marker.id,
+			name: marker.label ?? marker.id,
+			lat: marker.lat,
+			lng: marker.lng,
+		};
+	}
+
+	/** The marks changed: reload them, and tell the host. */
+	private marksChanged() {
+		const definition = this.loadedDef;
+		if (!definition) return;
+		this.marks = this.marksStore.load(definition.id);
+		this.emit("fieldmap-marks-change", { scenario: definition.id, marks: this.marks });
+	}
+
 	private createMark(lat: number, lng: number) {
+		if (!this.loadedDef) return;
 		this.map.closePopup();
-		const mark = addMark(this.selectedMapId, { name: this.nextMarkName(), lat, lng });
-		this.marks = loadMarks(this.selectedMapId);
+		const mark = this.marksStore.add(this.loadedDef.id, { name: this.nextMarkName(), lat, lng });
+		this.marksChanged();
 		// A mark nobody can see is a mark that was not set, so a hidden layer comes back.
 		if (!this.toggles.marks) this.toggle("marks");
 		else this.syncMarks();
@@ -1480,26 +2029,30 @@ export class MapView extends LitElement {
 	private nextMarkName(): string {
 		const taken = new Set(this.marks.map((mark) => mark.name));
 		let n = this.marks.length + 1;
-		while (taken.has(t.markName(n))) n++;
-		return t.markName(n);
+		while (taken.has(this.t.markName(n))) n++;
+		return this.t.markName(n);
 	}
 
 	private renameMark(mark: Mark) {
+		if (!this.loadedDef) return;
 		this.map.closePopup();
-		const name = window.prompt(t.markRenamePrompt, mark.name)?.trim();
+		const name = window.prompt(this.t.markRenamePrompt, mark.name)?.trim();
 		if (!name || name === mark.name) return;
-		renameMark(this.selectedMapId, mark.id, name);
-		this.marks = loadMarks(this.selectedMapId);
+		this.marksStore.rename(this.loadedDef.id, mark.id, name);
+		this.marksChanged();
 		this.syncMarks();
 		// The status pill names the target, so a renamed destination shows up at once.
 		if (this.selectedPoiId === markTargetId(mark)) this.updateStatus();
 	}
 
 	private deleteMark(mark: Mark) {
+		if (!this.loadedDef) return;
 		this.map.closePopup();
-		if (this.selectedPoiId === markTargetId(mark)) this.startNavigation("");
-		deleteMark(this.selectedMapId, mark.id);
-		this.marks = loadMarks(this.selectedMapId);
+		if (this.selectedPoiId === markTargetId(mark)) {
+			this.startNavigation("", "user", "target-removed");
+		}
+		this.marksStore.remove(this.loadedDef.id, mark.id);
+		this.marksChanged();
 		this.syncMarks();
 	}
 
@@ -1533,32 +2086,36 @@ export class MapView extends LitElement {
 				() => {
 					const popup = marker.getPopup();
 					if (popup) this.applyPopupPadding(popup);
-					return this.makeNavPopupBody(mark.name, () => this.startNavigation(markTargetId(mark)), [
-						{ label: t.markRename, run: () => this.renameMark(mark) },
-						{
-							label: t.markDelete,
-							// Twice: a mark is the player's own work, and the button sits right
-							// where a thumb lands reaching for "Rename".
-							run: (button) => {
-								if (button.dataset.armed) this.deleteMark(mark);
-								else {
-									button.dataset.armed = "1";
-									button.textContent = t.markDeleteConfirm;
-									button.classList.add("danger");
-									// The longer label does not fit beside "Rename", so the
-									// confirm takes the row while it is asked. The popup keeps
-									// its laid-out width, which the one button now fills.
-									for (const sibling of button.parentElement?.children ?? []) {
-										if (sibling !== button) (sibling as HTMLElement).hidden = true;
+					return this.makeNavPopupBody(
+						mark.name,
+						() => this.startNavigation(markTargetId(mark), "user"),
+						[
+							{ label: this.t.markRename, run: () => this.renameMark(mark) },
+							{
+								label: this.t.markDelete,
+								// Twice: a mark is the player's own work, and the button sits right
+								// where a thumb lands reaching for "Rename".
+								run: (button) => {
+									if (button.dataset.armed) this.deleteMark(mark);
+									else {
+										button.dataset.armed = "1";
+										button.textContent = this.t.markDeleteConfirm;
+										button.classList.add("danger");
+										// The longer label does not fit beside "Rename", so the
+										// confirm takes the row while it is asked. The popup keeps
+										// its laid-out width, which the one button now fills.
+										for (const sibling of button.parentElement?.children ?? []) {
+											if (sibling !== button) (sibling as HTMLElement).hidden = true;
+										}
 									}
-								}
+								},
 							},
-						},
-					]);
+						],
+					);
 				},
 				{ className: "poi-popup", closeButton: false, offset: [0, -6] },
 			);
-			marker.on("dblclick", () => this.startNavigation(markTargetId(mark)));
+			marker.on("dblclick", () => this.startNavigation(markTargetId(mark), "user"));
 			// A long press on a mark means that mark, not a new spot under it.
 			marker.on("contextmenu", () => marker.openPopup());
 			marker.addTo(this.marksLayer);
@@ -1586,9 +2143,7 @@ export class MapView extends LitElement {
 		// An emblem drawn on a building already marks it, and `renderHeadquarters` has
 		// given that marker the PoI's label and route — but only while the HQ layer is
 		// actually shown, so with the emblems toggled off the dots come back.
-		const headquarters = this.toggles.hqs
-			? (getMapById(this.selectedMapId).headquarters ?? [])
-			: [];
+		const headquarters = this.toggles.hqs ? (this.loadedDef?.headquarters ?? []) : [];
 
 		this.poiDotsLayer = L.layerGroup();
 		for (const poi of pointsOfInterest) {
@@ -1600,11 +2155,12 @@ export class MapView extends LitElement {
 				// A turbine or a barrier is recognisable on its own; a plain building is
 				// not, so it gets the dot. Either way it is one marker, and the drawn shape
 				// is the target.
-				icon: isWindTurbine(poi.id)
-					? this.makeTurbineIcon(idLabel)
-					: isCheckpoint(poi.id)
-						? this.makeCheckpointIcon(idLabel)
-						: this.makePoiDotIcon(idLabel),
+				icon:
+					poi.kind === "turbine"
+						? this.makeTurbineIcon(idLabel)
+						: poi.kind === "checkpoint"
+							? this.makeCheckpointIcon(idLabel)
+							: this.makePoiDotIcon(idLabel),
 				interactive: true,
 			});
 			this.bindPoiInteractions(marker, poi);
@@ -1643,7 +2199,7 @@ export class MapView extends LitElement {
 		});
 		// Double-click skips the popup: two taps and you are navigating. Marker mouse
 		// events don't bubble, so this never reaches the map's dblclick zoom.
-		marker.on("dblclick", () => this.startNavigation(poi.id));
+		marker.on("dblclick", () => this.startNavigation(poi.id, "user"));
 		// A long press that landed on a PoI means *that* PoI, not the patch of ground
 		// under it. Answering the event here is also what keeps it away from the map:
 		// Leaflet passes a mouse event to the map only when no layer under it listens.
@@ -1681,6 +2237,165 @@ export class MapView extends LitElement {
 		if (this.selectedPoiId) this.updateNavigation();
 	}
 
+	// --- Position -----------------------------------------------------------------------
+
+	/**
+	 * Apply the newest position and heading at most once per displayed frame.
+	 *
+	 * GPS arrives about once a second, but `deviceorientation` fires at the sensor's own
+	 * rate — 60 Hz on most phones, more on some — and every one of those events used to
+	 * run a full position update: a marker move, two vector paths reprojected, and a
+	 * `panTo` that fires `moveend` and so walks the basemap's whole tile set. None of
+	 * that can show up more often than the display refreshes, so coalesce into one
+	 * frame's work. The frame reads the newest values rather than a queued snapshot, so
+	 * a backgrounded tab (where no frame runs) resumes with the current position instead
+	 * of replaying a backlog.
+	 */
+	private schedulePush() {
+		if (this.pushFrame) return;
+		this.pushFrame = requestAnimationFrame(() => {
+			this.pushFrame = 0;
+			this.push();
+		});
+	}
+
+	private push() {
+		const fix = this.pendingFix;
+		if (!fix) return;
+		// Prefer GPS course while moving (the compass is noisy near metal replicas); fall
+		// back to the magnetometer when standing still.
+		const moving = (fix.speed ?? 0) > GPS_HEADING_SPEED && fix.heading != null;
+		const heading = moving ? fix.heading : this.compassHeading;
+		this.pushedFix = {
+			lat: fix.lat,
+			lng: fix.lng,
+			accuracy: fix.accuracy,
+			heading,
+			speed: fix.speed,
+			at: Date.now(),
+		};
+		this.applyPosition(fix.lat, fix.lng, fix.accuracy, heading);
+		this.emit("fieldmap-fix", { ...this.pushedFix });
+	}
+
+	/** Start the device's GPS and compass, if this is the mode and the map is on screen. */
+	private startSensorsIfShown() {
+		if (this.positionSource !== "device" || !this.visible || !this.mapDef) return;
+		this.sensors.start();
+	}
+
+	private onGpsProblem(problem: GpsProblem) {
+		if (problem === "denied") {
+			this.setToast(this.t.gpsDenied, "gps");
+			this.emitPermission({ kind: "geolocation", state: "denied" });
+		} else if (problem === "no-fix") {
+			this.setToast(this.t.gpsNoFix, "gps");
+		} else {
+			this.clearToast("gps");
+		}
+	}
+
+	private onCompassState(state: CompassState) {
+		this.compassState = state;
+		if (state === "denied") {
+			this.setToast(this.t.compassDenied, "compass");
+			this.emitPermission({ kind: "compass", state: "denied" });
+		} else if (state === "needs-permission") {
+			this.emitPermission({ kind: "compass", state: "prompt" });
+		} else if (state === "on") {
+			this.clearToast("compass");
+			this.emitPermission({ kind: "compass", state: "granted" });
+		}
+	}
+
+	private async enableCompass() {
+		await this.sensors.requestCompass();
+	}
+
+	// The toast is one shared line and the last writer wins. `owner` records who that
+	// was, so whoever put a message up can take it down again once it stops being true
+	// without wiping something else's.
+	private setToast(text: string, owner: "gps" | "compass") {
+		this.toast = { text, owner };
+	}
+
+	private clearToast(owner: "gps" | "compass") {
+		if (this.toast?.owner === owner) this.toast = null;
+	}
+
+	private emitPermission(detail: PermissionDetail) {
+		this.emit("fieldmap-permission", detail);
+	}
+
+	private emit<K extends keyof FieldMapEventMap>(
+		type: K,
+		detail: FieldMapEventMap[K] extends CustomEvent<infer D> ? D : never,
+	) {
+		this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+	}
+
+	/** Report the direction finder's reading, when it changed. */
+	private setGuidance(guidance: GuidanceDetail | null) {
+		const last = this.reportedGuidance;
+		if (
+			guidance === last ||
+			(guidance &&
+				last &&
+				guidance.relativeDeg === last.relativeDeg &&
+				guidance.distanceM === last.distanceM)
+		) {
+			return;
+		}
+		this.reportedGuidance = guidance;
+		this.emit("fieldmap-guidance", guidance ? { ...guidance } : null);
+	}
+
+	// --- Live markers -------------------------------------------------------------------
+
+	private syncLiveMarkers() {
+		if (!this.live || !this.transform) return;
+		const diff = this.live.set(this.markers, this.staleAfterMs);
+		this.syncNavigableMarkers();
+
+		// A navigation to a marker follows it — and ends when it is gone.
+		if (!this.selectedPoiId.startsWith(MARKER_TARGET_PREFIX)) return;
+		const targetId = this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length);
+		if (diff.removed.includes(targetId)) {
+			this.startNavigation("", "host", "target-removed");
+		} else if (
+			diff.updated.some((marker) => marker.id === targetId) ||
+			diff.restyled.some((marker) => marker.id === targetId)
+		) {
+			this.showPoiMarker();
+			this.updateNavigation();
+			this.updateStatus();
+		}
+	}
+
+	private syncNavigableMarkers() {
+		const navigable = this.markers.filter((marker) => marker.navigable);
+		const same =
+			navigable.length === this.navigableMarkers.length &&
+			navigable.every(
+				(marker, i) =>
+					marker.id === this.navigableMarkers[i].id &&
+					marker.label === this.navigableMarkers[i].label,
+			);
+		if (!same) this.navigableMarkers = navigable;
+	}
+
+	private toggleMarkerLayer(id: string) {
+		const hidden = new Set(this.hiddenLayers);
+		if (hidden.has(id)) hidden.delete(id);
+		else hidden.add(id);
+		this.hiddenLayers = hidden;
+		try {
+			localStorage.setItem(`${this.storagePrefix}-marker-layers`, JSON.stringify([...hidden]));
+		} catch {
+			// Non-fatal — the switch still applies for this session.
+		}
+	}
+
 	/** The accuracy circle at `latLng`, unless a zoom is in flight (see `zooming`). */
 	private syncAccuracyCircle(latLng: L.LatLngExpression, accuracyM: number) {
 		if (this.zooming) {
@@ -1692,8 +2407,8 @@ export class MapView extends LitElement {
 		if (!this.map.hasLayer(this.accuracyCircle)) this.accuracyCircle.addTo(this.map);
 	}
 
-	/** Called by the app whenever a new position/heading is available. */
-	update_(lat: number, lng: number, accuracyM: number, headingDeg: number | null) {
+	/** Place the player: the dot, its arrow, the circle, the route, the status line. */
+	private applyPosition(lat: number, lng: number, accuracyM: number, headingDeg: number | null) {
 		if (!this.transform) return;
 		this.lastGps = { lat, lng, accuracy: accuracyM, heading: headingDeg };
 
@@ -1708,13 +2423,7 @@ export class MapView extends LitElement {
 		const positionUnchanged =
 			placed != null && placed.lat === lat && placed.lng === lng && placed.accuracy === accuracyM;
 
-		if (!positionUnchanged) {
-			this.placeFix(lat, lng, accuracyM);
-			// Handed straight to the device rather than through a render of this whole
-			// view: a moved fix changes nothing else here that a render would redraw.
-			const dosimeter = this.querySelector<DosimeterView>("dosimeter-view");
-			if (dosimeter) dosimeter.position = { lat, lng, accuracy: accuracyM };
-		}
+		if (!positionUnchanged) this.placeFix(lat, lng, accuracyM);
 
 		// Rebuild the icon only when the triangle/dot state changes; otherwise just
 		// rotate the existing arrow element (cheaper, and avoids marker flicker).
@@ -1742,7 +2451,7 @@ export class MapView extends LitElement {
 	/**
 	 * Move everything that follows the fix: the accuracy circle, the position marker,
 	 * and the view itself while following. Only ever called for a position that has
-	 * actually changed — see `update_`.
+	 * actually changed — see `applyPosition`.
 	 */
 	private placeFix(lat: number, lng: number, accuracyM: number) {
 		const gpsPixel = this.transform.toPixel(lat, lng);
@@ -1774,7 +2483,7 @@ export class MapView extends LitElement {
 	private updateStatus() {
 		if (!this.lastGps) return;
 		if (this.offMap) {
-			this.status = t.offMap;
+			this.status = this.t.offMap;
 		} else if (this.selectedPoiId) {
 			this.status = `${this.getSelectedPoi()?.name ?? "POI"} · ${this.navDistanceM.toFixed(0)} m`;
 		} else {
@@ -1811,7 +2520,7 @@ export class MapView extends LitElement {
 		bar.style.width = `${Math.round(meters / metersPerScreenPx)}px`;
 		if (label.textContent !== text) {
 			label.textContent = text;
-			scale.setAttribute("aria-label", `${t.scale}: ${text}`);
+			scale.setAttribute("aria-label", `${this.t.scale}: ${text}`);
 		}
 	}
 
@@ -2047,7 +2756,7 @@ export class MapView extends LitElement {
 	 * have moved them, by changing the chrome above them, which is what invalidates the
 	 * measured boxes. Both are cheap; neither happens per frame.
 	 */
-	updated() {
+	private afterRender() {
 		// Lit commits an element's own bindings before its children, so on the render
 		// that first offers a picked spot the select is told to show an option that is
 		// still one part away from existing — it lands on nothing and reads as the
@@ -2056,7 +2765,6 @@ export class MapView extends LitElement {
 		// the options are in.
 		const select = this.querySelector<HTMLSelectElement>(".poi-select");
 		if (select && select.value !== this.selectedPoiId) select.value = this.selectedPoiId;
-		this.syncDosimeterDialog();
 
 		this.invalidateGridAxis();
 		const signature = `${this.showGridAxis}|${this.gridStepPx}|${this.mapWidth}|${this.mapHeight}`;
@@ -2073,7 +2781,7 @@ export class MapView extends LitElement {
 		// Off-map: re-following would pan into empty background, so snap back to the
 		// whole field instead — the warning already tells the user where they are.
 		if (this.offMap) {
-			this.fitInitial(getMapById(this.selectedMapId));
+			if (this.loadedDef) this.fitInitial(this.loadedDef);
 		} else if (this.lastPixel) {
 			this.map.panTo(this.px2ll(this.lastPixel.px, this.lastPixel.py));
 		}
@@ -2082,9 +2790,10 @@ export class MapView extends LitElement {
 	render() {
 		const pointsOfInterest = this.currentPointsOfInterest();
 		const selectedPoi = this.getSelectedPoi();
+		const t = this.t;
 
 		return html`
-			<div id="map"></div>
+			<div class="fm-leaflet"></div>
 			${
 				this.showGridAxis
 					? html`
@@ -2096,17 +2805,27 @@ export class MapView extends LitElement {
 						`
 					: ""
 			}
-			<!-- Top row: out of the map on the left, the settings gear on the right. Both
-			     are one tap and neither is aimed at while walking, which is why they get the
-			     edge the thumb reaches for least. -->
-			<div class="top-row">
-				<button class="home-btn" aria-label=${t.backToOverview} @click=${() => goHome()}>‹</button>
-				<div class="top-row-end">${this.renderDosimeterButton()} ${this.renderToggles()}</div>
-				${this.renderDosimeterHint()}
+			<!-- Everything at the top, as one column: the row of buttons (the host's on the
+			     left and right, the settings gear outermost), the host's notice, the iOS
+			     compass prompt, and a line of trouble from the sensors. One container, so
+			     each row simply takes the space the ones above it leave. -->
+			<div class="fm-top">
+				<div class="top-row">
+					<div class="top-row-start">${this.topStart ?? ""}</div>
+					<div class="top-row-end">${this.topEnd ?? ""} ${this.renderToggles()}</div>
+				</div>
+				${this.topNotice ?? ""}
+				${
+					this.compassState === "needs-permission" && this.positionSource === "device"
+						? html`<button type="button" class="fm-compass" @click=${this.enableCompass}>
+								${t.enableCompass}
+							</button>`
+						: ""
+				}
+				${this.toast ? html`<div class="fm-toast" role="alert">${this.toast.text}</div>` : ""}
 			</div>
-			${this.renderDosimeter()}
 			<div class="hud">
-				${this.renderInstallBar()}
+				${this.bottomNotice ?? ""}
 				<!-- Status and errors get a row of their own above the controls, so a long
 				     message (a failed map load, the off-map warning) can use the full width. -->
 				<div class="hud-status">
@@ -2148,7 +2867,7 @@ export class MapView extends LitElement {
 																	class="nav-stop"
 																	title=${t.navStop}
 																	aria-label=${t.navStop}
-																	@click=${() => this.startNavigation("")}
+																	@click=${() => this.startNavigation("", "user")}
 																>
 																	×
 																</button>
@@ -2173,6 +2892,22 @@ export class MapView extends LitElement {
 															`
 														: ""
 												}
+												<!-- The live markers the host made navigable — other players, objectives. -->
+												${
+													this.navigableMarkers.length > 0
+														? html`
+																<optgroup label=${t.liveGroup}>
+																	${this.navigableMarkers.map(
+																		(marker) => html`
+																			<option value=${MARKER_TARGET_PREFIX + marker.id}>
+																				${marker.label ?? marker.id}
+																			</option>
+																		`,
+																	)}
+																</optgroup>
+															`
+														: ""
+												}
 												<!-- The player's own marks, also outside the guard: they change at a tap. -->
 												${
 													this.marks.length > 0
@@ -2187,12 +2922,12 @@ export class MapView extends LitElement {
 															`
 														: ""
 												}
-												<!-- Guarded on the map id: the list only changes when the map does, and
+												<!-- Guarded on the map: the list only changes when the map does, and
 												     without this every render walked all ~80 options. That includes the
 												     one \`dragstart\` triggers by clearing \`following\`, which put a
 												     rebuild of this list on the first frame of every drag, and the one
 												     each GPS fix triggers through \`status\`. -->
-												${guard([this.selectedMapId], () =>
+												${guard([this.loadedDef, this.t], () =>
 													[...pointsOfInterest]
 														.sort(comparePointsOfInterest)
 														.map(
@@ -2228,222 +2963,23 @@ export class MapView extends LitElement {
 						</button>
 					</div>
 				</div>
-			</div>
-		`;
-	}
-
-	/**
-	 * The install bar, for players who never saw the landing page.
-	 *
-	 * Event links get passed around directly — `?map=de` in a group chat — so a good
-	 * share of players land straight on a map and never read the page that explains
-	 * any of this. This is the same offer, at the point it starts to matter, and it
-	 * holds itself to three rules: it waits for the first GPS fix, so it is asking
-	 * someone who has just watched the app work rather than someone still staring at
-	 * a blank map; it never appears while a navigation is running, because it would
-	 * be covering the one thing they are walking towards; and dismissing it is
-	 * remembered for a fortnight, which covers a whole event weekend.
-	 */
-	private renderInstallBar() {
-		if (this.installBarDismissed || !this.locatedOnce) return "";
-		if (this.selectedPoiId) return "";
-		// "manual" is a desktop browser's menu and "in-app-browser" needs a paragraph
-		// to explain itself: both belong on the landing page, not over a live map.
-		if (this.install.kind !== "prompt" && this.install.kind !== "ios") return "";
-
-		const dismiss = () => {
-			snoozeInstallNudge();
-			this.installBarDismissed = true;
-		};
-
-		const act = async () => {
-			if (this.install.kind === "prompt") {
-				await promptInstall();
-				return;
-			}
-			// iOS: nothing to fire, so the bar unfolds into the gesture instead of
-			// sending them back to the overview and losing the map they are on.
-			this.installStepsOpen = !this.installStepsOpen;
-		};
-
-		return html`
-			<div class="install-bar">
-				<span class="install-bar-text">
-					${t.installBarText}
-					${
-						this.installStepsOpen
-							? html`
-									<span class="install-bar-steps">
-										<span>1. ${t.installIosStep1}</span>
-										<span>2. ${t.installIosStep2}</span>
-									</span>
-								`
-							: ""
-					}
-				</span>
-				<button type="button" class="install-bar-go" @click=${act}>
-					${this.install.kind === "prompt" ? t.installBarAction : t.installBarShow}
-				</button>
-				<button
-					type="button"
-					class="install-bar-later"
-					aria-label=${t.installBarLater}
-					@click=${dismiss}
-				>
-					×
-				</button>
-			</div>
-		`;
-	}
-
-	/**
-	 * The prop dosimeter, on the scenarios that ask for one (OP Tschernobyl). A real
-	 * <dialog> like the landing page's share sheet, so the backdrop, the focus trap and
-	 * Escape come from the browser. The device itself is only in the DOM while the
-	 * dialog is open, which is what starts and stops its needle twitching.
-	 */
-	private renderDosimeterButton() {
-		if (!getMapById(this.selectedMapId).dosimeter) return "";
-		return html`
-			<button
-				type="button"
-				class="dosimeter-btn ${this.dosimeterOpen ? "on" : ""}"
-				aria-label=${t.dosimeter}
-				title=${t.dosimeter}
-				@click=${() => this.openDosimeter()}
-			>
-				<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-					<circle cx="12" cy="12" r="2" fill="currentColor"></circle>
-					<path
-						fill="currentColor"
-						d="M12 12 L7.5 4.2 A9 9 0 0 1 16.5 4.2 Z M12 12 L21 12 A9 9 0 0 1 16.5 19.8 Z M12 12 L7.5 19.8 A9 9 0 0 1 3 12 Z"
-					></path>
-					<circle
-						cx="12"
-						cy="12"
-						r="3.2"
-						fill="none"
-						stroke="rgba(22,29,38,0.95)"
-						stroke-width="1.6"
-					></circle>
-				</svg>
-			</button>
-		`;
-	}
-
-	private openDosimeter() {
-		// Inside the tap, the one place a browser lets audio start: the device opens
-		// with its Geiger clicks already running.
-		primeDosimeterAudio();
-		this.dosimeterHint = false;
-		this.dosimeterOpen = true;
-	}
-
-	private renderDosimeterHint() {
-		if (!this.dosimeterHint) return "";
-		return html`
-			<div class="dosimeter-hint" role="status">
-				<button type="button" class="dosimeter-hint-go" @click=${() => this.openDosimeter()}>
-					${t.dosimeterHint}
-				</button>
-				<button
-					type="button"
-					class="dosimeter-hint-close"
-					aria-label=${t.dosimeterHintDismiss}
-					@click=${() => (this.dosimeterHint = false)}
-				>
-					×
-				</button>
-			</div>
-		`;
-	}
-
-	private renderDosimeter() {
-		if (!getMapById(this.selectedMapId).dosimeter) return "";
-		return html`
-			<dialog
-				class="dosimeter-sheet"
-				@close=${() => (this.dosimeterOpen = false)}
-				@click=${this.onDosimeterBackdrop}
-			>
 				${
-					this.dosimeterOpen
-						? html`<dosimeter-view
-								.position=${this.lastGps}
-								.zones=${this.dosimeterSources().zones}
-								.points=${this.dosimeterSources().points}
-								.guidance=${this.dosimeterGuidance}
-								@close=${() => (this.dosimeterOpen = false)}
-							></dosimeter-view>`
+					this.attribution
+						? html`<a
+								class="fm-attribution"
+								href="https://www.openstreetmap.org/copyright"
+								target="_blank"
+								rel="noopener"
+								>© OpenStreetMap</a
+							>`
 						: ""
 				}
-			</dialog>
+			</div>
 		`;
-	}
-
-	/**
-	 * What the dosimeter's GPS reading is computed from: the map's `biohazard` zones,
-	 * and its radiating objects — every headquarters and `radiatingPois` at full
-	 * strength, and every other building weaker. Turbines and road barriers are not
-	 * buildings and stay out. Memoised
-	 * on the map id, so the device is handed the same arrays and does not re-render on
-	 * a render of this view that changed neither.
-	 */
-	private dosimeterSources(): { zones: LatLng[][]; points: RadiationPoint[] } {
-		if (this.dosimeterSourcesFor?.mapId !== this.selectedMapId) {
-			const definition = getMapById(this.selectedMapId);
-			const radiating = new Set(definition.radiatingPois ?? []);
-			this.dosimeterSourcesFor = {
-				mapId: this.selectedMapId,
-				zones: (definition.zones ?? [])
-					.filter((zone) => zone.style === "biohazard")
-					.map((zone) => zone.points),
-				points: [
-					...(definition.headquarters ?? []),
-					...this.currentPointsOfInterest()
-						.filter((poi) => !isWindTurbine(poi.id) && !isCheckpoint(poi.id))
-						.map((poi) => ({
-							lat: poi.lat,
-							lng: poi.lng,
-							level: radiating.has(poi.id) ? POI_LEVEL : BUILDING_LEVEL,
-						})),
-				],
-			};
-		}
-		return this.dosimeterSourcesFor;
-	}
-	private dosimeterSourcesFor: {
-		mapId: string;
-		zones: LatLng[][];
-		points: RadiationPoint[];
-	} | null = null;
-
-	/**
-	 * The running navigation, for the dosimeter's direction finder. Written straight
-	 * onto the device rather than through a render of this view: it changes with every
-	 * compass reading, which is far more often than anything else here.
-	 */
-	private dosimeterGuidance: DosimeterGuidance | null = null;
-	private setDosimeterGuidance(guidance: DosimeterGuidance | null) {
-		this.dosimeterGuidance = guidance;
-		const dosimeter = this.querySelector<DosimeterView>("dosimeter-view");
-		if (dosimeter) dosimeter.guidance = guidance;
-	}
-
-	/** A tap on the backdrop (the dialog itself, not the device inside it) closes it. */
-	private onDosimeterBackdrop(event: MouseEvent) {
-		if (event.target === event.currentTarget) this.dosimeterOpen = false;
-	}
-
-	/** Drive the native <dialog> from `dosimeterOpen`, so state stays the single truth. */
-	private syncDosimeterDialog() {
-		const dialog = this.querySelector<HTMLDialogElement>("dialog.dosimeter-sheet");
-		if (!dialog) return;
-		if (this.dosimeterOpen && !dialog.open) dialog.showModal();
-		if (!this.dosimeterOpen && dialog.open) dialog.close();
 	}
 
 	private renderToggles() {
+		const t = this.t;
 		const row = (key: keyof Toggles, label: string) => html`
 			<button
 				class="toggle-row ${this.toggles[key] ? "on" : ""}"
@@ -2455,6 +2991,25 @@ export class MapView extends LitElement {
 				<span class="toggle-switch"></span>
 			</button>
 		`;
+		// A marker layer gets a row once a marker on it exists, so the menu never offers
+		// to hide something that is not there.
+		const layers = this.markerLayers.filter((layer) =>
+			this.markers.some((marker) => marker.layer === layer.id),
+		);
+		const layerRow = (layer: MarkerLayer) => {
+			const on = !this.hiddenLayers.has(layer.id);
+			return html`
+				<button
+					class="toggle-row ${on ? "on" : ""}"
+					role="switch"
+					aria-checked=${on}
+					@click=${() => this.toggleMarkerLayer(layer.id)}
+				>
+					<span class="toggle-label">${layer.label}</span>
+					<span class="toggle-switch"></span>
+				</button>
+			`;
+		};
 		return html`
 			<div class="toggles">
 				${
@@ -2465,13 +3020,13 @@ export class MapView extends LitElement {
 									${this.hasMask ? row("mask", t.layerMask) : ""}
 									${this.hasZones ? row("zones", t.layerZones) : ""}
 									${this.hasHqs ? row("hqs", t.layerHqs) : ""}
-									${this.marks.length > 0 ? row("marks", t.layerMarks) : ""}
+									${this.marks.length > 0 ? row("marks", t.layerMarks) : ""} ${layers.map(layerRow)}
 								</div>
 							`
 						: ""
 				}
 				<button
-					class="toggle-btn ${this.togglesOpen ? "on" : ""}"
+					class="fm-round-button toggle-btn ${this.togglesOpen ? "on" : ""}"
 					aria-label=${t.layers}
 					@click=${() => (this.togglesOpen = !this.togglesOpen)}
 				>
@@ -2480,4 +3035,16 @@ export class MapView extends LitElement {
 			</div>
 		`;
 	}
+}
+
+/** The id a spot target carries in the public API: its coordinate, which is all it is. */
+function spotId(lat: number, lng: number): string {
+	return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"field-map": FieldMap;
+	}
+	interface HTMLElementEventMap extends FieldMapEventMap {}
 }

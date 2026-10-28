@@ -1,0 +1,1052 @@
+/* -----------------------------------------------------------------------------
+   field-map.css — the look of <field-map>. Injected once, at the very start of
+   <head>, by the element itself, so it needs no import and a host's own stylesheet
+   (later in the document) wins every tie.
+
+   Every rule is scoped `field-map …`. To restyle a part, write the same selector in
+   your own CSS. To restyle the colours, set the custom properties below on the
+   element — they are declared with zero specificity, so any `field-map { … }` rule
+   of yours replaces them.
+   ----------------------------------------------------------------------------- */
+
+:where(field-map) {
+	/* Blue is "you and the app": the position dot, its accuracy circle, active
+	   controls. Orange is "a place on the ground": PoIs, the route, navigation.
+	   Everything else stays neutral so those two keep their weight. Changed at
+	   runtime? Call `refreshStyle()`: the circle and the route line are drawn in JS. */
+	--field-map-accent: #38bdf8;
+	--field-map-accent-warm: #ffa201;
+	/* The ground of the pills, the select, the HUD buttons and the panels. */
+	--field-map-surface: rgba(11, 15, 20, 0.9);
+	--field-map-text: #e6edf3;
+	--field-map-font: system-ui, sans-serif;
+
+	/* Layout of the top of the screen. Internal. */
+	--top-inset: max(12px, env(safe-area-inset-top));
+	--top-row-gap: 8px;
+	--grid-axis-h: 16px;
+	--stack-grid-axis: 0px;
+}
+/* The grid's column letters take a row of their own above everything else, rather
+   than sharing the top edge with the buttons — a letter parked behind one for the
+   whole match is a letter you never get to read. */
+field-map:has(.grid-axis-x) {
+	--stack-grid-axis: calc(var(--grid-axis-h) + var(--top-row-gap));
+}
+
+/* Absolute, not fixed: a fixed element is a stacking context whatever its z-index,
+   and that would seal the map's own chrome underneath anything the host layers on
+   top. Everything inside is positioned against the viewport anyway. */
+field-map {
+	position: absolute;
+	inset: 0;
+	display: block;
+	font-family: var(--field-map-font);
+	-webkit-tap-highlight-color: transparent;
+	/* Nothing on the map is text anyone wants to copy, and a long press on the map
+	   (pick a spot, set a mark) is a gesture iOS also reads as "select": it then grabs
+	   the nearest text it can find and puts its selection handles over the popup. */
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+field-map[hidden],
+field-map [hidden] {
+	display: none !important;
+}
+field-map *,
+field-map *::before,
+field-map *::after {
+	box-sizing: border-box;
+}
+/* Fixed on purpose here: Leaflet's panes climb to z-index 700, and the stacking
+   context this creates keeps them under the chrome instead of beside it. */
+field-map .fm-leaflet {
+	position: fixed;
+	inset: 0;
+	background: #0b0f14;
+	font-family: var(--field-map-font);
+	/* Holding a finger on the map picks a destination; iOS would otherwise answer the
+	   same gesture with its own selection callout on top of the popup. */
+	-webkit-touch-callout: none;
+}
+
+/* Everything at the top of the screen, as one column: the row of buttons, the host's
+   notice, the iOS compass prompt, and a line of trouble from the sensors. Each row
+   takes the space the ones above it leave, so nothing here restates a height. */
+field-map .fm-top {
+	position: fixed;
+	top: calc(var(--top-inset) + var(--fm-host-top, 0px) + var(--stack-grid-axis));
+	left: 12px;
+	right: 12px;
+	/* Above the HUD (1000), because the settings panel drops down across the rows
+	   under the buttons — a compass prompt over the first switch makes it unusable. */
+	z-index: 1100;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--top-row-gap);
+	pointer-events: none;
+}
+field-map .top-row {
+	position: relative;
+	/* The settings panel hangs out of this row over the ones below it. */
+	z-index: 1;
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	pointer-events: none;
+}
+field-map .fm-top > :not(.top-row) {
+	pointer-events: auto;
+}
+/* Fills the row on a phone, stays a button on a wide screen. */
+field-map .fm-compass {
+	align-self: center;
+	width: 100%;
+	max-width: 420px;
+	min-height: 40px;
+	background: var(--field-map-accent);
+	color: #06222e;
+	border: none;
+	padding: 10px 18px;
+	border-radius: 999px;
+	font-weight: 700;
+	font-size: 15px;
+	cursor: pointer;
+}
+/* The last row: the only one allowed to grow (an error message wraps). */
+field-map .fm-toast {
+	align-self: center;
+	width: 100%;
+	max-width: 420px;
+	background: rgba(180, 40, 40, 0.92);
+	color: #fff;
+	padding: 8px 14px;
+	border-radius: 8px;
+	font-size: 14px;
+	text-align: center;
+}
+
+/* The round buttons of the top row: the ⚙, and any the host puts there (Field Maps'
+   ‹ and its dosimeter trefoil carry this class too). They sit over live map, some of
+   it pale, so they carry a solid ground, a bright rim and a shadow rather than the
+   near-transparent treatment the map furniture below gets — they are the ways out of
+   the screen and have to be findable at a glance in daylight. */
+field-map .fm-round-button {
+	pointer-events: auto;
+	width: 46px;
+	height: 46px;
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	border-radius: 50%;
+	/* A full-strength rim, not the hairline the rest of the chrome uses: over a
+	   black scenario map a 14%-white edge is a circle you have to go looking for. */
+	border: 2px solid rgba(255, 255, 255, 0.55);
+	background: rgba(22, 29, 38, 0.95);
+	color: #fff;
+	line-height: 1;
+	font-family: inherit;
+	cursor: pointer;
+	/* The dark halo is what holds the rim apart from the pale basemaps, the same
+	   job the text shadow does for the scale bar and the grid letters. */
+	box-shadow:
+		0 2px 12px rgba(0, 0, 0, 0.7),
+		0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+field-map .fm-round-button:focus-visible,
+field-map .fm-round-button:hover {
+	border-color: var(--field-map-accent);
+	color: var(--field-map-accent);
+	outline: none;
+}
+
+field-map .fm-round-button:active {
+	transform: scale(0.94);
+}
+
+/* The ends of the top row: the host's buttons, and on the right the settings gear,
+   outermost so it is in the same place on every map. */
+field-map .top-row-start {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	pointer-events: none;
+}
+field-map .top-row-end {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	pointer-events: none;
+}
+
+/* HUD overlay — two rows: status/errors on top, controls below. */
+field-map .hud {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: var(--fm-host-bottom, 0px);
+	padding: max(12px, env(safe-area-inset-bottom)) 16px;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 10px;
+	pointer-events: none;
+	z-index: 1000;
+}
+
+/* Own row, so a long error can wrap across the whole screen instead of being
+   squeezed between the home button and the recenter control. */
+field-map .hud-status {
+	display: flex;
+	min-width: 0;
+}
+
+field-map .hud-controls {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+field-map .hud-left {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+	min-width: 0;
+}
+
+/* Points of interest — bottom left, in the HUD's control row. Down here it sits
+   under the thumb that is holding the phone, and the nav card it opens stacks
+   directly above it instead of across the map. */
+field-map .poi-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-width: min(220px, calc(100vw - 24px));
+	pointer-events: none;
+}
+
+field-map .poi-select {
+	pointer-events: auto;
+	width: 100%;
+	background: var(--field-map-surface);
+	color: var(--field-map-text);
+	padding: 8px 12px;
+	border-radius: 999px;
+	font-size: 14px;
+	font-weight: 600;
+	font-family: inherit;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b98a5' d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 10px center;
+	padding-right: 28px;
+}
+
+field-map .poi-select:focus {
+	outline: none;
+	border-color: var(--field-map-accent-warm);
+}
+
+/* Sits directly above the select that opened it. */
+field-map .nav-card {
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	background: var(--field-map-surface);
+	color: var(--field-map-text);
+	padding: 10px 12px;
+	border-radius: 14px;
+	border: 1px solid color-mix(in srgb, var(--field-map-accent-warm) 28%, transparent);
+}
+
+field-map .nav-arrow {
+	flex-shrink: 0;
+	width: 36px;
+	height: 36px;
+	transform-origin: 50% 50%;
+}
+
+field-map .nav-arrow::before {
+	content: "";
+	display: block;
+	width: 0;
+	height: 0;
+	margin: 4px auto 0;
+	border-left: 10px solid transparent;
+	border-right: 10px solid transparent;
+	border-bottom: 22px solid var(--field-map-accent-warm);
+	filter: drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
+}
+
+field-map .nav-info {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* The one-tap way out of navigation. The select's placeholder does the same, but
+   that is two taps and a scroll past sixty buildings. */
+field-map .nav-stop {
+	flex-shrink: 0;
+	width: 30px;
+	height: 30px;
+	display: grid;
+	place-items: center;
+	padding: 0;
+	background: rgba(255, 255, 255, 0.06);
+	color: #8b98a5;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 50%;
+	font-size: 20px;
+	line-height: 1;
+	font-family: inherit;
+	cursor: pointer;
+}
+
+field-map .nav-stop:hover,
+field-map .nav-stop:focus-visible {
+	background: rgba(255, 255, 255, 0.12);
+	color: var(--field-map-text);
+	outline: none;
+}
+
+field-map .nav-distance {
+	font-size: 18px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--field-map-accent-warm);
+}
+
+field-map .nav-hint {
+	font-size: 13px;
+	color: #8b98a5;
+	line-height: 1.2;
+}
+
+field-map .poi-pin {
+	width: 18px;
+	height: 18px;
+	background: var(--field-map-accent-warm);
+	border: 2px solid #fff;
+	border-radius: 50% 50% 50% 0;
+	transform: rotate(-45deg);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--field-map-accent-warm) 35%, transparent);
+}
+
+field-map .poi-marker {
+	background: none;
+	border: none;
+}
+
+field-map .poi-dot-hit {
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+}
+
+field-map .poi-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--field-map-accent-warm);
+	border: 1.5px solid #fff;
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--field-map-accent-warm) 40%, transparent);
+}
+
+field-map .poi-dot-marker {
+	background: none;
+	border: none;
+}
+
+/* Wind turbine glyph, standing on its PoI dot. */
+/* Wind turbine glyph. It replaces the PoI dot rather than standing on one, so its
+   box — not just the painted mast — is what you tap. */
+field-map .turbine-marker {
+	background: none;
+	border: none;
+}
+
+field-map .turbine-hit {
+	position: relative;
+	width: 30px;
+	height: 42px;
+}
+
+/* The id belongs beside the base, where the coordinate is, not beside the blades. */
+field-map .turbine-hit .poi-dot-label {
+	left: 27px;
+	top: auto;
+	bottom: 0;
+	transform: none;
+}
+
+field-map .turbine-glyph {
+	display: block;
+	fill: #f2ede3;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+	stroke-linejoin: round;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
+}
+
+/* Checkpoint (barrier) glyph: a red-and-white boom on a post. Like the turbine it
+   replaces the dot, so its box is the tap target. */
+field-map .checkpoint-marker {
+	background: none;
+	border: none;
+}
+
+field-map .checkpoint-hit {
+	position: relative;
+	width: 38px;
+	height: 22px;
+}
+
+field-map .checkpoint-hit .poi-dot-label {
+	left: 36px;
+}
+
+field-map .checkpoint-glyph {
+	display: block;
+	stroke-linejoin: round;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.75));
+}
+
+field-map .checkpoint-glyph .checkpoint-arm {
+	fill: #f2ede3;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+}
+
+field-map .checkpoint-glyph .checkpoint-stripes {
+	fill: #d8342c;
+}
+
+field-map .checkpoint-glyph .checkpoint-post {
+	fill: #f2ede3;
+	stroke: rgba(0, 0, 0, 0.75);
+	stroke-width: 1;
+}
+
+/* The out-of-bounds hatch and the per-zone stripes are painted into the basemap's
+   tiles now (see `paintTile`), so the shapes themselves have no CSS. What is left
+   here is the chrome that stayed in the DOM: the zone names. */
+field-map .zone-label-marker {
+	background: none;
+	border: none;
+	pointer-events: none;
+}
+
+field-map .zone-label {
+	position: absolute;
+	transform: translate(-50%, -50%);
+	white-space: nowrap;
+	font-size: 13px;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	text-shadow:
+		0 0 4px rgba(0, 0, 0, 0.95),
+		0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+field-map .hq-marker {
+	background: none;
+	border: none;
+}
+
+field-map .hq-ring {
+	width: 44px;
+	height: 44px;
+	margin: 4px;
+	border-radius: 50%;
+	border: 3px solid currentColor;
+	background: rgba(8, 11, 15, 0.72);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+
+field-map .hq-logo {
+	width: 34px;
+	height: 34px;
+	object-fit: contain;
+	/* Most faction emblems are white line art; a light drop shadow keeps them
+	   readable when a zone or a pale building sits underneath. */
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.9));
+}
+
+field-map .hq-name {
+	position: absolute;
+	top: 54px;
+	left: 50%;
+	transform: translateX(-50%);
+	white-space: nowrap;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-shadow:
+		0 0 4px rgba(0, 0, 0, 0.95),
+		0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+field-map .leaflet-tooltip.poi-tooltip {
+	background: rgba(11, 15, 20, 0.92);
+	color: var(--field-map-text);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 6px;
+	padding: 6px 10px;
+	font-size: 13px;
+	font-weight: 600;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+field-map .leaflet-tooltip.poi-tooltip::before {
+	border-top-color: rgba(11, 15, 20, 0.92);
+}
+
+/* Tap a PoI dot and you get the same label the tooltip carries, plus the button
+   that starts navigation to it. Same dark chrome as the tooltip — it is the same
+   information, just the version you can act on. */
+field-map .leaflet-popup.poi-popup .leaflet-popup-content-wrapper {
+	background: rgba(11, 15, 20, 0.92);
+	color: var(--field-map-text);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 10px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+field-map .leaflet-popup.poi-popup .leaflet-popup-content {
+	margin: 8px 10px;
+	font-size: 13px;
+	line-height: 1.3;
+}
+
+field-map .leaflet-popup.poi-popup .leaflet-popup-tip {
+	background: rgba(11, 15, 20, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow: none;
+}
+
+field-map .poi-popup-body {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 8px;
+}
+
+field-map .poi-popup-title {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+field-map .poi-popup-nav {
+	font-family: inherit;
+	font-size: 13px;
+	font-weight: 700;
+	color: #0b0f14;
+	background: var(--field-map-accent-warm);
+	border: none;
+	border-radius: 999px;
+	padding: 7px 14px;
+	cursor: pointer;
+}
+
+field-map .poi-popup-nav:active {
+	filter: brightness(0.9);
+}
+
+field-map .pill {
+	pointer-events: auto;
+	/* Grows only as far as the text needs, up to the full row. */
+	max-width: 100%;
+	background: var(--field-map-surface);
+	color: var(--field-map-text);
+	padding: 8px 14px;
+	border-radius: 999px;
+	font-variant-numeric: tabular-nums;
+	font-size: 15px;
+	font-weight: 600;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+field-map .pill.warn {
+	background: rgba(180, 40, 40, 0.92);
+	color: #fff;
+	border-color: rgba(255, 120, 120, 0.5);
+}
+
+/* The map data failed to load — the pill becomes the retry button. */
+field-map .pill.retry {
+	background: rgba(180, 40, 40, 0.92);
+	color: #fff;
+	border-color: rgba(255, 120, 120, 0.5);
+	cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+   Grid axis labels — the coordinate grid's column letters and row numbers, held
+   against the top and left edges of the screen while the squares they name scroll
+   underneath, the way a table keeps its headers in view. Same bare white-on-shadow
+   treatment as the scale bar: this is map furniture, not another control, and it
+   has to stay readable over the pale themes as well as the near-black ones.
+
+   Both strips are `position: fixed` boxes that clip their contents, so a label can
+   never spill past the edge it belongs to, and JS only has to move it along one
+   axis (`updateGridAxis`). The numbers start below the letters row — in a table the
+   corner belongs to the column headers.
+   --------------------------------------------------------------------------- */
+field-map .grid-axis {
+	position: fixed;
+	/* Above the map panes (Leaflet tops out at 700), below the chrome (1000): a
+	   letter passing behind the PoI pill should lose, not cover it. */
+	z-index: 900;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+field-map .grid-axis-x {
+	top: calc(var(--top-inset) + var(--fm-host-top, 0px));
+	left: 0;
+	right: 0;
+	height: var(--grid-axis-h);
+}
+
+field-map .grid-axis-y {
+	top: calc(var(--top-inset) + var(--fm-host-top, 0px) + var(--stack-grid-axis));
+	bottom: 0;
+	left: 0;
+	width: 20px;
+}
+
+/* What actually moves. The strip clips, the track pans — see `axisTrack`: a clip
+   travels with its own element's transform, so panning the strip would take its
+   clipping rectangle, and every label in it, off the screen. */
+field-map .grid-axis-track {
+	position: absolute;
+	inset: 0;
+}
+
+field-map .grid-axis-label {
+	position: absolute;
+	top: 0;
+	left: 0;
+	/* Set by `updateGridAxis`; until then the label sits at the strip's origin. */
+	color: #f2f6fa;
+	font-size: 12px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.02em;
+	opacity: 0.9;
+	text-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.85),
+		0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+field-map .grid-axis-x .grid-axis-label {
+	line-height: var(--grid-axis-h);
+}
+
+field-map .grid-axis-y .grid-axis-label {
+	left: 4px;
+	line-height: 1;
+}
+
+/* Scale bar — its own row in the HUD, right-aligned, sitting just above the
+   recenter and layer buttons. Deliberately *not* a pill like the rest of the
+   chrome: every mapping app draws this as a bare bracketed line over the map,
+   and that is what makes it read as a scale rather than as another control.
+   The dark shadow under white keeps it legible on the pale themes too. */
+field-map .scale {
+	align-self: flex-end;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 3px;
+	pointer-events: none;
+}
+
+field-map .scale-label {
+	color: #f2f6fa;
+	font-size: 12px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.01em;
+	text-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.85),
+		0 0 3px rgba(0, 0, 0, 0.6);
+}
+
+field-map .scale-bar {
+	/* Width is set by `updateScale`; 0 until the first fix of the zoom arrives. */
+	height: 7px;
+	border: 2px solid #f2f6fa;
+	border-top: none;
+	border-radius: 0 0 2px 2px;
+	filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+
+field-map .hud-right {
+	display: flex;
+	align-items: flex-end;
+	gap: 10px;
+}
+
+field-map .recenter {
+	pointer-events: auto;
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	border: none;
+	background: var(--field-map-surface);
+	color: #8b98a5;
+	font-size: 24px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+field-map .recenter.on {
+	color: var(--field-map-accent);
+}
+
+/* Settings — the gear in the top row and the layer switches it drops down. */
+field-map .toggles {
+	position: relative;
+	pointer-events: auto;
+	flex: 0 0 auto;
+}
+
+field-map .toggle-btn {
+	font-size: 22px;
+}
+
+field-map .toggle-btn.on {
+	color: var(--field-map-accent);
+	border-color: var(--field-map-accent);
+}
+
+field-map .toggles-panel {
+	position: absolute;
+	top: 54px;
+	right: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px;
+	min-width: 190px;
+	background: rgba(11, 15, 20, 0.92);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 14px;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+field-map .toggle-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 9px 10px;
+	border: none;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--field-map-text);
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+field-map .toggle-row:hover {
+	background: rgba(255, 255, 255, 0.05);
+}
+
+field-map .toggle-switch {
+	flex-shrink: 0;
+	width: 38px;
+	height: 22px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.14);
+	position: relative;
+	transition: background 0.15s ease;
+}
+
+field-map .toggle-switch::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #e6edf3;
+	transition: transform 0.15s ease;
+}
+
+field-map .toggle-row.on .toggle-switch {
+	background: var(--field-map-accent);
+}
+
+field-map .toggle-row.on .toggle-switch::after {
+	transform: translateX(16px);
+}
+
+/* PoI id (number) labels, shown when the toggle is on. The dot is centred in the
+   24px hit box and reads 13px wide with its glow ring, so the text starts clear
+   of it rather than on its edge. */
+field-map .poi-dot-label {
+	position: absolute;
+	left: 21px;
+	top: 50%;
+	transform: translateY(-50%);
+	white-space: nowrap;
+	font-size: 11px;
+	font-weight: 700;
+	color: #f5e6c8;
+	text-shadow:
+		0 0 2px #000,
+		0 0 3px #000,
+		0 1px 2px #000;
+	pointer-events: none;
+}
+
+/* Position marker */
+field-map .pm-wrap {
+	width: 30px;
+	height: 30px;
+	position: relative;
+}
+
+field-map .pm-dot {
+	position: absolute;
+	inset: 9px;
+	border-radius: 50%;
+	background: var(--field-map-accent);
+	border: 2px solid #fff;
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--field-map-accent) 40%, transparent);
+}
+
+field-map .pm-arrow {
+	position: absolute;
+	inset: 0;
+	transform-origin: 50% 50%;
+}
+
+/* Upward-pointing triangle drawn with borders. */
+field-map .pm-arrow::before {
+	content: "";
+	position: absolute;
+	left: 50%;
+	top: 2px;
+	transform: translateX(-50%);
+	width: 0;
+	height: 0;
+	border-left: 9px solid transparent;
+	border-right: 9px solid transparent;
+	border-bottom: 20px solid var(--field-map-accent);
+	filter: drop-shadow(0 0 1px #fff);
+}
+
+/* The player's own marks (src/marks.ts): a small flag, in the brand orange because
+   it is a place on the ground, but square-cornered and white-cored so it never
+   reads as one of the organiser's numbered PoIs. */
+field-map .mark-marker {
+	background: none;
+	border: none;
+}
+
+field-map .mark-hit {
+	position: relative;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+field-map .mark-flag {
+	width: 12px;
+	height: 12px;
+	background: #fff;
+	border: 3px solid var(--field-map-accent-warm);
+	border-radius: 2px;
+	transform: rotate(45deg);
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+field-map .mark-label {
+	position: absolute;
+	left: 22px;
+	top: 50%;
+	transform: translateY(-50%);
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 700;
+	color: #fff;
+	text-shadow:
+		0 0 2px #000,
+		0 0 3px #000,
+		0 1px 2px #000;
+	pointer-events: none;
+}
+
+/* "Mark my position", stacked beside the recenter control it shares a job with. */
+field-map .mark-me {
+	pointer-events: auto;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: var(--field-map-surface);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+}
+
+field-map .mark-me:active {
+	filter: brightness(1.3);
+}
+
+field-map .poi-popup-actions {
+	display: flex;
+	gap: 6px;
+}
+
+field-map .poi-popup-action {
+	flex: 1 1 auto;
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--field-map-text);
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	border-radius: 999px;
+	padding: 6px 10px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+field-map .poi-popup-action.danger {
+	color: #fff;
+	background: #c0392b;
+	border-color: #c0392b;
+}
+
+/* Live markers: the host's other players and objectives (see markers.ts). A dot in
+   the marker's own colour, ringed white like the player's own dot so the two read as
+   the same kind of thing — but smaller, and below it. */
+field-map .fm-live-marker {
+	background: none;
+	border: none;
+}
+field-map .fm-live {
+	--fm-live-color: var(--field-map-accent);
+	position: relative;
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: opacity 0.3s ease;
+}
+field-map .fm-live-dot {
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--fm-live-color);
+	border: 2px solid #fff;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+field-map .fm-live-icon {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+/* The ring's size is set per zoom frame by markers.ts; centred on the marker. */
+field-map .fm-live-ring {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	border-radius: 50%;
+	background: color-mix(in srgb, var(--fm-live-color) 12%, transparent);
+	border: 1px solid color-mix(in srgb, var(--fm-live-color) 55%, transparent);
+	pointer-events: none;
+}
+field-map .fm-live-arrow {
+	position: absolute;
+	inset: -8px;
+	transform-origin: 50% 50%;
+	pointer-events: none;
+}
+field-map .fm-live-arrow::before {
+	content: "";
+	position: absolute;
+	left: 50%;
+	top: 0;
+	transform: translateX(-50%);
+	border-left: 6px solid transparent;
+	border-right: 6px solid transparent;
+	border-bottom: 10px solid var(--fm-live-color);
+	filter: drop-shadow(0 0 1px #fff);
+}
+field-map .fm-live-label {
+	position: absolute;
+	left: 22px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: flex;
+	flex-direction: column;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.15;
+	color: #fff;
+	text-shadow:
+		0 0 2px #000,
+		0 0 3px #000,
+		0 1px 2px #000;
+	pointer-events: none;
+}
+field-map .fm-live-age {
+	font-size: 10px;
+	font-weight: 600;
+	opacity: 0.85;
+}
+field-map .fm-live-age:empty {
+	display: none;
+}
+/* Not heard from in a while: still where they were last seen, but visibly old news. */
+field-map .stale .fm-live {
+	opacity: 0.45;
+}
+field-map .stale .fm-live-dot {
+	background: color-mix(in srgb, var(--fm-live-color) 40%, #7b8794);
+}
+
+/* The map data's credit (ODbL). Small and quiet, at the foot of the HUD. */
+field-map .fm-attribution {
+	align-self: flex-start;
+	margin-top: -4px;
+	pointer-events: auto;
+	font-size: 10px;
+	color: rgba(242, 246, 250, 0.7);
+	text-decoration: none;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
