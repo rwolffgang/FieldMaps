@@ -1,5 +1,5 @@
 // The live markers' diff and staleness. Run with `npm test`.
-import { appearanceKey, diffMarkers, escapeHtml, isStale, minutesSince } from "./marker-diff.js";
+import { appearanceKey, diffMarkers, escapeHtml, isStale, secondsSince } from "./marker-diff.js";
 import type { MapMarker } from "./types.js";
 
 let failures = 0;
@@ -62,8 +62,8 @@ check("never stale without seenAt", !isStale(alice, now, 30_000));
 check("fresh", !isStale({ ...alice, seenAt: now - 10_000 }, now, 30_000));
 check("stale past the limit", isStale({ ...alice, seenAt: now - 31_000 }, now, 30_000));
 check("a limit of 0 never goes stale", !isStale({ ...alice, seenAt: 0 }, now, 0));
-check("minutes, rounded down", minutesSince({ ...alice, seenAt: now - 150_000 }, now) === 2);
-check("no negative minutes", minutesSince({ ...alice, seenAt: now + 5000 }, now) === 0);
+check("seconds, rounded down", secondsSince({ ...alice, seenAt: now - 150_500 }, now) === 150);
+check("no negative age", secondsSince({ ...alice, seenAt: now + 5000 }, now) === 0);
 
 console.log("escapeHtml");
 check(

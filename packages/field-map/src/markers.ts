@@ -17,7 +17,7 @@
 
 import * as L from "leaflet";
 import type { MapMarker } from "./types.js";
-import { diffMarkers, escapeHtml, isStale, minutesSince, type MarkerDiff } from "./marker-diff.js";
+import { diffMarkers, escapeHtml, isStale, secondsSince, type MarkerDiff } from "./marker-diff.js";
 
 /** A CSS colour, or nothing — a value that is not one never reaches a style attribute. */
 function cssColor(color: string | undefined): string | null {
@@ -40,7 +40,7 @@ export interface LiveMarkerOptions {
 	/** A compass bearing to the rotation on screen (the map may not be north-up). */
 	bearingToScreen(bearing: number): number;
 	onClick(id: string): void;
-	lastSeen(minutes: number): string;
+	lastSeen(seconds: number): string;
 }
 
 /** The live markers on one map. */
@@ -196,7 +196,7 @@ export class LiveMarkerLayer {
 		root.classList.toggle("stale", stale);
 		const age = root.querySelector<HTMLElement>(".fm-live-age");
 		if (age) {
-			const text = stale ? this.options.lastSeen(minutesSince(entry.data, now)) : "";
+			const text = stale ? this.options.lastSeen(secondsSince(entry.data, now)) : "";
 			if (age.textContent !== text) age.textContent = text;
 		}
 	}

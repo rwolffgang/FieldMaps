@@ -31,7 +31,12 @@ check(
 	merged.navHints.ahead === "Onward" && merged.navHints.behind === en.navHints.behind,
 );
 check("German on request", fieldMapStrings("de").navigateHere === de.navigateHere);
-check("functions format", de.gridSquare("C4") === "Feld C4" && en.lastSeen(3) === "3 min ago");
+check(
+	"functions format",
+	de.gridSquare("C4") === "Feld C4" &&
+		en.lastSeen(42) === "42 s ago" &&
+		en.lastSeen(185) === "3 min ago",
+);
 
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILED`);
 if (failures) process.exit(1);

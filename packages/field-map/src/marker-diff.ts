@@ -61,9 +61,9 @@ export function isStale(marker: MapMarker, now: number, staleAfterMs: number): b
 	return marker.seenAt != null && staleAfterMs > 0 && now - marker.seenAt > staleAfterMs;
 }
 
-/** Whole minutes since the marker's position, rounded down. */
-export function minutesSince(marker: MapMarker, now: number): number {
-	return marker.seenAt == null ? 0 : Math.max(0, Math.floor((now - marker.seenAt) / 60000));
+/** Whole seconds since the marker's position, rounded down; 0 without `seenAt`. */
+export function secondsSince(marker: MapMarker, now: number): number {
+	return marker.seenAt == null ? 0 : Math.max(0, Math.floor((now - marker.seenAt) / 1000));
 }
 
 export function escapeHtml(text: string): string {

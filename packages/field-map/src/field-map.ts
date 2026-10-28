@@ -501,8 +501,8 @@ export class FieldMap extends LitElement {
 	/** The live markers on the map. Null until the Leaflet map exists. */
 	private live: LiveMarkerLayer | null = null;
 	private staleTimer = 0;
-	/** A `navigateTo*` call made before the map existed, applied once it does. */
-	private pendingNavigation: (() => void) | null = null;
+	/** A `navigateTo*` call made before its map was loaded, applied once it is — on that map only. */
+	private pendingNavigation: { definition: MapDefinition; start: () => void } | null = null;
 	/** Who started the running navigation, and when — see `navigation`. */
 	private navSource: NavigationSource = "user";
 	private navStartedAt = 0;
@@ -677,7 +677,7 @@ export class FieldMap extends LitElement {
 				this.transform.metersToPixels(meters) * this.map.getZoomScale(this.map.getZoom(), 0),
 			bearingToScreen: (bearing) => this.transform.bearingToScreenDeg(bearing),
 			onClick: (id) => this.emit("fieldmap-marker-click", { id }),
-			lastSeen: (minutes) => this.t.lastSeen(minutes),
+			lastSeen: (seconds) => this.t.lastSeen(seconds),
 		});
 		this.map.on("zoom zoomend", () => this.live?.resizeRings());
 
@@ -764,7 +764,11 @@ export class FieldMap extends LitElement {
 		if (changed.has("hiddenLayers")) this.live?.setHiddenLayers(this.hiddenLayers);
 		if (changed.has("positionSource")) {
 			if (this.positionSource === "device") this.startSensorsIfShown();
-			else this.sensors.stop();
+			else {
+				this.sensors.stop();
+				// What the device's sensors had to complain about no longer applies.
+				this.toast = null;
+			}
 		}
 		if (changed.has("wakeLock")) this.sensors.keepAwake(this.wakeLock && this.visible);
 		if (changed.has("insets")) {
@@ -905,7 +909,7 @@ export class FieldMap extends LitElement {
 
 		const pending = this.pendingNavigation;
 		this.pendingNavigation = null;
-		pending?.();
+		if (pending?.definition === definition) pending.start();
 	}
 
 	/**
@@ -1462,7 +1466,9 @@ export class FieldMap extends LitElement {
 	// --- Navigation internals ---------------------------------------------------------
 
 	private requireScenario(method: string): MapDefinition {
-		const definition = this.mapDef ?? (this.scenario ? getMap(this.scenario) : undefined);
+		// From `scenario` itself, not `mapDef`: a host that sets `scenario` and navigates in
+		// the same breath means the new map, which `willUpdate` has not resolved yet.
+		const definition = this.scenario ? getMap(this.scenario) : undefined;
 		if (!definition) {
 			throw new Error(`${method}(): set \`scenario\` to a known scenario id first`);
 		}
@@ -1483,7 +1489,7 @@ export class FieldMap extends LitElement {
 			start();
 			return this.navigation;
 		}
-		this.pendingNavigation = start;
+		this.pendingNavigation = { definition, start };
 		return expected;
 	}
 

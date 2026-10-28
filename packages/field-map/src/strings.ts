@@ -46,7 +46,7 @@ export interface FieldMapStrings {
 	/** The navigable live markers' group in the target list (other players, objectives). */
 	liveGroup: string;
 	/** How long ago a live marker was last updated, once it has gone stale. */
-	lastSeen: (minutes: number) => string;
+	lastSeen: (seconds: number) => string;
 	navArrived: string;
 	navEnableCompass: string;
 	navOffField: string;
@@ -86,7 +86,8 @@ export const FIELD_MAP_STRINGS: Record<FieldMapLang, FieldMapStrings> = {
 		markDeleteConfirm: "Wirklich löschen?",
 		marksGroup: "Eigene Markierungen",
 		liveGroup: "Live",
-		lastSeen: (minutes) => (minutes < 1 ? "gerade eben" : `vor ${minutes} min`),
+		lastSeen: (seconds) =>
+			seconds < 60 ? `vor ${seconds} s` : `vor ${Math.floor(seconds / 60)} min`,
 		navArrived: "Du bist da",
 		navEnableCompass: "Kompass aktivieren für Richtungshinweise",
 		navOffField: "Du stehst außerhalb dieses Spielfelds",
@@ -131,7 +132,8 @@ export const FIELD_MAP_STRINGS: Record<FieldMapLang, FieldMapStrings> = {
 		markDeleteConfirm: "Really delete?",
 		marksGroup: "My marks",
 		liveGroup: "Live",
-		lastSeen: (minutes) => (minutes < 1 ? "just now" : `${minutes} min ago`),
+		lastSeen: (seconds) =>
+			seconds < 60 ? `${seconds} s ago` : `${Math.floor(seconds / 60)} min ago`,
 		navArrived: "You have arrived",
 		navEnableCompass: "Enable compass for turn hints",
 		navOffField: "You are outside this field",

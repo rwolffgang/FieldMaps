@@ -24,7 +24,8 @@ because the field has very little.
 The one thing the app sends anywhere is a cookie-less page view to Cloudflare Web
 Analytics on start-up, so there is some idea of how many people use it. It stores
 nothing on the device, identifies nobody, and never fires without a network. See
-`src/analytics.ts`, and the privacy notice at `/?page=impressum`.
+`src/analytics.ts`, and the privacy notice at `/?page=impressum`. The map element
+itself (`packages/field-map`) sends nothing at all.
 
 ## What it does
 
@@ -84,15 +85,17 @@ npm run dev
 
 Other commands:
 
-| Command           | What it does                                                 |
-| ----------------- | ------------------------------------------------------------ |
-| `npm run build`   | Typecheck with `tsc --noEmit`, then `vite build` to `dist/`  |
-| `npm test`        | Transform self-test against synthetic known truth            |
-| `npm run preview` | Build, then serve it through `wrangler dev` as it deploys    |
-| `npm run serve`   | Serve an existing `dist/` on port 4173, open to the network  |
-| `npm run tunnel`  | Expose port 4173 over HTTPS, for testing GPS on a real phone |
-| `npm run deploy`  | Build and `wrangler deploy` to Cloudflare                    |
-| `npm run format`  | Prettier over the repository                                 |
+| Command                  | What it does                                                 |
+| ------------------------ | ------------------------------------------------------------ |
+| `npm run build`          | Typecheck with `tsc --noEmit`, then `vite build` to `dist/`  |
+| `npm test`               | The packages' tests and guards, then the dosimeter model     |
+| `npm run dev:component`  | The `<field-map>` test page on port 5180 (see below)         |
+| `npm run build:packages` | Build `packages/*/dist` for publishing                       |
+| `npm run preview`        | Build, then serve it through `wrangler dev` as it deploys    |
+| `npm run serve`          | Serve an existing `dist/` on port 4173, open to the network  |
+| `npm run tunnel`         | Expose port 4173 over HTTPS, for testing GPS on a real phone |
+| `npm run deploy`         | Build and `wrangler deploy` to Cloudflare                    |
+| `npm run format`         | Prettier over the repository                                 |
 
 Geolocation needs a secure context, so the app will not locate you from `file://`,
 and neither will it over plain HTTP from another device. `npm run dev` binds to the
@@ -103,18 +106,47 @@ network, which is enough for layout work on a phone. For a real GPS test, build,
 The one requirement a host has to honour is `public/_headers`, which serves `sw.js`
 as `no-cache` — that single line is the whole self-update path.
 
+## Using the map in another app
+
+The map is a package of its own, so another app — another LARP's, say — can show it
+without copying this repository:
+
+- **`packages/field-map`** (`@fieldmaps/field-map`) is `<field-map>`, a custom element:
+  the scenario's map, the player's position, points of interest, navigation, marks,
+  and live markers the host app supplies (other players from its own server). It
+  takes a scenario id and talks to its host through properties, methods and
+  `fieldmap-*` events; it never touches the network.
+- **`packages/core`** (`@fieldmaps/core`) is everything that needs no UI: the field's
+  scenarios, points of interest and calibration, the OpenStreetMap data and faction
+  emblems, and the math.
+
+Field Maps itself is the first app built on them (`src/map-screen.ts`). The
+integration guide, written to be enough on its own for a developer or a coding agent,
+ships inside the package: [`packages/field-map/AGENTS.md`](packages/field-map/AGENTS.md).
+`npm run dev:component` serves a test page that embeds nothing but the element, with
+an event log, simulated players and two-tab sync.
+
+Releases go out as `npm pack` tarballs (`npm run build:packages`, then
+`npm pack --workspaces`) attached to a GitHub release.
+
+## Licence
+
+The code is MIT (`LICENSE`). The map data is © OpenStreetMap contributors under the
+ODbL; the faction emblems and tactical maps are the organiser's and the factions' own
+and are not covered by the MIT licence.
+
 ## Refreshing the map data
 
-The basemap comes from `public/map_osm.geojson`, downloaded once from the Overpass
-API. To refresh it:
+The basemap comes from `packages/core/assets/map_osm.geojson`, downloaded once from
+the Overpass API. To refresh it:
 
 ```bash
 node scripts/fetch-osm.mjs
 ```
 
 That is the only step in this project that touches the network at build time. The
-script also prints the control points and canvas dimensions to paste into
-`src/config.ts`.
+script also prints the control points and canvas dimensions to paste into `OSM_BASE`
+in `packages/core/src/mahlwinkel/index.ts`.
 
 ## Stack
 
@@ -143,8 +175,8 @@ covers the file map, the invariants that must not be broken, the calibration
 workflow and the platform gotchas. Read it before touching the transform math, the
 basemap or the service worker.
 
-Adding an event usually means one new file in `src/scenarios/` plus a line in
-`src/scenarios/index.ts`.
+Adding an event usually means one new file in `packages/core/src/mahlwinkel/scenarios/`
+plus a line in that folder's `index.ts`.
 
 ## Contact
 
