@@ -753,6 +753,8 @@ export class FieldMap extends LitElement {
 		if (!this.map) return;
 		if (changed.has("mapDef") && this.mapDef && this.mapDef !== this.loadedDef) {
 			this.loadMap(this.mapDef);
+			// The element may have been on screen, waiting for a scenario before asking for GPS.
+			this.startSensorsIfShown();
 		}
 		if (changed.has("theme") && this.loadedDef) {
 			this.map.getContainer().style.background = this.loadedDef.vectorData
@@ -1388,7 +1390,13 @@ export class FieldMap extends LitElement {
 			this.startCustomNavigation({ id: CUSTOM_TARGET_ID, name, lat, lng }, source);
 		};
 		return this.whenLoaded(definition, start, {
-			target: { kind: "spot", id: spotId(lat, lng), name: options.name ?? "", lat, lng },
+			target: {
+				kind: "spot",
+				id: spotId(lat, lng),
+				name: options.name ?? this.t.markedPosition,
+				lat,
+				lng,
+			},
 			startedAt: Date.now(),
 			source,
 		});
