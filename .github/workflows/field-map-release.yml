@@ -3,10 +3,12 @@
 # installs from the release URLs: a release is a decision to move them, and the URLs
 # of the one they are on must keep working.
 #
-#   git tag field-map-v0.1.0-pre.2 && git push origin field-map-v0.1.0-pre.2
+#   git tag field-map-v0.1.0-pre.3 origin/field-map-component
+#   git push origin field-map-v0.1.0-pre.3
 #
-# Update the tag in packages/field-map/LOVABLE.md first (it ships in the tarball, with
-# the install URLs in it); the run fails if that file names another release.
+# packages/field-map/LOVABLE.md holds {{tag}} / {{core-tarball}} / {{field-map-tarball}}
+# placeholders; this fills them in for the copy that ships in the tarball and the one
+# attached to the release, so nothing has to be edited by hand before tagging.
 name: field-map release
 
 on:
@@ -30,30 +32,38 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Check LOVABLE.md names this release
-        run: |
-          if grep -o 'field-map-v[0-9][0-9A-Za-z.+-]*' packages/field-map/LOVABLE.md | grep -vqx "$TAG"; then
-            echo "::error file=packages/field-map/LOVABLE.md::It names another release; replace its tag with $TAG, commit, and move the tag."
-            exit 1
-          fi
-
       - run: npm ci
       - run: npm test
       - run: npm run build:packages
+
+      - name: Fill in LOVABLE.md
+        run: |
+          # npm pack names a scoped package @scope/name as scope-name-<version>.tgz.
+          core="fieldmaps-core-$(node -p 'require("./packages/core/package.json").version').tgz"
+          element="fieldmaps-field-map-$(node -p 'require("./packages/field-map/package.json").version').tgz"
+          echo "CORE_TGZ=$core" >> "$GITHUB_ENV"
+          echo "ELEMENT_TGZ=$element" >> "$GITHUB_ENV"
+          file=packages/field-map/LOVABLE.md
+          sed -i -e '/repository copy only/d' \
+            -e "s/{{tag}}/$TAG/g" -e "s/{{core-tarball}}/$core/g" -e "s/{{field-map-tarball}}/$element/g" "$file"
+          if grep -n '{{' "$file"; then
+            echo "::error file=$file::A placeholder was left unfilled."
+            exit 1
+          fi
 
       - name: Pack
         run: |
           mkdir release
           npm pack -w @fieldmaps/core -w @fieldmaps/field-map --pack-destination release
+          cp packages/field-map/LOVABLE.md release/
           ls -l release
+          test -f "release/$CORE_TGZ" && test -f "release/$ELEMENT_TGZ"
 
       - name: Publish pre-release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
-          core=$(cd release && ls fieldmaps-core-*.tgz)
-          element=$(cd release && ls fieldmaps-field-map-*.tgz)
           cat > notes.md <<EOF
           Pre-release of the \`<field-map>\` element and \`@fieldmaps/core\`, built from \`${GITHUB_SHA::7}\`. Not merged into \`main\` yet; expect changes.
 
@@ -61,13 +71,15 @@ jobs:
 
           \`\`\`sh
           npm install lit leaflet \\
-            ${base}/${core} \\
-            ${base}/${element}
+            ${base}/${CORE_TGZ} \\
+            ${base}/${ELEMENT_TGZ}
           \`\`\`
 
-          \`lit\` and \`leaflet\` are peer dependencies. The integration guide ships inside the package: \`node_modules/@fieldmaps/field-map/AGENTS.md\` (\`LOVABLE.md\` next to it for a Lovable project). Moving from an earlier pre-release: replace the two URLs in \`package.json\`.
+          \`lit\` and \`leaflet\` are peer dependencies. The integration guide ships inside the package: \`node_modules/@fieldmaps/field-map/AGENTS.md\`. Moving from an earlier pre-release: replace the two URLs in \`package.json\`.
+
+          **Building with Lovable?** Follow the [\`LOVABLE.md\`](${base}/LOVABLE.md) attached below; its URLs are this release's.
           EOF
-          gh release create "$TAG" release/*.tgz \
+          gh release create "$TAG" release/*.tgz release/LOVABLE.md \
             --prerelease --verify-tag \
             --title "<field-map> ${TAG#field-map-v}" \
             --notes-file notes.md --generate-notes

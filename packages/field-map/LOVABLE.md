@@ -2,6 +2,8 @@
 
 For a developer building on [Lovable](https://lovable.dev). Lovable generates a Vite + React + TypeScript app, which `<field-map>` works in as it is. What needs saying is what Lovable's AI cannot find out by itself: the packages are **not on npm**, and it cannot read the integration guide inside `node_modules`. This page gives it both.
 
+> **This is the repository copy, with `{{tag}}` placeholders.** Use the `LOVABLE.md` attached to a [release](https://github.com/rwolffgang/FieldMaps/releases): it has that release's URLs filled in. <!-- repository copy only: the release workflow deletes this line -->
+
 Three steps: paste the knowledge text into the project, send the setup prompt, then test on a phone.
 
 ## 1. Project knowledge
@@ -14,12 +16,12 @@ This app shows a map with the <field-map> custom element from the Field Maps pro
 Packages — NOT on the npm registry. Never install @fieldmaps/* by name; a registry
 lookup either fails or, worse, finds someone else's package. They are installed from
 these exact tarball URLs, as package.json dependencies:
-  "@fieldmaps/core": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.2/fieldmaps-core-0.1.0.tgz"
-  "@fieldmaps/field-map": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.2/fieldmaps-field-map-0.1.0.tgz"
+  "@fieldmaps/core": "https://github.com/rwolffgang/FieldMaps/releases/download/{{tag}}/{{core-tarball}}"
+  "@fieldmaps/field-map": "https://github.com/rwolffgang/FieldMaps/releases/download/{{tag}}/{{field-map-tarball}}"
 plus the peer dependencies "lit" (^3.2) and "leaflet" (^1.9.4).
 
 The complete integration guide (properties, methods, events, recipes, troubleshooting):
-https://raw.githubusercontent.com/rwolffgang/FieldMaps/field-map-v0.1.0-pre.2/packages/field-map/AGENTS.md
+https://raw.githubusercontent.com/rwolffgang/FieldMaps/{{tag}}/packages/field-map/AGENTS.md
 If you cannot open that URL, read docs/field-map-guide.md in this repository. The
 package's TypeScript declarations win over anything written here.
 
@@ -116,4 +118,4 @@ After that, features are prompts like _"Show other players from our Supabase tab
 
 ## 5. Moving to a newer release
 
-Each pre-release is a GitHub release of `rwolffgang/FieldMaps` with a tag `field-map-v<version>`. To move: replace the tag (and version, if it changed) in the two `package.json` URLs **and** in the project knowledge, then let Lovable reinstall. Read the release notes first; while it is a pre-release, the API may still change.
+Each pre-release is a GitHub release of `rwolffgang/FieldMaps` with a tag `field-map-v<version>`, and carries its own `LOVABLE.md` with its URLs filled in. To move: paste that release's knowledge text over the old one, and replace the two `package.json` URLs with its URLs, then let Lovable reinstall. Read the release notes first; while it is a pre-release, the API may still change.

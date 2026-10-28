@@ -129,8 +129,8 @@ an event log, simulated players and two-tab sync.
 Releases go out as `npm pack` tarballs attached to a GitHub pre-release. Pushing a
 `field-map-v*` tag publishes one (`.github/workflows/field-map-release.yml`): it tests,
 builds and packs both packages, and writes the install URLs into the release notes.
-Put the new tag into `packages/field-map/LOVABLE.md` before tagging; the run refuses
-a release whose `LOVABLE.md` names another one.
+`packages/field-map/LOVABLE.md` keeps `{{tag}}` placeholders in the repository; the
+run fills them in for the copy in the tarball and the one attached to the release.
 
 ## Licence
 
