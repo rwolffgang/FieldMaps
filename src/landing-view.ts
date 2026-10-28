@@ -85,7 +85,7 @@ const SITE_QR = "/qr-fieldmaps.svg";
 
 @customElement("landing-view")
 export class LandingView extends LitElement {
-	// Light DOM, like map-view — the app's stylesheet is global.
+	// Light DOM, like map-screen — the app's stylesheet is global.
 	protected createRenderRoot() {
 		return this;
 	}

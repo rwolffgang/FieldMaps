@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+		/>
+		<title>&lt;field-map&gt; test page</title>
+		<link rel="stylesheet" href="./test-page.css" />
+	</head>
+	<body>
+		<!--
+			Everything below is what a host app writes: one <field-map>, configured through
+			attributes and properties, plus the host's own chrome. The test controls are
+			host chrome too — a header the map is told about through `insets`.
+		-->
+		<field-map scenario="opt">
+			<button slot="top-start" class="fm-round-button" id="host-button" title="A host button">
+				★
+			</button>
+		</field-map>
+
+		<header id="controls" class="controls">
+			<button id="controls-toggle" class="controls-toggle" type="button" aria-expanded="false">
+				&lt;field-map&gt; test page ▾
+			</button>
+			<div id="controls-body" class="controls-body" hidden></div>
+		</header>
+
+		<script type="module" src="./main.ts"></script>
+	</body>
+</html>

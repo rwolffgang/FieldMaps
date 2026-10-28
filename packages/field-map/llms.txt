@@ -1,0 +1,15 @@
+# @fieldmaps/field-map
+
+> `<field-map>`: a custom element showing the Mahlwinkel airfield (Germany) for airsoft/LARP events — live GPS position, points of interest, navigation, the player's marks, and live markers (e.g. other players from your own server). Offline-capable, framework-agnostic (Lit inside), full viewport. Map content comes from the package and is chosen by scenario id; the host can restyle it, not change it.
+
+Read AGENTS.md in this package before writing code. It is the complete integration guide:
+
+- AGENTS.md §2: install (tarballs + peers `lit`, `leaflet`), serving the assets (`fieldMapsAssets()` from `@fieldmaps/core/vite`, or copy `@fieldmaps/core/assets/`), plain HTML and React quick starts
+- AGENTS.md §3: every property, method and event, with example payloads
+- AGENTS.md §5: recipes — live positions over WebSocket, syncing navigations, custom markers
+- AGENTS.md §6: scenario ids (`m24`, `de`, `opt`, `lso`, `asd`, `laf`)
+- AGENTS.md §7: styling (themes via `extendTheme`, `--field-map-*` custom properties)
+- AGENTS.md §8: rules that break things silently (no shadow DOM, HTTPS for GPS, replace `markers` don't mutate, use `setPosition()` not `update()`, never send the navigation on reconnect)
+- AGENTS.md §9: troubleshooting by symptom
+
+Types: dist/index.d.ts — start with `FieldMapElement` (the element's whole public surface), then `MapMarker`, `NavigationState`, `FieldMapEventMap`, … — and @fieldmaps/core's dist/index.d.ts / dist/mahlwinkel/index.d.ts.

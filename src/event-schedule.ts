@@ -13,16 +13,10 @@
 // page can put them under Past Events until January, when they become upcoming again.
 // -----------------------------------------------------------------------------
 
+import type { EventSchedule, MonthDay } from "@fieldmaps/core";
 import { currentLang, monthNames, type Lang } from "./i18n.js";
 
-/** [month, day] with month 1–12. */
-export type MonthDay = [number, number];
-
-export interface EventSchedule {
-	start: MonthDay;
-	/** Last day of the event, inclusive. Omit for a one-day game. */
-	end?: MonthDay;
-}
+export type { EventSchedule, MonthDay };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

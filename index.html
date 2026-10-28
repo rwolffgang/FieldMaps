@@ -20,13 +20,10 @@
 	</head>
 	<body>
 		<landing-view hidden></landing-view>
-		<map-view hidden></map-view>
+		<!-- The map: <field-map> from packages/field-map, plus this app's own chrome
+		     around it (back button, install bar, dosimeter, update banner). -->
+		<map-screen hidden></map-screen>
 		<legal-view hidden></legal-view>
-		<button id="enable-compass" hidden>Enable compass</button>
-		<div id="toast" hidden></div>
-		<!-- "A new build is ready." Only ever shown over a live map — anywhere else
-		     the update just applies itself. See src/update.ts. -->
-		<button id="update-banner" type="button" hidden></button>
 		<!-- "What's new", once after an update that brought something. See src/whats-new.ts. -->
 		<whats-new-view></whats-new-view>
 		<script type="module" src="/src/main.ts"></script>

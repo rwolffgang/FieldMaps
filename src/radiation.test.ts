@@ -9,7 +9,7 @@ import {
 	radiationLevelAt,
 	signedDistanceToZoneM,
 } from "./radiation.js";
-import type { LatLng } from "./scenarios/scenario.js";
+import type { LatLng } from "@fieldmaps/core";
 
 const R = 6378137;
 const DEG = Math.PI / 180;

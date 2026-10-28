@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
-import { defineConfig } from "vite";
+import { defaultClientConditions, defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { fieldMapsAssets } from "@fieldmaps/core/vite";
 
 import { cloudflare } from "@cloudflare/vite-plugin";
 
@@ -39,6 +40,11 @@ export default defineConfig({
 	define: {
 		__BUILD_ID__: JSON.stringify(buildId()),
 	},
+	resolve: {
+		// The workspace packages (`packages/*`) are built from their TypeScript source —
+		// see the "source" entries in their `exports`.
+		conditions: ["source", ...defaultClientConditions],
+	},
 	server: {
 		// Lets a launcher hand the dev server a free port; Vite's default otherwise.
 		port: Number(process.env.PORT) || undefined,
@@ -50,6 +56,9 @@ export default defineConfig({
 		allowedHosts: [".loca.lt"],
 	},
 	plugins: [
+		// The map data and the faction emblems from `@fieldmaps/core`, served next to the
+		// page where `<field-map>` looks for them — and so precached below with the rest.
+		fieldMapsAssets(),
 		VitePWA({
 			// "prompt", not "autoUpdate": a new build installs in the background and
 			// then *waits*, so a running session keeps the assets it started with

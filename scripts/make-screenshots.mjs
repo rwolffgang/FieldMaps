@@ -105,7 +105,9 @@ for (const shot of SHOTS) {
 	// taken where they actually read the map rather than at the initial fit.
 	if (shot.zoom) {
 		await page.evaluate((steps) => {
-			const view = document.querySelector("map-view");
+			// The Leaflet map is the element's private `map` field; reaching it is fine for
+			// a screenshot script and nothing else.
+			const view = document.querySelector("field-map");
 			const map = view?.map;
 			if (map) map.setZoom(map.getZoom() + steps, { animate: false });
 		}, shot.zoom);
@@ -114,10 +116,7 @@ for (const shot of SHOTS) {
 	// The compass button is a permission prompt, and only iOS raises it. Headless
 	// Chrome shows it because no sensor ever answers, so leaving it in would put a
 	// prompt no Android user ever sees into the dialog Android shows them.
-	await page.evaluate(() => {
-		const button = document.querySelector("#enable-compass");
-		if (button) button.hidden = true;
-	});
+	await page.addStyleTag({ content: "field-map .fm-compass { display: none !important; }" });
 
 	const path = join(outDir, shot.file);
 	await page.screenshot({ path });

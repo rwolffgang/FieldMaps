@@ -2,14 +2,14 @@
 // scripts/fetch-osm.mjs
 //
 // Download OpenStreetMap data for the playfield from the Overpass API and bake it
-// into a compact GeoJSON file (public/map_osm.geojson) that the app renders as a
+// into a compact GeoJSON file (packages/core/assets/map_osm.geojson) that the app renders as a
 // custom vector map. This is the ONLY online step: once the file is committed the
 // app runs fully offline (the service worker precaches the .geojson).
 //
 // Run:  node scripts/fetch-osm.mjs
 //
 // It also prints the MapDefinition control points + pixel dimensions to paste into
-// src/config.ts. The pixel canvas uses the exact same equirectangular projection as
+// OSM_BASE in packages/core/src/mahlwinkel/index.ts. The pixel canvas uses the exact same equirectangular projection as
 // src/transform.ts, so the fitted transform reproduces it with ~zero residual and
 // the OSM geometry lines up with the GPS dot and the points of interest.
 // -----------------------------------------------------------------------------
@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 
 // --- Area of interest ---------------------------------------------------------
 // Bounding box around the field, with margin so surrounding forest/roads show.
-// All points of interest in src/config.ts fall well inside this box.
+// All points of interest (packages/core/src/mahlwinkel/) fall well inside this box.
 const BBOX = {
 	latMin: 52.376,
 	latMax: 52.3855,
@@ -95,7 +95,8 @@ function classify(tags) {
 		if (l === "forest") return { k: "forest", area: true };
 		if (l === "meadow" || l === "grass" || l === "village_green" || l === "recreation_ground")
 			return { k: "grass", area: true };
-		if (l === "farmland" || l === "farmyard" || l === "orchard") return { k: "farmland", area: true };
+		if (l === "farmland" || l === "farmyard" || l === "orchard")
+			return { k: "farmland", area: true };
 		if (l === "residential" || l === "industrial" || l === "commercial" || l === "railway")
 			return { k: "builtup", area: true };
 		if (l === "quarry" || l === "brownfield" || l === "landfill" || l === "construction")
@@ -206,15 +207,24 @@ async function main() {
 		features,
 	};
 
-	const outPath = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "map_osm.geojson");
+	const outPath = join(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"packages",
+		"core",
+		"assets",
+		"map_osm.geojson",
+	);
 	await writeFile(outPath, JSON.stringify(collection));
 
 	const counts = {};
 	for (const f of features) counts[f.properties.k] = (counts[f.properties.k] ?? 0) + 1;
 
-	process.stderr.write(`\nWrote ${features.length} features to public/map_osm.geojson\n`);
+	process.stderr.write(
+		`\nWrote ${features.length} features to packages/core/assets/map_osm.geojson\n`,
+	);
 	process.stderr.write(`Class counts: ${JSON.stringify(counts)}\n\n`);
-	process.stderr.write(`--- Paste into src/config.ts (MapDefinition) ---\n`);
+	process.stderr.write(`--- Paste into OSM_BASE in packages/core/src/mahlwinkel/index.ts ---\n`);
 	process.stderr.write(`width: ${WIDTH},\n`);
 	process.stderr.write(`height: ${HEIGHT},\n`);
 	process.stderr.write(`controlPoints: [\n`);

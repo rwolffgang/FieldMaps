@@ -1,0 +1,45 @@
+{
+	"name": "@fieldmaps/field-map",
+	"version": "0.1.0",
+	"description": "<field-map>: the Field Maps map of the Mahlwinkel airfield as a custom element \u2014 live GPS position, points of interest, navigation, marks, and live markers from your own server.",
+	"license": "MIT",
+	"type": "module",
+	"sideEffects": [
+		"./src/index.ts",
+		"./src/field-map.ts",
+		"./dist/field-map.js"
+	],
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/field-map.js"
+		},
+		"./strings": {
+			"source": "./src/strings.ts",
+			"types": "./dist/strings.d.ts",
+			"default": "./dist/strings.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"AGENTS.md",
+		"llms.txt",
+		"LOVABLE.md",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
+		"test": "tsx src/marker-diff.test.ts && tsx src/compass-decision.test.ts && tsx src/strings.test.ts && tsx scripts/check-docs.ts && tsx scripts/check-boundaries.ts"
+	},
+	"dependencies": {
+		"@fieldmaps/core": "0.1.0"
+	},
+	"peerDependencies": {
+		"leaflet": "^1.9.4",
+		"lit": "^3.2.1"
+	}
+}

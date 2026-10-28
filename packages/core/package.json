@@ -1,0 +1,40 @@
+{
+	"name": "@fieldmaps/core",
+	"version": "0.1.0",
+	"description": "Field Maps without the UI: GPS-to-map transform, navigation math, the OSM basemap painter and themes, and the Mahlwinkel airfield's map content.",
+	"license": "MIT",
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./mahlwinkel": {
+			"source": "./src/mahlwinkel/index.ts",
+			"types": "./dist/mahlwinkel/index.d.ts",
+			"default": "./dist/mahlwinkel.js"
+		},
+		"./vite": {
+			"types": "./vite-plugin.d.ts",
+			"default": "./vite-plugin.mjs"
+		},
+		"./assets/*": "./assets/*"
+	},
+	"files": [
+		"dist",
+		"src",
+		"!src/**/*.test.ts",
+		"assets",
+		"vite-plugin.mjs",
+		"vite-plugin.d.ts",
+		"AGENTS.md",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"build": "vite build --config vite.lib.config.ts && tsc -p tsconfig.build.json",
+		"test": "tsx src/transform.test.ts && tsx src/core.test.ts"
+	}
+}
