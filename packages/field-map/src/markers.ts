@@ -51,11 +51,6 @@ export class LiveMarkerLayer {
 
 	constructor(private readonly options: LiveMarkerOptions) {}
 
-	/** The marker by id, as last set. */
-	get(id: string): MapMarker | undefined {
-		return this.placed.get(id)?.data;
-	}
-
 	/** Apply a new `markers` array; returns what changed. */
 	set(markers: readonly MapMarker[], staleAfterMs: number): MarkerDiff {
 		this.staleAfterMs = staleAfterMs;
@@ -109,13 +104,10 @@ export class LiveMarkerLayer {
 		for (const entry of this.placed.values()) this.applyFreshness(entry);
 	}
 
+	/** Take every marker off the map, for when the calibration they were placed with goes. */
 	clear() {
 		for (const entry of this.placed.values()) entry.marker.remove();
 		this.placed.clear();
-	}
-
-	get size(): number {
-		return this.placed.size;
 	}
 
 	private add(data: MapMarker) {

@@ -15,6 +15,7 @@ export {
 	watch,
 	POSITION_SMOOTHING,
 	SNAP_DISTANCE_M,
+	GPS_HEADING_SPEED,
 	type Fix,
 	type NavigationHint,
 	type WatchOptions,

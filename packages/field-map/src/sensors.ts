@@ -4,6 +4,7 @@
 // `position-source="device"` mode: the GPS watch, the compass, the iOS compass
 // permission, and the screen wake lock. The element decides *when* these start
 // (once it is actually on screen); this decides how they behave once they have.
+// The wake lock has a life of its own: it is not tied to the sensors running.
 // -----------------------------------------------------------------------------
 
 import { needsPermission, requestPermission, watch, watchHeading, type Fix } from "@fieldmaps/core";
@@ -46,7 +47,13 @@ export class DeviceSensors {
 	private probeTimer = 0;
 	private wakeLock: { release(): Promise<void> } | null = null;
 	private wantAwake = false;
-	compass: CompassState = "off";
+	private compass: CompassState = "off";
+	/**
+	 * The player refused the compass. Kept across `stop`, unlike `compass`: a browser
+	 * does not ask twice, so a restart (the element back on the page) re-probing as if
+	 * nothing had happened would offer an "Enable compass" button that cannot work.
+	 */
+	private compassRefused = false;
 
 	constructor(private readonly callbacks: SensorCallbacks) {}
 
@@ -104,11 +111,17 @@ export class DeviceSensors {
 			this.evidence.sawEmptyReading = false;
 			this.listenToCompass();
 		} else if (result === "denied") {
+			this.compassRefused = true;
 			this.setCompass("denied");
 		}
 		return result;
 	}
 
+	/**
+	 * Stop the watch and the compass. The wake lock is left alone: it follows the map
+	 * being on screen, not the sensors running — a host feeding its own positions
+	 * (`position-source="external"`) still wants the screen kept on.
+	 */
 	stop() {
 		this.stopGps?.();
 		this.stopGps = null;
@@ -118,17 +131,14 @@ export class DeviceSensors {
 		this.probeTimer = 0;
 		this.evidence = { sawHeading: false, sawEmptyReading: false, timedOut: false, granted: false };
 		this.disarmGpsError();
-		this.keepAwake(false);
 		this.setCompass("off");
-	}
-
-	get started(): boolean {
-		return this.stopGps != null;
 	}
 
 	/**
 	 * Keep the screen on while the map is up. Browsers release the lock whenever the
-	 * page is hidden, so it is taken again on every return to the foreground.
+	 * page is hidden, so it is taken again on every return to the foreground. Driven by
+	 * the element alone (`wakeLock` and whether it is on screen), independently of
+	 * `start` and `stop`.
 	 */
 	keepAwake(on: boolean) {
 		this.wantAwake = on;
@@ -143,7 +153,10 @@ export class DeviceSensors {
 		api
 			?.request("screen")
 			.then((lock) => {
-				if (!this.wantAwake) {
+				// Not wanted any more — or wanted, let go and wanted again while this request
+				// was out, so that a second one went out too and won. Holding both would leave
+				// one that no later `keepAwake(false)` releases.
+				if (!this.wantAwake || this.wakeLock) {
 					void lock.release().catch(() => {});
 					return;
 				}
@@ -194,7 +207,11 @@ export class DeviceSensors {
 			coarsePointer: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
 		});
 		// A refusal stands until a reading proves otherwise.
-		if (this.compass === "denied" && decision !== "on") return;
+		if (this.compassRefused && decision !== "on") {
+			this.setCompass("denied");
+			return;
+		}
+		this.compassRefused = false;
 		this.setCompass(decision === "wait" ? "probing" : decision);
 		if (decision !== "wait") {
 			clearTimeout(this.probeTimer);

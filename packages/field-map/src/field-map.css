@@ -681,6 +681,13 @@ field-map .scale {
 	pointer-events: none;
 }
 
+/* No map to measure: before the first one, and after `unloadMap`. Invisible rather
+   than `display: none`, so the row keeps its height and the status pill and the
+   host's notice above it do not jump when a map comes or goes. */
+field-map .scale.no-map {
+	visibility: hidden;
+}
+
 field-map .scale-label {
 	color: #f2f6fa;
 	font-size: 12px;
@@ -693,7 +700,8 @@ field-map .scale-label {
 }
 
 field-map .scale-bar {
-	/* Width is set by `updateScale`; 0 until the first fix of the zoom arrives. */
+	/* Width is set by `updateScale` when a map loads and on every zoom; 0 before the
+	   first map, while the bar is still hidden. */
 	height: 7px;
 	border: 2px solid #f2f6fa;
 	border-top: none;

@@ -420,7 +420,21 @@ group(
 // The shape a real backend would have: every client sends its own fix (throttled) and
 // the navigations its player starts; every client shows the others' fixes as markers
 // and applies the navigations it receives with source "host", which is how it knows
-// not to send them back.
+// not to send them back. Nothing is sent when a tab opens: its empty navigation would
+// stop every other tab's. A navigation from a tab on another scenario is ignored: its
+// PoI ids are not this map's.
+//
+// There is no server here, so this is the minimal version of AGENTS.md §5.2, not the
+// recipe. A real server numbers each navigation per scenario, echoes it to the sender
+// too, and hands the last one, a stop included, to a client that joins, which applies
+// only what is numbered higher than anything it has seen. Here nothing numbers or keeps
+// them, and a new tab starts without a navigation. BroadcastChannel never delivers to
+// the sender and keeps one sender's messages in order, which is enough while one tab
+// steers the other — but two tabs that start navigations at once can swap them, each
+// ending up on the other's, which is what a real server's numbering prevents. As in the
+// recipe, anything but a PoI goes as its coordinates: marks and spots are a tab's own,
+// and a follow reaches the other tab as where the followed marker is now — which the
+// followed tab itself ignores.
 
 const tabId = Math.random().toString(36).slice(2, 7);
 const channel = "BroadcastChannel" in window ? new BroadcastChannel("field-map-test-page") : null;
@@ -436,7 +450,7 @@ type Message =
 			heading: number | null;
 			at: number;
 	  }
-	| { type: "navigation"; from: string; state: NavigationState };
+	| { type: "navigation"; from: string; scenario: string; state: NavigationState };
 
 channel?.addEventListener("message", (event: MessageEvent<Message>) => {
 	const message = event.data;
@@ -454,7 +468,7 @@ channel?.addEventListener("message", (event: MessageEvent<Message>) => {
 			navigable: true,
 		});
 		publishMarkers();
-	} else if (message.type === "navigation") {
+	} else if (message.type === "navigation" && message.scenario === map.scenario) {
 		applyRemoteNavigation(message.state);
 	}
 });
@@ -465,10 +479,12 @@ function applyRemoteNavigation(state: NavigationState) {
 		return;
 	}
 	const { target } = state;
-	// A PoI id means the same building on every client; anything else is sent as a
-	// coordinate, since marks and markers are per client.
+	// A PoI id means the same building on every client; anything else is walked to by
+	// its coordinates, since marks and markers are per client.
 	if (target.kind === "poi") map.navigateToPoi(target.id, { source: "host" });
-	else map.navigateToCoordinates(target.lat, target.lng, { name: target.name, source: "host" });
+	else if (target.id !== `tab-${tabId}`) {
+		map.navigateToCoordinates(target.lat, target.lng, { name: target.name, source: "host" });
+	}
 }
 
 map.addEventListener("fieldmap-fix", (event) => {
@@ -492,7 +508,12 @@ map.addEventListener("fieldmap-navigation", (event) => {
 	showNavigation(detail.state);
 	// Only what this player did goes out; what arrived from elsewhere is "host".
 	if (channel && detail.source === "user") {
-		channel.postMessage({ type: "navigation", from: tabId, state: detail.state } satisfies Message);
+		channel.postMessage({
+			type: "navigation",
+			from: tabId,
+			scenario: map.scenario,
+			state: detail.state,
+		} satisfies Message);
 	}
 });
 

@@ -3,8 +3,14 @@
 # installs from the release URLs: a release is a decision to move them, and the URLs
 # of the one they are on must keep working.
 #
-#   git tag field-map-v0.1.0-pre.3 origin/field-map-component
-#   git push origin field-map-v0.1.0-pre.3
+#   git tag field-map-v0.1.0-pre.5 origin/main
+#   git push origin field-map-v0.1.0-pre.5
+#
+# The tag is the version: field-map-v<semver> packs both packages as <semver>, whatever
+# their package.json files say, and the element's dependency on core becomes the URL of
+# this release's core tarball. Both edits are made in this run's checkout only — the
+# repository keeps its workspace versions and its dependency by name, which is what
+# npm ci and the workspace links resolve against.
 #
 # packages/field-map/LOVABLE.md holds {{tag}} / {{core-tarball}} / {{field-map-tarball}}
 # placeholders; this fills them in for the copy that ships in the tarball and the one
@@ -36,11 +42,36 @@ jobs:
       - run: npm test
       - run: npm run build:packages
 
+      - name: Version from the tag
+        run: |
+          version="${TAG#field-map-v}"
+          # Semver without build metadata: npm reads 0.1.0+a back as 0.1.0, so two releases
+          # that differ only in a +suffix would be the same version to it.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          if [[ ! "$version" =~ $semver ]]; then
+            echo "::error::Tag $TAG is not field-map-v<semver> (e.g. field-map-v0.1.0-pre.5, no +build suffix)."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          npm pkg set "version=$version" -w @fieldmaps/core -w @fieldmaps/field-map
+          # The element asks for the core of its own release, by URL. A URL means npm
+          # never asks the registry for @fieldmaps/core (a scope that is not ours there),
+          # and a plain dependency rather than a peer means every package manager installs
+          # it, settings or no settings — for a host that lists only the element too. A host
+          # listing the same URL shares one copy. One listing another release's core is not
+          # refused: the element gets its own copy beside it, and the host's Vite plugin
+          # serves the assets of the other one. A peer was tried and refuses only under npm
+          # without --legacy-peer-deps, compares the URLs as strings (a host that spells the
+          # repository differently, or vendors the tarball, gets ERESOLVE for the right
+          # core), and leaves a host listing only the element without core elsewhere.
+          npm pkg set "dependencies.@fieldmaps/core=https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/fieldmaps-core-${version}.tgz" \
+            -w @fieldmaps/field-map
+
       - name: Fill in LOVABLE.md
         run: |
           # npm pack names a scoped package @scope/name as scope-name-<version>.tgz.
-          core="fieldmaps-core-$(node -p 'require("./packages/core/package.json").version').tgz"
-          element="fieldmaps-field-map-$(node -p 'require("./packages/field-map/package.json").version').tgz"
+          core="fieldmaps-core-$VERSION.tgz"
+          element="fieldmaps-field-map-$VERSION.tgz"
           echo "CORE_TGZ=$core" >> "$GITHUB_ENV"
           echo "ELEMENT_TGZ=$element" >> "$GITHUB_ENV"
           file=packages/field-map/LOVABLE.md
@@ -57,7 +88,22 @@ jobs:
           npm pack -w @fieldmaps/core -w @fieldmaps/field-map --pack-destination release
           cp packages/field-map/LOVABLE.md release/
           ls -l release
-          test -f "release/$CORE_TGZ" && test -f "release/$ELEMENT_TGZ"
+          for tgz in "$CORE_TGZ" "$ELEMENT_TGZ"; do
+            if [ ! -f "release/$tgz" ]; then
+              echo "::error::npm pack did not produce $tgz, the name LOVABLE.md and the release notes give."
+              exit 1
+            fi
+          done
+          # What a host installs is the packed manifest, so check that one.
+          tar -xOzf "release/$ELEMENT_TGZ" package/package.json | node -e '
+            const pkg = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            const want = `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.TAG}/${process.env.CORE_TGZ}`;
+            const core = pkg.dependencies?.["@fieldmaps/core"];
+            if (pkg.version !== process.env.VERSION || core !== want || pkg.peerDependencies?.["@fieldmaps/core"]) {
+              console.log(`::error::The packed element is ${pkg.version} with core ${core} (peer: ${pkg.peerDependencies?.["@fieldmaps/core"]}); want ${process.env.VERSION} with core ${want} and no peer.`);
+              process.exit(1);
+            }
+          '
 
       - name: Publish pre-release
         env:
@@ -65,7 +111,7 @@ jobs:
         run: |
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           cat > notes.md <<EOF
-          Pre-release of the \`<field-map>\` element and \`@fieldmaps/core\`, built from \`${GITHUB_SHA::7}\`. Not merged into \`main\` yet; expect changes.
+          Pre-release \`${VERSION}\` of the \`<field-map>\` element and \`@fieldmaps/core\`, built from \`${GITHUB_SHA::7}\`; expect changes.
 
           ## Install
 
@@ -75,11 +121,11 @@ jobs:
             ${base}/${ELEMENT_TGZ}
           \`\`\`
 
-          \`lit\` and \`leaflet\` are peer dependencies. The integration guide ships inside the package: \`node_modules/@fieldmaps/field-map/AGENTS.md\`. Moving from an earlier pre-release: replace the two URLs in \`package.json\`.
+          \`lit\` and \`leaflet\` are the element's peer dependencies. Both packages carry this release's version, and the element depends on its core by this release's tarball URL, so it always gets its matching core and never looks \`@fieldmaps/core\` up on the npm registry. List core yourself too, with the URL above (the host imports from it: \`@fieldmaps/core/vite\`, \`@fieldmaps/core/mahlwinkel\`): the same URL is installed once, while a core from another release is installed beside the element's own, and the assets the Vite plugin serves then come from that other release. The integration guide ships inside the package: \`node_modules/@fieldmaps/field-map/AGENTS.md\`. Moving from an earlier pre-release: replace both URLs in \`package.json\` with this release's.
 
           **Building with Lovable?** Follow the [\`LOVABLE.md\`](${base}/LOVABLE.md) attached below; its URLs are this release's.
           EOF
           gh release create "$TAG" release/*.tgz release/LOVABLE.md \
             --prerelease --verify-tag \
-            --title "<field-map> ${TAG#field-map-v}" \
+            --title "<field-map> ${VERSION}" \
             --notes-file notes.md --generate-notes

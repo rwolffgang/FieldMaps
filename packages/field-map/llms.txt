@@ -9,7 +9,7 @@ Read AGENTS.md in this package before writing code. It is the complete integrati
 - AGENTS.md §5: recipes — live positions over WebSocket, syncing navigations, custom markers
 - AGENTS.md §6: scenario ids (`m24`, `de`, `opt`, `lso`, `asd`, `laf`)
 - AGENTS.md §7: styling (themes via `extendTheme`, `--field-map-*` custom properties)
-- AGENTS.md §8: rules that break things silently (no shadow DOM, HTTPS for GPS, replace `markers` don't mutate, use `setPosition()` not `update()`)
+- AGENTS.md §8: rules that break things silently (no shadow DOM, HTTPS for GPS, replace `markers` don't mutate, use `setPosition()` not `update()`, never send the navigation on reconnect)
 - AGENTS.md §9: troubleshooting by symptom
 
 Types: dist/index.d.ts — start with `FieldMapElement` (the element's whole public surface), then `MapMarker`, `NavigationState`, `FieldMapEventMap`, … — and @fieldmaps/core's dist/index.d.ts / dist/mahlwinkel/index.d.ts.

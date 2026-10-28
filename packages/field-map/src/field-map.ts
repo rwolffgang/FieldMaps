@@ -33,6 +33,8 @@ import {
 	CHECKPOINT_GLYPH,
 	BRAND_BLUE,
 	BRAND_ORANGE,
+	GPS_HEADING_SPEED,
+	DEFAULT_MARKS_KEY,
 	markStore,
 	markIdFromTarget,
 	markTargetId,
@@ -81,9 +83,6 @@ const ARRIVED_DISTANCE_M = 8;
  * second.
  */
 const ARRIVED_RESET_M = 20;
-
-/** Above this ground speed (m/s) prefer GPS course over the (metal-noisy) compass. */
-const GPS_HEADING_SPEED = 0.7;
 
 /**
  * The `selectedPoiId` prefix a live marker carries as a navigation target — the
@@ -423,7 +422,7 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	private t: FieldMapStrings = fieldMapStrings();
 	/** The scenario resolved; null while `scenario` is unset or names nothing. */
 	@state() private mapDef: MapDefinition | null = null;
-	private marksStore: MarkStore = markStore("field-map-marks");
+	private marksStore: MarkStore = markStore(DEFAULT_MARKS_KEY);
 
 	private map!: L.Map;
 	private transform!: Transform;
@@ -431,6 +430,21 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	private accuracyCircle!: L.Circle;
 	private imageOverlay: L.ImageOverlay | null = null;
 	private vectorCache = new Map<string, OsmFeatureCollection>();
+	/**
+	 * Fetches of the OSM data still under way, by URL, so that two loads asking for the
+	 * same file share one request — a switch away and back while the first map's data is
+	 * still on its way would otherwise fetch it twice. Dropped once it settles: on success
+	 * `vectorCache` has it, and a failure has to be fetched afresh by the retry.
+	 */
+	private vectorFetches = new Map<string, Promise<OsmFeatureCollection>>();
+	/**
+	 * Bumped by every `loadMap` and `unloadMap`. A vector load compares it after its
+	 * await to find out whether the map it was fetching for is still the one on screen.
+	 * Comparing the definition is not enough: a switch away and back to the same map
+	 * loads the same definition again, and the first load would then bake and report
+	 * "ready" for a switch the second one is answering.
+	 */
+	private mapLoad = 0;
 	/** Grid spacing in canvas pixels, 0 while no grid is drawn. Also sizes the axis labels. */
 	private gridStepPx = 0;
 	/** The scale bar's elements, resolved on first use — see `scaleParts`. */
@@ -478,10 +492,7 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		onFix: (fix) => {
 			if (this.positionSource !== "device") return;
 			this.pendingFix = fix;
-			if (!this.geolocationGranted) {
-				this.geolocationGranted = true;
-				this.emitPermission({ kind: "geolocation", state: "granted" });
-			}
+			this.emitPermission({ kind: "geolocation", state: "granted" });
 			this.schedulePush();
 		},
 		onHeading: (heading) => {
@@ -492,18 +503,30 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		onGpsProblem: (problem) => this.onGpsProblem(problem),
 		onCompassState: (state) => this.onCompassState(state),
 	});
-	private geolocationGranted = false;
+	/** The last permission state reported per sensor (`emitPermission`). */
+	private reportedPermissions: Partial<
+		Record<PermissionDetail["kind"], PermissionDetail["state"]>
+	> = {};
 	/** The newest fix and compass reading, applied together once per frame (`schedulePush`). */
 	private pendingFix: Fix | null = null;
 	private compassHeading: number | null = null;
 	private pushFrame = 0;
 	/** Whether the container had a size at the last resize — i.e. the map is on screen. */
 	private visible = false;
+	/** Off the document long enough to have been torn down (see `disconnectedCallback`). */
+	private detached = false;
 	/** The live markers on the map. Null until the Leaflet map exists. */
 	private live: LiveMarkerLayer | null = null;
 	private staleTimer = 0;
 	/** A `navigateTo*` call made before its map was loaded, applied once it is — on that map only. */
-	private pendingNavigation: { definition: MapDefinition; start: () => void } | null = null;
+	private pendingNavigation: {
+		definition: MapDefinition;
+		start: () => void;
+		/** What the held call answered with, and so what the host holds. */
+		expected: Exclude<NavigationState, null>;
+	} | null = null;
+	/** The state a held call answered with, while `loadMap` runs it. */
+	private heldExpected: NavigationState = null;
 	/** Who started the running navigation, and when — see `navigation`. */
 	private navSource: NavigationSource = "user";
 	private navStartedAt = 0;
@@ -513,6 +536,13 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	private arrivedReported = false;
 	/** The guidance last reported, so a reading that changed nothing does not fire again. */
 	private reportedGuidance: GuidanceDetail | null = null;
+	/**
+	 * Bumped whenever a navigation starts or ends. The events are dispatched
+	 * synchronously, and a handler is free to call `stopNavigation()` or `navigateTo*`
+	 * from inside one; code that still has something to say after an event compares this
+	 * to find out whether the navigation it was reporting on is still the one running.
+	 */
+	private navGeneration = 0;
 
 	private onOnline = () => this.retryVectorMap();
 	private onVisibilityChange = () => this.sensors.onVisibilityChange();
@@ -532,16 +562,57 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		window.addEventListener("online", this.onOnline);
 		document.addEventListener("visibilitychange", this.onVisibilityChange);
 		this.staleTimer = window.setInterval(() => this.live?.tick(), 5000);
+		// Back after a real absence (see `disconnectedCallback`; after a move nothing was
+		// torn down, so there is nothing to restore). The Leaflet map survived the detach,
+		// so a reconnect is instant; watching the size again is what brings the sensors
+		// and the wake lock back, once the container turns out to be on screen: a fresh
+		// observation starts from 0×0, so a container with a size reports it at once
+		// (`resyncSize`), and one without has nothing to report — `visible` is already
+		// false. A first connect has no map yet, and `firstUpdated` starts the observer.
+		if (this.detached && this.map && this.resizeObserver) {
+			const mapEl = this.querySelector(".fm-leaflet");
+			if (mapEl) this.resizeObserver.observe(mapEl);
+			// A fix that was waiting for a frame when the element left.
+			if (this.pendingFix) this.schedulePush();
+		}
+		this.detached = false;
 	}
 
+	/**
+	 * Off the document, nothing keeps running: not the GPS, the compass or the wake lock,
+	 * not the size watch, not a frame queued for later. The map itself stays, so that
+	 * coming back (`connectedCallback`) does not cost a rebuild.
+	 *
+	 * All of that goes a microtask later, and not at all if the element is back in the
+	 * document by then: a move (a re-append, a framework reordering its children, a
+	 * portal) disconnects and reconnects in one task, and stopping for it would cost a
+	 * cold GPS fix — ten seconds and more under trees — and a fresh compass probe, with
+	 * its "Enable compass" button gone and back. The size watch is the other reason: an
+	 * observer kept across a move reports what the move changed — a shrink to 0×0 in a
+	 * hidden tab panel, which `resyncSize` takes as off screen and releases the wake lock
+	 * for, while the GPS watch keeps running as it does for any hidden element — and
+	 * nothing for a move that changed nothing, where a disconnect and a fresh observation
+	 * would report the size once more and re-frame a map nobody had touched yet. A frame
+	 * queued before the move cannot run in between, so it is simply still queued.
+	 */
 	disconnectedCallback() {
 		super.disconnectedCallback();
 		window.removeEventListener("online", this.onOnline);
 		document.removeEventListener("visibilitychange", this.onVisibilityChange);
 		clearInterval(this.staleTimer);
-		cancelAnimationFrame(this.pushFrame);
-		this.pushFrame = 0;
-		this.sensors.stop();
+		queueMicrotask(() => {
+			if (this.isConnected) return;
+			this.detached = true;
+			cancelAnimationFrame(this.pushFrame);
+			this.pushFrame = 0;
+			cancelAnimationFrame(this.gridAxisFrame);
+			this.gridAxisFrame = 0;
+			this.resizeObserver?.disconnect();
+			// Not on screen any more; the first resize after a reconnect says when it is again.
+			this.visible = false;
+			this.sensors.keepAwake(false);
+			this.sensors.stop();
+		});
 	}
 
 	/**
@@ -564,9 +635,23 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			if (this.scenario && !definition) {
 				console.error(`[field-map] unknown scenario "${this.scenario}"`);
 				this.status = this.t.unknownScenario(this.scenario);
+			} else if (!definition) {
+				// Unset is not an error: an empty map, waiting like one before its first scenario.
+				this.status = this.t.waitingForGps;
 			}
 			this.mapDef = definition;
+			// A `navigateTo*` held for a map is for that map only. Checked against what the
+			// scenario resolved to, not against whether `mapDef` moved: "opt" → "de" → "opt"
+			// in one task leaves it where it was, and no `loadMap` runs to drop a call held
+			// for "de" — which would otherwise fire whenever "de" is next opened.
+			if (this.pendingNavigation && this.pendingNavigation.definition !== definition) {
+				this.pendingNavigation = null;
+			}
 		}
+		// Here rather than with the layer, which only syncs once a map is loaded: the list
+		// is the host's data, and it has to be in the same render as a navigation to one
+		// of its markers started in the same task.
+		if (changed.has("markers")) this.syncNavigableMarkers();
 	}
 	/**
 	 * True between `zoomstart` and `zoomend` — a pinch, a wheel step, a `fitBounds`.
@@ -611,7 +696,8 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	@state() private togglesOpen = false;
 	/** True once a fix has been drawn — the "mark my position" button waits for it. */
 	@state() private locatedOnce = false;
-	@state() private toggles: Toggles = loadStoredToggles("field-map-toggles");
+	/** Read from storage in `willUpdate`, once `storagePrefix` is known. */
+	@state() private toggles: Toggles = { ...DEFAULT_TOGGLES };
 	/** Marker layers the player switched off in the ⚙ menu. */
 	@state() private hiddenLayers: Set<string> = new Set();
 	/** The navigable live markers, for the target list; rebuilt when `markers` changes. */
@@ -648,6 +734,11 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			// the handler only binds `touchstart`, so a mouse never sees it, and Android's
 			// own long-press `contextmenu` is deduplicated in `onMapHold`.
 			tapHold: true,
+			// The size watch below already sees every change of the container's size, a
+			// window resize or rotation included. Leaflet's own `resize` listener on the
+			// window would only do the same work twice — and, never removed, keep doing it
+			// for an element taken off the page.
+			trackResize: false,
 		});
 
 		// A photo base goes below the basemap's tiles (tilePane is 200), so the mask and
@@ -752,10 +843,19 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	protected updated(changed: PropertyValues) {
 		this.afterRender();
 		if (!this.map) return;
+		let loaded = false;
 		if (changed.has("mapDef") && this.mapDef && this.mapDef !== this.loadedDef) {
 			this.loadMap(this.mapDef);
+			loaded = true;
 			// The element may have been on screen, waiting for a scenario before asking for GPS.
 			this.startSensorsIfShown();
+		} else if (changed.has("mapDef") && !this.mapDef && this.loadedDef) {
+			this.unloadMap();
+		}
+		// Lit reports a property's first value as a change from `undefined`; that one was
+		// read by the first `loadMap`, as was a prefix set in the same task as a new scenario.
+		if (changed.has("storagePrefix") && changed.get("storagePrefix") !== undefined && !loaded) {
+			this.storesChanged();
 		}
 		if (changed.has("theme") && this.loadedDef) {
 			this.map.getContainer().style.background = this.loadedDef.vectorData
@@ -772,7 +872,12 @@ export class FieldMap extends LitElement implements FieldMapElement {
 				// What the device's sensors had to complain about no longer applies.
 				this.toast = null;
 			}
+			// The nav card's no-heading line depends on the mode (an Enable-compass button
+			// exists only in "device"), and the compass state need not change with it.
+			if (this.selectedPoiId) this.updateNavigation(true);
 		}
+		// The lock follows `wakeLock` and being on screen, and nothing else — switching to
+		// an external position source stops the sensors, not this.
 		if (changed.has("wakeLock")) this.sensors.keepAwake(this.wakeLock && this.visible);
 		if (changed.has("insets")) {
 			// On the element, so every fixed row inside (the grid letters too) can read them.
@@ -811,21 +916,38 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			return mark ? this.markAsPoi(mark) : null;
 		}
 		if (this.selectedPoiId.startsWith(MARKER_TARGET_PREFIX)) {
-			const marker = this.live?.get(this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length));
+			const marker = this.markerById(this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length));
 			return marker ? this.markerAsPoi(marker) : null;
 		}
 		return this.currentPointsOfInterest().find((poi) => poi.id === this.selectedPoiId) ?? null;
 	}
 
+	/**
+	 * A live marker as the host last set it — off `markers` itself, not the layer's copy.
+	 * The layer catches up only on Lit's next update, and a host that sets `markers` and
+	 * navigates to the new one in the same breath means the array it just set. A
+	 * duplicate id keeps its last occurrence, as `diffMarkers` does.
+	 */
+	private markerById(id: string): MapMarker | undefined {
+		for (let i = this.markers.length - 1; i >= 0; i--) {
+			if (this.markers[i].id === id) return this.markers[i];
+		}
+		return undefined;
+	}
+
 	private loadMap(definition: MapDefinition) {
 		const previousDef = this.loadedDef;
 		this.loadedDef = definition;
-		// A navigation belongs to the map it was started on.
+		this.mapLoad++;
+		// A navigation belongs to the map it was started on. The host hears that it ended
+		// at the bottom, once the new map is in place (see there).
 		this.clearNavigation();
-		if (previousDef) this.reportNavigation("scenario-changed", "host");
 		// Any pending retry belonged to the map we are leaving. Keeping it would leave the
 		// pill offering to reload a map that is no longer on screen.
 		this.vectorRetry = null;
+		// Nor is anything the pill said about the last one (that it was unknown, say). With
+		// a fix, placing it below writes the pill anyway.
+		if (!this.lastGps) this.status = this.t.waitingForGps;
 		this.mapWidth = definition.width;
 		this.mapHeight = definition.height;
 		this.transform = solveTransform(definition.controlPoints);
@@ -837,26 +959,7 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			`[calibration:${definition.id}] RMS error: ${this.transform.rmsMeters.toFixed(2)} m across ${definition.controlPoints.length} points`,
 		);
 
-		if (this.imageOverlay) {
-			this.map.removeLayer(this.imageOverlay);
-			this.imageOverlay = null;
-		}
-		// The basemap survives a map switch — it is one layer holding one tile cache, and
-		// `setScene` repaints it — but its geometry does not, and neither do the letters
-		// naming the grid squares. Both are cleared here rather than when the new map's
-		// data arrives: that load is async, and a stale set of letters over the map being
-		// loaded would be pointing at nothing.
-		this.baked = null;
-		this.gridStepPx = 0;
-		this.syncGridAxis();
-		if (this.basemap) {
-			this.map.removeLayer(this.basemap);
-			this.basemap = null;
-		}
-		if (this.hqLayer) {
-			this.map.removeLayer(this.hqLayer);
-			this.hqLayer = null;
-		}
+		this.clearBaseLayers();
 
 		const bounds: L.LatLngBoundsExpression = [
 			[0, 0],
@@ -876,15 +979,23 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			...this.bakeZones(definition),
 		};
 
-		if (definition.vectorData) {
-			void this.loadVectorMap(definition, this.assetUrl(definition.vectorData));
+		// The OSM data is one file shared by every scenario, so from the second map on it
+		// is usually in hand already. Then it is baked here, synchronously, and the map is
+		// ready at the bottom like a photo: going through the async path would still run
+		// it inside this call, since that has nothing to await, and report ready to a
+		// handler before the map below was framed and populated.
+		const vectorUrl = definition.vectorData ? this.assetUrl(definition.vectorData) : null;
+		const cachedVector = vectorUrl ? this.vectorCache.get(vectorUrl) : undefined;
+		if (cachedVector) {
+			this.bakeVectorData(cachedVector);
+		} else if (vectorUrl) {
+			void this.loadVectorMap(definition, vectorUrl);
 		} else if (definition.image) {
 			// Below the basemap's tiles (see the `photo-base` pane), so the mask and the
 			// zones still paint over a photo map the way they do over the vector one.
 			this.imageOverlay = L.imageOverlay(this.assetUrl(definition.image), bounds, {
 				pane: "photo-base",
 			}).addTo(this.map);
-			this.emit("fieldmap-ready", { scenario: definition.id });
 		}
 		this.syncBasemap();
 		this.renderZoneLabels();
@@ -910,9 +1021,105 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		this.live?.replaceAll();
 		this.syncLiveMarkers();
 
+		// Everything the host hears about the switch comes last, once the new map is fully
+		// in place. Handlers run synchronously, and the obvious thing to do on
+		// "scenario-changed" is navigate somewhere on the new map: reported any earlier,
+		// that ran on the old calibration and was then undone by the framing above.
+		if (previousDef) this.reportNavigation("scenario-changed", "host");
+		this.reportProgress();
+		// Read only now: a handler above that navigated has superseded the held call (see
+		// `whenLoaded`), and one that stopped has dropped it. One held for another map stays
+		// where it is: a handler above that switched again and navigated was promised that
+		// map, and `willUpdate` drops it should that switch be undone.
 		const pending = this.pendingNavigation;
-		this.pendingNavigation = null;
-		if (pending?.definition === definition) pending.start();
+		if (pending?.definition === definition) {
+			this.pendingNavigation = null;
+			// What the host was handed for it, should the start find its target gone (see
+			// `startNavigation`).
+			this.heldExpected = pending.expected;
+			pending.start();
+			this.heldExpected = null;
+		}
+		// A photo is drawn as soon as its overlay exists, and so is a vector map whose data
+		// was cached; one still being fetched reports from `loadVectorMap` once it arrives.
+		// Either way "ready" is the last thing a switch reports.
+		if (cachedVector || (!definition.vectorData && definition.image)) {
+			this.emit("fieldmap-ready", { scenario: definition.id });
+		}
+	}
+
+	/**
+	 * The map's base and what is drawn straight from its definition: the photo, the
+	 * basemap and its baked geometry, the grid letters, the faction emblems.
+	 *
+	 * On a map switch they go here rather than when the new map's data arrives: that load
+	 * is async, and a stale set of letters over the map being loaded would be pointing at
+	 * nothing.
+	 */
+	private clearBaseLayers() {
+		if (this.imageOverlay) {
+			this.map.removeLayer(this.imageOverlay);
+			this.imageOverlay = null;
+		}
+		this.baked = null;
+		this.gridStepPx = 0;
+		this.syncGridAxis();
+		if (this.basemap) {
+			this.map.removeLayer(this.basemap);
+			this.basemap = null;
+		}
+		if (this.hqLayer) {
+			this.map.removeLayer(this.hqLayer);
+			this.hqLayer = null;
+		}
+	}
+
+	/**
+	 * `scenario` stopped naming a map — set to an unknown id, or unset. Take the event
+	 * that was loaded off the screen entirely: its base, dots, emblems, zone names and
+	 * marks, and the navigation running on it, which the host hears ended. Leaving them
+	 * up made a map the host had already moved away from look current and stay
+	 * navigable, while every `navigateTo*` call threw for the new id.
+	 *
+	 * The element is then as it is before its first scenario: no calibration, so a fix
+	 * is only recorded (see `applyPosition`) and the status pill keeps whatever
+	 * `willUpdate` put there. The next valid scenario loads as a first one does, without
+	 * a second "scenario-changed". A navigation held for the old map was already dropped
+	 * by `willUpdate`, since the scenario no longer resolves to it.
+	 */
+	private unloadMap() {
+		this.loadedDef = null;
+		this.mapLoad++;
+		this.clearNavigation();
+		this.map.closePopup();
+		this.vectorRetry = null;
+		this.clearBaseLayers();
+		if (this.zoneLabelsLayer) {
+			this.map.removeLayer(this.zoneLabelsLayer);
+			this.zoneLabelsLayer = null;
+		}
+		this.clearPoiDots();
+		this.marks = [];
+		this.syncMarks();
+		// Placed through the old calibration, which is about to go; `loadMap` places every
+		// one of them again from `markers`.
+		this.live?.clear();
+		// The player's dot too: it stood on the old map's pixels. The next map draws it
+		// again from the last fix.
+		this.map.removeLayer(this.marker);
+		this.map.removeLayer(this.accuracyCircle);
+		this.placedFix = null;
+		this.lastPixel = null;
+		this.offMap = false;
+		this.locatedOnce = false;
+		this.map.getContainer().style.background = "";
+		this.hideScale();
+		// Unset, the way it is before the first map — which every reader already tests
+		// for (`!this.transform`).
+		this.transform = undefined as unknown as Transform;
+
+		this.reportNavigation("scenario-changed", "host");
+		this.reportProgress();
 	}
 
 	/**
@@ -920,36 +1127,73 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	 * file is precached by the service worker, so this resolves from cache offline.
 	 */
 	private async loadVectorMap(definition: MapDefinition, dataUrl: string) {
+		// A retry runs within the load it retries: `loadMap` and `unloadMap` drop the retry
+		// along with bumping this.
+		const load = this.mapLoad;
 		try {
-			let data = this.vectorCache.get(dataUrl);
-			if (!data) {
-				data = await this.fetchVectorData(dataUrl);
-				this.vectorCache.set(dataUrl, data);
-			}
+			const data = this.vectorCache.get(dataUrl) ?? (await this.sharedVectorFetch(dataUrl));
 
-			// Guard against a map switch while the fetch was in flight.
-			if (this.loadedDef !== definition || !this.transform || !this.baked) return;
+			// Guard against a map switch while the fetch was in flight — including one away
+			// and back to this same map, whose own load is waiting on the same fetch and
+			// bakes and reports it itself.
+			if (load !== this.mapLoad || !this.transform || !this.baked) return;
 
-			// Projected once, here, into canvas pixels. GeoJSON hands over (lng, lat).
-			this.baked.osm = bakeOsm(data, (lng, lat) => this.transform.toPixel(lat, lng));
-
-			// The coordinate grid (100 m, matching the scale bar) is painted with the
-			// terrain now, but the letters and numbers naming its squares are chrome, and
-			// this is the size they are counted off.
-			this.gridStepPx = this.transform.metersToPixels(GRID_STEP_M);
-			this.syncGridAxis();
+			this.bakeVectorData(data);
 			this.syncBasemap();
 
-			// Clear a previous failure. The GPS status normally owns this pill, so only
-			// take it back when there is no fix yet to report.
+			// Clear a previous failure, and whatever the pill said about it — after a retry,
+			// "Map loading…". The GPS status owns this pill otherwise, but it is written only
+			// when the fix moves, and a player standing still (or whose GPS has gone quiet)
+			// would read that line for good; so it is written here from the fix in hand.
 			this.vectorRetry = null;
-			if (!this.lastGps) this.status = this.t.waitingForGps;
+			if (this.lastGps) this.updateStatus();
+			else this.status = this.t.waitingForGps;
 			this.emit("fieldmap-ready", { scenario: definition.id });
 		} catch (err) {
+			// The same guard as above: a failure for a map the element has since left (or
+			// unloaded) is no longer the pill's business, nor something to offer a retry of.
+			// Nor one to log: every load waiting on the shared fetch is handed the same
+			// failure, and the current one says it once.
+			if (load !== this.mapLoad) return;
 			console.error("[field-map] failed to load the map data", err);
 			this.status = this.t.mapLoadFailed;
 			this.vectorRetry = { definition, dataUrl };
 		}
+	}
+
+	/**
+	 * Project the OSM data onto the loaded map's calibration, once, into canvas pixels,
+	 * and size the grid letters to match. The caller repaints the basemap.
+	 */
+	private bakeVectorData(data: OsmFeatureCollection) {
+		if (!this.baked) return;
+		// GeoJSON hands over (lng, lat).
+		this.baked.osm = bakeOsm(data, (lng, lat) => this.transform.toPixel(lat, lng));
+		// The coordinate grid (100 m, matching the scale bar) is painted with the terrain,
+		// but the letters and numbers naming its squares are chrome, and this is the size
+		// they are counted off.
+		this.gridStepPx = this.transform.metersToPixels(GRID_STEP_M);
+		this.syncGridAxis();
+	}
+
+	/** `fetchVectorData`, joined by every load that asks for the same URL while it runs. */
+	private sharedVectorFetch(dataUrl: string): Promise<OsmFeatureCollection> {
+		let fetching = this.vectorFetches.get(dataUrl);
+		if (!fetching) {
+			fetching = this.fetchVectorData(dataUrl).then(
+				(data) => {
+					this.vectorCache.set(dataUrl, data);
+					this.vectorFetches.delete(dataUrl);
+					return data;
+				},
+				(err: unknown) => {
+					this.vectorFetches.delete(dataUrl);
+					throw err;
+				},
+			);
+			this.vectorFetches.set(dataUrl, fetching);
+		}
+		return fetching;
 	}
 
 	/**
@@ -1324,14 +1568,20 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		if (![fix.lat, fix.lng, fix.accuracy].every(Number.isFinite)) {
 			throw new TypeError("setPosition(): lat, lng and accuracy must be finite numbers");
 		}
+		// The browser's Geolocation reports a heading of NaN while standing still, and a
+		// host relaying its coords as they are passes that on. Read as "none", as the
+		// device watcher does: NaN never equals the last fix, so it would also defeat the
+		// "only on change" rule for `fieldmap-fix` and emit on every call.
+		const finiteOrNull = (value: number | null | undefined) =>
+			typeof value === "number" && Number.isFinite(value) ? value : null;
 		this.pendingFix = {
 			lat: fix.lat,
 			lng: fix.lng,
 			accuracy: fix.accuracy,
-			heading: fix.heading ?? null,
-			speed: fix.speed ?? null,
+			heading: finiteOrNull(fix.heading),
+			speed: finiteOrNull(fix.speed),
 		};
-		this.compassHeading = heading;
+		this.compassHeading = finiteOrNull(heading);
 		this.schedulePush();
 	}
 
@@ -1341,9 +1591,13 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		return target ? { target, startedAt: this.navStartedAt, source: this.navSource } : null;
 	}
 
-	/** Whether a navigation is running. */
+	/**
+	 * Whether a navigation is running. Off `navigation` rather than the selection, so the
+	 * two always agree — even in the moment between a host dropping the target marker
+	 * from `markers` and the next update ending the navigation for it.
+	 */
 	get navigating(): boolean {
-		return this.selectedPoiId !== "";
+		return this.navigation !== null;
 	}
 
 	/**
@@ -1409,7 +1663,7 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	 * (`reason: "target-removed"`) when the marker leaves `markers`.
 	 */
 	navigateToMarker(markerId: string, options: NavigateOptions = {}): NavigationState {
-		const marker = this.markers.find((candidate) => candidate.id === markerId);
+		const marker = this.markerById(markerId);
 		if (!marker) throw new RangeError(`navigateToMarker(): no marker "${markerId}"`);
 		const definition = this.requireScenario("navigateToMarker");
 		const source = options.source ?? "host";
@@ -1495,10 +1749,13 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		expected: Exclude<NavigationState, null>,
 	): NavigationState {
 		if (this.map && this.loadedDef === definition && this.transform) {
+			// The newest call wins over one still held for this map — which is only possible
+			// from inside an event `loadMap` sends before it gets to the held one.
+			this.pendingNavigation = null;
 			start();
 			return this.navigation;
 		}
-		this.pendingNavigation = { definition, start };
+		this.pendingNavigation = { definition, start, expected };
 		return expected;
 	}
 
@@ -1542,30 +1799,51 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	 * "Navigate here" button in a dot's popup, a double-click on the dot, or one of the
 	 * public `navigateTo*` methods. Empty id means the select's placeholder — that
 	 * stops navigation.
+	 *
+	 * The host is told last, once the map shows the change, and in the order things
+	 * happened: the navigation started, then whether the player is already standing at
+	 * its target. A handler that ends or replaces it from inside either event leaves
+	 * nothing behind here to undo that.
 	 */
 	private startNavigation(
 		poiId: string,
 		source: NavigationSource,
 		reason: NavigationChangeReason = poiId ? "started" : "stopped",
 	) {
+		this.navGeneration++;
 		this.selectedPoiId = poiId;
+		// A target that resolves to nothing is no navigation: a `navigateToMarker` held for
+		// a map still loading whose marker the host has dropped since. Starting it anyway
+		// would leave `navigating` true with no `navigation` to go with it.
+		if (poiId && !this.getSelectedPoi()) {
+			poiId = "";
+			reason = "target-removed";
+			this.selectedPoiId = "";
+			// Nothing ran on this map before it, so there is nothing to compare against —
+			// but the host holds the state the call answered with. Report that one as over,
+			// rather than not at all.
+			if (this.heldExpected) this.reportedNavigation = this.heldExpected;
+			this.heldExpected = null;
+		}
 		if (!poiId) {
 			this.clearNavigation();
 			this.updateStatus();
-			this.reportNavigation(reason, source);
-			return;
+		} else {
+			this.navSource = source;
+			this.navStartedAt = Date.now();
+			this.arrivedReported = false;
+			// The popup has done its job, and `fitUserAndPoi` is about to move the view out
+			// from under it.
+			this.map.closePopup();
+			this.showPoiMarker();
+			this.updateNavigation();
+			this.fitUserAndPoi();
+			this.updateStatus();
 		}
-		this.navSource = source;
-		this.navStartedAt = Date.now();
-		this.arrivedReported = false;
-		// The popup has done its job, and `fitUserAndPoi` is about to move the view out
-		// from under it.
-		this.map.closePopup();
-		this.showPoiMarker();
-		this.updateNavigation();
-		this.fitUserAndPoi();
-		this.updateStatus();
+		const generation = this.navGeneration;
 		this.reportNavigation(reason, source);
+		// A handler that started or stopped a navigation of its own has reported on that one.
+		if (generation === this.navGeneration) this.reportProgress();
 	}
 
 	/**
@@ -1660,7 +1938,12 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		this.startNavigation(CUSTOM_TARGET_ID, source);
 	}
 
+	/**
+	 * Take the navigation off the map. Says nothing to the host: the caller reports it
+	 * (and the guidance going away, through `reportProgress`) once it is done itself.
+	 */
 	private clearNavigation() {
+		this.navGeneration++;
 		this.selectedPoiId = "";
 		// A picked spot exists only for the navigation it was picked for: leaving it
 		// behind would keep a stale option in the select long after the route is gone.
@@ -1668,7 +1951,6 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		this.navDistanceM = 0;
 		this.navHint = "";
 		this.navArrowDeg = 0;
-		this.setGuidance(null);
 		if (this.poiMarker) {
 			this.map.removeLayer(this.poiMarker);
 			this.poiMarker = null;
@@ -1702,11 +1984,14 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	 * and the turn hint still have to be recomputed (the hint is *about* the heading),
 	 * but the line on the map has the same two endpoints it already has, and
 	 * reprojecting a vector path is the expensive half of this method.
+	 *
+	 * It tells the host nothing. Arrival and guidance are `reportProgress`, which a
+	 * caller runs as its last step: a handler that stopped the navigation from in here
+	 * used to leave the rest of this method drawing a fresh route line for it.
 	 */
 	private updateNavigation(positionUnchanged = false) {
 		const poi = this.getSelectedPoi();
 		if (!poi || !this.transform || !this.lastGps) {
-			this.setGuidance(null);
 			this.navDistanceM = 0;
 			this.navHint = this.lastGps ? "" : this.t.waitingForGps;
 			return;
@@ -1737,30 +2022,15 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			this.navHint = this.t.navHints[navigationHint(relative)];
 		} else {
 			// Without a compass the GPS course still gives a heading above walking pace.
-			this.navHint =
-				this.compassState === "unavailable" ? this.t.navNoCompass : this.t.navEnableCompass;
+			// Asking for one only makes sense while the "Enable compass" button is on
+			// screen, so this is the condition it is rendered on: not while probing, not
+			// after a refusal, not on a laptop, and never with `position-source="external"`,
+			// where the heading is the host's to send. `onCompassState` updates the line as
+			// the state settles.
+			const canEnable =
+				this.positionSource === "device" && this.compassState === "needs-permission";
+			this.navHint = canEnable ? this.t.navEnableCompass : this.t.navNoCompass;
 		}
-
-		// Arrival, once per approach: the nav card says so for as long as the player
-		// stands there, but the host hears about it once, and again only after they have
-		// walked well clear and come back.
-		if (distance <= ARRIVED_DISTANCE_M && !this.arrivedReported) {
-			this.arrivedReported = true;
-			const target = this.currentTarget();
-			if (target) this.emit("fieldmap-arrived", { target });
-		} else if (distance > ARRIVED_RESET_M) {
-			this.arrivedReported = false;
-		}
-
-		// The direction finder (Field Maps' dosimeter listens): it needs the compass to
-		// know where the phone points, and has nothing left to find once the player has
-		// arrived.
-		const heading = this.lastGps.heading;
-		this.setGuidance(
-			heading != null && distance > ARRIVED_DISTANCE_M
-				? { relativeDeg: relativeBearingDegrees(targetBearing, heading), distanceM: distance }
-				: null,
-		);
 
 		// Nothing moved, and the line is already drawn between these two points.
 		if (positionUnchanged && this.routeLine && this.map.hasLayer(this.routeLine)) return;
@@ -1788,6 +2058,57 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			this.routeLine.setLatLngs([userLatLng, poiLatLng]);
 			if (!this.map.hasLayer(this.routeLine)) this.routeLine.addTo(this.map);
 		}
+	}
+
+	/**
+	 * Tell the host how the navigation is going: arrival, then the direction finder (or
+	 * that there is none, once it has ended).
+	 *
+	 * The last thing every caller does, and read off the element as it is now rather than
+	 * anything the caller worked out on the way: the guide suggests calling
+	 * `stopNavigation()` on arrival, and nothing may run after that handler on the
+	 * navigation it ended. Safe to call twice — arrival is reported once per approach and
+	 * guidance only when it changed — so a caller never has to know whether a handler
+	 * already did.
+	 */
+	private reportProgress() {
+		const poi = this.selectedPoiId ? this.getSelectedPoi() : null;
+		const gps = this.lastGps;
+		if (!poi || !this.transform || !gps) {
+			this.setGuidance(null);
+			return;
+		}
+		const distance = distanceMeters(gps.lat, gps.lng, poi.lat, poi.lng);
+
+		// Arrival, once per approach: the nav card says so for as long as the player
+		// stands there, but the host hears about it once, and again only after they have
+		// walked well clear and come back.
+		if (distance <= ARRIVED_DISTANCE_M && !this.arrivedReported) {
+			this.arrivedReported = true;
+			const target = this.currentTarget();
+			const generation = this.navGeneration;
+			if (target) this.emit("fieldmap-arrived", { target });
+			// Ended or replaced by the handler, which has reported the guidance for that.
+			if (generation !== this.navGeneration) return;
+		} else if (distance > ARRIVED_RESET_M) {
+			this.arrivedReported = false;
+		}
+
+		// The direction finder (Field Maps' dosimeter listens): it needs the compass to
+		// know where the phone points, and has nothing left to find once the player has
+		// arrived.
+		const heading = gps.heading;
+		this.setGuidance(
+			heading != null && distance > ARRIVED_DISTANCE_M
+				? {
+						relativeDeg: relativeBearingDegrees(
+							bearingDegrees(gps.lat, gps.lng, poi.lat, poi.lng),
+							heading,
+						),
+						distanceM: distance,
+					}
+				: null,
+		);
 	}
 
 	private fitUserAndPoi() {
@@ -2016,24 +2337,37 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		};
 	}
 
-	/** The marks changed: reload them, and tell the host. */
-	private marksChanged() {
+	/**
+	 * The marks changed: reload and redraw them, then tell the host — last, so a handler
+	 * finds them on the map, and whatever it starts (a navigation to one, say, which
+	 * closes popups) is not undone by a redraw or a popup opening after it.
+	 *
+	 * `openMarkId` is a mark to open the popup of once it is drawn.
+	 */
+	private marksChanged(openMarkId?: string) {
 		const definition = this.loadedDef;
 		if (!definition) return;
-		this.marks = this.marksStore.load(definition.id);
+		this.redrawMarks(definition);
+		if (openMarkId) this.markMarkers.get(openMarkId)?.openPopup();
 		this.emit("fieldmap-marks-change", { scenario: definition.id, marks: this.marks });
+	}
+
+	/** Reload this map's marks from the store and draw them. Says nothing to the host. */
+	private redrawMarks(definition: MapDefinition) {
+		this.marks = this.marksStore.load(definition.id);
+		this.syncMarks();
+		// The status pill names the target, so a renamed destination shows up at once.
+		if (markIdFromTarget(this.selectedPoiId) != null) this.updateStatus();
 	}
 
 	private createMark(lat: number, lng: number) {
 		if (!this.loadedDef) return;
 		this.map.closePopup();
 		const mark = this.marksStore.add(this.loadedDef.id, { name: this.nextMarkName(), lat, lng });
-		this.marksChanged();
 		// A mark nobody can see is a mark that was not set, so a hidden layer comes back.
 		if (!this.toggles.marks) this.toggle("marks");
-		else this.syncMarks();
 		// Open it straight away: the new name is the one thing they will want to change.
-		this.markMarkers.get(mark.id)?.openPopup();
+		this.marksChanged(mark.id);
 	}
 
 	/** Drop a mark where the player is standing. */
@@ -2057,20 +2391,63 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		if (!name || name === mark.name) return;
 		this.marksStore.rename(this.loadedDef.id, mark.id, name);
 		this.marksChanged();
-		this.syncMarks();
-		// The status pill names the target, so a renamed destination shows up at once.
-		if (this.selectedPoiId === markTargetId(mark)) this.updateStatus();
 	}
 
+	/**
+	 * Delete a mark — and with it the navigation to it, if that is the one running.
+	 *
+	 * Everything is done before anything is reported: the mark gone from the store and
+	 * from the map, the route to it taken down. Reported first, the navigation's end would
+	 * reach a handler while the mark it names was still listed and drawn, and a redraw
+	 * after the handler could undo what it started. The host then hears the marks change,
+	 * and the navigation's end last, unless a handler of the first has already replaced
+	 * that navigation and reported on it.
+	 */
 	private deleteMark(mark: Mark) {
-		if (!this.loadedDef) return;
+		const definition = this.loadedDef;
+		if (!definition) return;
 		this.map.closePopup();
-		if (this.selectedPoiId === markTargetId(mark)) {
-			this.startNavigation("", "user", "target-removed");
+		const endsNavigation = this.selectedPoiId === markTargetId(mark);
+		this.marksStore.remove(definition.id, mark.id);
+		if (endsNavigation) {
+			this.clearNavigation();
+			this.updateStatus();
 		}
-		this.marksStore.remove(this.loadedDef.id, mark.id);
-		this.marksChanged();
+		this.redrawMarks(definition);
+
+		const generation = this.navGeneration;
+		this.emit("fieldmap-marks-change", { scenario: definition.id, marks: this.marks });
+		if (!endsNavigation || generation !== this.navGeneration) return;
+		this.reportNavigation("target-removed", "user");
+		// A handler that started or stopped a navigation of its own has reported on that one.
+		if (generation === this.navGeneration) this.reportProgress();
+	}
+
+	/**
+	 * `storagePrefix` moved after the map was up. `willUpdate` has already swapped the
+	 * stores and read the toggles under the new key, but the map is still drawn from the
+	 * old ones: bring the marks and every layer a toggle reaches into in line, so the
+	 * ⚙ menu and the map agree. Not a `fieldmap-marks-change` — the player changed
+	 * nothing; the host knows which key it just switched to.
+	 */
+	private storesChanged() {
+		const definition = this.loadedDef;
+		if (!definition) return;
+		const before = this.currentTarget();
+		this.marks = this.marksStore.load(definition.id);
+		this.applyToggles();
+		this.syncPoiDots();
 		this.syncMarks();
+		this.live?.setHiddenLayers(this.hiddenLayers);
+		// A navigation to a mark of the old key has nothing left to lead to — unless the
+		// new key holds the very same mark. One that only shares its id is somewhere else
+		// under another name, and quietly re-pointing the navigation at it would be a
+		// change the host never hears of. Ended last, so a handler finds the map redrawn.
+		if (before?.kind !== "mark") return;
+		const now = this.marks.find((mark) => mark.id === before.id);
+		if (!now || now.name !== before.name || now.lat !== before.lat || now.lng !== before.lng) {
+			this.startNavigation("", "host", "target-removed");
+		}
 	}
 
 	/** The live mark markers by mark id, so a new one can open its popup. */
@@ -2283,16 +2660,33 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		// back to the magnetometer when standing still.
 		const moving = (fix.speed ?? 0) > GPS_HEADING_SPEED && fix.heading != null;
 		const heading = moving ? fix.heading : this.compassHeading;
-		this.pushedFix = {
-			lat: fix.lat,
-			lng: fix.lng,
-			accuracy: fix.accuracy,
-			heading,
-			speed: fix.speed,
-			at: Date.now(),
-		};
+		// A frame runs for every compass event, and while moving the heading is the GPS
+		// course, which only changes with the next fix — so most frames then carry the
+		// same fix again. The host is promised `fieldmap-fix` on change only, and `at`
+		// says when the fix last changed, so a repeat keeps the one already reported.
+		const last = this.pushedFix;
+		const changed =
+			last == null ||
+			last.lat !== fix.lat ||
+			last.lng !== fix.lng ||
+			last.accuracy !== fix.accuracy ||
+			last.heading !== heading ||
+			last.speed !== fix.speed;
+		const next: PositionFix | null = changed
+			? {
+					lat: fix.lat,
+					lng: fix.lng,
+					accuracy: fix.accuracy,
+					heading,
+					speed: fix.speed,
+					at: Date.now(),
+				}
+			: null;
+		if (next) this.pushedFix = next;
+		// Applied either way: the layers have their own test for what moved, and the first
+		// fix may have arrived before there was a map to place it on.
 		this.applyPosition(fix.lat, fix.lng, fix.accuracy, heading);
-		this.emit("fieldmap-fix", { ...this.pushedFix });
+		if (next) this.emit("fieldmap-fix", { ...next });
 	}
 
 	/** Start the device's GPS and compass, if this is the mode and the map is on screen. */
@@ -2346,7 +2740,15 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		if (this.toast?.owner === owner) this.toast = null;
 	}
 
+	/**
+	 * Report a permission state — only when it differs from the last one reported for
+	 * that sensor. The sensors restart whenever the element comes back on the page, and
+	 * every fix says "granted": a host acting on this event (showing its own prompt,
+	 * say) must hear about a change, not about a restart.
+	 */
 	private emitPermission(detail: PermissionDetail) {
+		if (this.reportedPermissions[detail.kind] === detail.state) return;
+		this.reportedPermissions[detail.kind] = detail.state;
 		this.emit("fieldmap-permission", detail);
 	}
 
@@ -2378,20 +2780,26 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	private syncLiveMarkers() {
 		if (!this.live || !this.transform) return;
 		const diff = this.live.set(this.markers, this.staleAfterMs);
-		this.syncNavigableMarkers();
 
-		// A navigation to a marker follows it — and ends when it is gone.
+		// A navigation to a marker follows it — and ends when it is gone from `markers`,
+		// which the navigation resolves its target from: a marker that came and went
+		// between two updates never reached the layer's diff. Any change the layer does
+		// see in the target redraws the pin, the route and the pill, its first placing
+		// included — one set and navigated to in the same task was drawn from the array
+		// before the layer had it, and may have been moved again since.
 		if (!this.selectedPoiId.startsWith(MARKER_TARGET_PREFIX)) return;
 		const targetId = this.selectedPoiId.slice(MARKER_TARGET_PREFIX.length);
-		if (diff.removed.includes(targetId)) {
+		if (!this.markerById(targetId)) {
 			this.startNavigation("", "host", "target-removed");
 		} else if (
-			diff.updated.some((marker) => marker.id === targetId) ||
-			diff.restyled.some((marker) => marker.id === targetId)
+			[diff.added, diff.updated, diff.restyled].some((list) =>
+				list.some((marker) => marker.id === targetId),
+			)
 		) {
 			this.showPoiMarker();
 			this.updateNavigation();
 			this.updateStatus();
+			this.reportProgress();
 		}
 	}
 
@@ -2432,8 +2840,10 @@ export class FieldMap extends LitElement implements FieldMapElement {
 
 	/** Place the player: the dot, its arrow, the circle, the route, the status line. */
 	private applyPosition(lat: number, lng: number, accuracyM: number, headingDeg: number | null) {
-		if (!this.transform) return;
 		this.lastGps = { lat, lng, accuracy: accuracyM, heading: headingDeg };
+		// No map, no calibration to draw on — before the first scenario, or after one
+		// stopped resolving. The fix is kept all the same: `loadMap` places it.
+		if (!this.transform) return;
 
 		// A compass reading is not a new position. The heading changes on every frame
 		// while you turn, GPS about once a second, and everything below except the arrow
@@ -2469,6 +2879,8 @@ export class FieldMap extends LitElement implements FieldMapElement {
 		if (this.selectedPoiId) this.updateNavigation(positionUnchanged);
 
 		if (!positionUnchanged) this.updateStatus();
+		// Last: an arrival handler may end the navigation (see `reportProgress`).
+		if (this.selectedPoiId) this.reportProgress();
 	}
 
 	/**
@@ -2504,7 +2916,10 @@ export class FieldMap extends LitElement implements FieldMapElement {
 	 * without having to wait for their next GPS fix.
 	 */
 	private updateStatus() {
-		if (!this.lastGps) return;
+		// Without a map the pill is `willUpdate`'s: an unknown scenario stays said. After a
+		// failed load it is the retry's: it has to go on saying that a tap tries again, and
+		// a successful retry writes it from the fix in hand (`loadVectorMap`).
+		if (!this.lastGps || !this.loadedDef || this.vectorRetry) return;
 		if (this.offMap) {
 			this.status = this.t.offMap;
 		} else if (this.selectedPoiId) {
@@ -2545,6 +2960,21 @@ export class FieldMap extends LitElement implements FieldMapElement {
 			label.textContent = text;
 			scale.setAttribute("aria-label", `${this.t.scale}: ${text}`);
 		}
+		// Hidden while no map is loaded (see `hideScale`); this reading is the new map's.
+		if (scale.classList.contains("no-map")) scale.classList.remove("no-map");
+	}
+
+	/**
+	 * Take the scale bar off the screen while there is no map to measure, as it is before
+	 * the first one (the markup starts `no-map`). After `unloadMap`, left up, it would go
+	 * on reading the old map's zoom over an empty screen: `updateScale` has no
+	 * calibration to redraw it from until the next `loadMap`, which brings it back.
+	 * Hidden, not removed: it keeps its row, so the status pill and the host's
+	 * `bottomNotice` above it stay put while a map comes and goes.
+	 */
+	private hideScale() {
+		const parts = this.scaleParts();
+		if (parts) parts.scale.classList.add("no-map");
 	}
 
 	/**
@@ -2860,9 +3290,11 @@ export class FieldMap extends LitElement implements FieldMapElement {
 					>
 				</div>
 				<!-- Scale bar, lower right above the controls. Its contents are written by
-				     updateScale() on every zoom, so keep this markup static. -->
-				<div class="scale" role="img" aria-label=${t.scale}>
-					<span class="scale-label"></span>
+				     updateScale() on every zoom, so keep this markup static. Hidden until the
+				     first map gives it something to measure (see hideScale()), but in its full
+				     height already: the no-break space is the line the label will take. -->
+				<div class="scale no-map" role="img" aria-label=${t.scale}>
+					<span class="scale-label">&nbsp;</span>
 					<span class="scale-bar"></span>
 				</div>
 				<div class="hud-controls">

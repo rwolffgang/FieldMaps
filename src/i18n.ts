@@ -9,18 +9,20 @@
 // English; there is no in-app switcher, the browser already knows.
 // -----------------------------------------------------------------------------
 
+import { browserLang } from "@fieldmaps/field-map/strings";
+
 export type Lang = "de" | "en";
 
-/** The browser's preferred language, as far as we care about it. */
+/**
+ * The browser's preferred language, as far as we care about it.
+ *
+ * The map element picks its language the same way, and has to: the chrome the app
+ * draws around the map and the map's own strings must never come out in two
+ * languages on one screen. So the rule lives once, in the package — the app may
+ * import from it, only the reverse is forbidden.
+ */
 export function currentLang(): Lang {
-	const preferred = navigator.languages?.length ? navigator.languages : [navigator.language];
-	for (const tag of preferred) {
-		if (!tag) continue;
-		const base = tag.toLowerCase().split("-")[0];
-		if (base === "de") return "de";
-		if (base === "en") return "en";
-	}
-	return "en";
+	return browserLang();
 }
 
 const MONTHS: Record<Lang, string[]> = {

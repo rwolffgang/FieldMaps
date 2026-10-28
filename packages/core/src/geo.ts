@@ -71,6 +71,11 @@ export interface WatchOptions {
 /** ~0.4 keeps the dot steady without making it visibly lag a walking player. */
 export const POSITION_SMOOTHING = 0.4;
 export const SNAP_DISTANCE_M = 25;
+/**
+ * Above this ground speed (m/s) prefer GPS course over the (metal-noisy) compass.
+ * `watch` reports the course and leaves that choice to the caller.
+ */
+export const GPS_HEADING_SPEED = 0.7;
 
 /**
  * Watch position. Applies a light exponential smoother to lat/lng so the dot

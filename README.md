@@ -127,10 +127,16 @@ ships inside the package: [`packages/field-map/AGENTS.md`](packages/field-map/AG
 an event log, simulated players and two-tab sync.
 
 Releases go out as `npm pack` tarballs attached to a GitHub pre-release. Pushing a
-`field-map-v*` tag publishes one (`.github/workflows/field-map-release.yml`): it tests,
-builds and packs both packages, and writes the install URLs into the release notes.
-`packages/field-map/LOVABLE.md` keeps `{{tag}}` placeholders in the repository; the
-run fills them in for the copy in the tarball and the one attached to the release.
+`field-map-v<version>` tag on `origin/main` publishes one
+(`.github/workflows/field-map-release.yml`): it tests, builds and packs both packages,
+and writes the install URLs into the release notes. The version follows the tag —
+both packages are packed as `<version>`, and the element depends on that same
+release's core tarball by URL, so it always brings its matching core and never looks
+`@fieldmaps/core` up on the npm registry. A host lists core too, from the same
+release: a core from another release is not refused, it is installed beside the
+element's own. Nothing in the repository is bumped for
+this. `packages/field-map/LOVABLE.md` keeps `{{tag}}` placeholders in the repository;
+the run fills them in for the copy in the tarball and the one attached to the release.
 
 ## Licence
 

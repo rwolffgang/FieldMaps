@@ -38,7 +38,7 @@ npm install lit leaflet \
   https://github.com/rwolffgang/FieldMaps/releases/download/<tag>/fieldmaps-field-map-<version>.tgz
 ```
 
-`lit` (^3.2) and `leaflet` (^1.9.4) are peer dependencies — install them alongside. The element's stylesheet (and Leaflet's) is bundled and injected automatically; there is **no CSS to import**.
+`lit` (^3.2) and `leaflet` (^1.9.4) are peer dependencies — install them alongside. The element depends on its core by that release's tarball URL, so it always brings its matching core; list core yourself too (you import `@fieldmaps/core/vite` from it), with the URL from the same release. Always move both URLs together: a core from another release is not refused — it is installed beside the element's own, and the assets `fieldMapsAssets()` serves then come from the other release. The element's stylesheet (and Leaflet's) is bundled and injected automatically; there is **no CSS to import**.
 
 ### 2.2 Serve the assets
 
@@ -121,7 +121,7 @@ declare global {
 }
 ```
 
-Mount it **once** and keep it mounted (hide it rather than unmounting): it keeps the GPS watch running for the session so a return to the map does not wait for a cold fix. Server-side rendering: render nothing for it on the server; import the package only in the browser (`useEffect` / dynamic import).
+Mount it **once** and keep it mounted (hide it rather than unmounting): hidden, it keeps the GPS watch running for the session so a return to the map does not wait for a cold fix. Taken out of the document, it stops the GPS, the compass and the wake lock, and starts them again once it is back on screen; moving it (a re-append, a portal, a framework reordering children) is fine — the map is not rebuilt. Server-side rendering: render nothing for it on the server; import the package only in the browser (`useEffect` / dynamic import).
 
 ### 2.5 TypeScript
 
@@ -150,37 +150,37 @@ TypeScript users get all of this typed: `document.querySelector("field-map")` re
 
 ### 3.1 Properties
 
-| Property (attribute)                                 | Type                                       | Default                     | What it does                                                                                                                                                                                           |
-| ---------------------------------------------------- | ------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scenario` (`scenario`)                              | `string`                                   | `""`                        | **Required.** The scenario id (§6). Changing it redraws the map and ends a running navigation (`reason: "scenario-changed"`). An unknown id shows an error in the status pill and logs to the console. |
-| `theme`                                              | `OsmThemeName \| OsmTheme`                 | the scenario's              | The basemap's look (§7).                                                                                                                                                                               |
-| `assetBase` (`asset-base`)                           | `string`                                   | `""` = the page's directory | Where `map_osm.geojson` and `logos/` are served (§2.2).                                                                                                                                                |
-| `locale` (`locale`)                                  | `"de" \| "en"`                             | the browser's               | UI language.                                                                                                                                                                                           |
-| `strings`                                            | `Partial<FieldMapStrings>`                 | `{}`                        | Replace any UI text; see `FIELD_MAP_STRINGS` for all keys.                                                                                                                                             |
-| `storagePrefix` (`storage-prefix`)                   | `string`                                   | `"field-map"`               | Prefix of the `localStorage` keys it keeps (§3.5). Set your own, e.g. `"my-larp-map"`.                                                                                                                 |
-| `insets`                                             | `{ top?: number; bottom?: number }`        | `{}`                        | Pixels your own chrome covers at the top/bottom. The element's rows move clear of it, and popups pan clear of it.                                                                                      |
-| `positionSource` (`position-source`)                 | `"device" \| "external"`                   | `"device"`                  | `device`: the element runs the browser's GPS and compass itself. `external`: it uses only `setPosition()` (e.g. a native GPS layer, or a replay).                                                      |
-| `wakeLock` (`wake-lock`)                             | `boolean`                                  | `true`                      | Keep the screen on while the map is visible. Attribute `wake-lock="false"` turns it off.                                                                                                               |
-| `attribution` (`attribution`)                        | `boolean`                                  | `true`                      | Show "© OpenStreetMap" (the data licence requires a credit; turn off only if you credit OSM elsewhere where players see it).                                                                           |
-| `markers`                                            | `readonly MapMarker[]`                     | `[]`                        | Live markers (§5). Replace the array to update.                                                                                                                                                        |
-| `markerLayers`                                       | `readonly MarkerLayer[]` (`{ id, label }`) | `[]`                        | Rows in the ⚙ menu that hide/show markers by their `layer`.                                                                                                                                            |
-| `staleAfterMs` (`stale-after-ms`)                    | `number`                                   | `30000`                     | A marker whose `seenAt` is older fades and shows its age. `0`: never.                                                                                                                                  |
-| `topStart` / `topEnd` / `topNotice` / `bottomNotice` | `Element \| null`                          | `null`                      | Your own chrome inside the map's rows (§3.4).                                                                                                                                                          |
+| Property (attribute)                                 | Type                                       | Default                     | What it does                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scenario` (`scenario`)                              | `string`                                   | `""`                        | **Required.** The scenario id (§6). Changing it redraws the map and ends a running navigation (`reason: "scenario-changed"`). An unknown id logs to the console and clears the map, its error staying in the status pill until a valid id is set; `""` clears it too. |
+| `theme`                                              | `OsmThemeName \| OsmTheme`                 | the scenario's              | The basemap's look (§7).                                                                                                                                                                                                                                              |
+| `assetBase` (`asset-base`)                           | `string`                                   | `""` = the page's directory | Where `map_osm.geojson` and `logos/` are served (§2.2).                                                                                                                                                                                                               |
+| `locale` (`locale`)                                  | `"de" \| "en"`                             | the browser's               | UI language.                                                                                                                                                                                                                                                          |
+| `strings`                                            | `Partial<FieldMapStrings>`                 | `{}`                        | Replace any UI text; see `FIELD_MAP_STRINGS` for all keys.                                                                                                                                                                                                            |
+| `storagePrefix` (`storage-prefix`)                   | `string`                                   | `"field-map"`               | Prefix of the `localStorage` keys it keeps (§3.5). Set your own, e.g. `"my-larp-map"`.                                                                                                                                                                                |
+| `insets`                                             | `{ top?: number; bottom?: number }`        | `{}`                        | Pixels your own chrome covers at the top/bottom. The element's rows move clear of it, and popups pan clear of it.                                                                                                                                                     |
+| `positionSource` (`position-source`)                 | `"device" \| "external"`                   | `"device"`                  | `device`: the element runs the browser's GPS and compass itself. `external`: it uses only `setPosition()` (e.g. a native GPS layer, or a replay).                                                                                                                     |
+| `wakeLock` (`wake-lock`)                             | `boolean`                                  | `true`                      | Keep the screen on while the map is visible, with either `positionSource`. Attribute `wake-lock="false"` turns it off.                                                                                                                                                |
+| `attribution` (`attribution`)                        | `boolean`                                  | `true`                      | Show "© OpenStreetMap" (the data licence requires a credit; turn off only if you credit OSM elsewhere where players see it).                                                                                                                                          |
+| `markers`                                            | `readonly MapMarker[]`                     | `[]`                        | Live markers (§5). Replace the array to update.                                                                                                                                                                                                                       |
+| `markerLayers`                                       | `readonly MarkerLayer[]` (`{ id, label }`) | `[]`                        | Rows in the ⚙ menu that hide/show markers by their `layer`.                                                                                                                                                                                                           |
+| `staleAfterMs` (`stale-after-ms`)                    | `number`                                   | `30000`                     | A marker whose `seenAt` is older fades and shows its age. `0`: never.                                                                                                                                                                                                 |
+| `topStart` / `topEnd` / `topNotice` / `bottomNotice` | `Element \| null`                          | `null`                      | Your own chrome inside the map's rows (§3.4).                                                                                                                                                                                                                         |
 
 ### 3.2 Methods and getters
 
-| Member                                                | Returns               | Notes                                                                                                                                                                                                |
-| ----------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `navigateToPoi(poiId, { source? })`                   | `NavigationState`     | Navigate to a PoI of the current scenario by its id (`"630"`, `"Lima"`). **Throws `RangeError`** for an id the scenario does not show (`scenarioPoiIds(scenario)` lists them).                       |
-| `navigateToCoordinates(lat, lng, { name?, source? })` | `NavigationState`     | Navigate anywhere. `name` defaults to the grid square ("Square H6") or "Marked position". **Throws `RangeError`** on non-finite or out-of-range values. A point off the field is allowed.            |
-| `navigateToMarker(markerId, { source? })`             | `NavigationState`     | Navigate to a live marker; follows it as it moves. **Throws `RangeError`** if `markers` has no such id. Ends by itself when the marker leaves `markers`.                                             |
-| `stopNavigation({ source? })`                         | `void`                | End the running navigation, if any.                                                                                                                                                                  |
-| `navigation` (getter)                                 | `NavigationState`     | The running navigation, or `null`. JSON-safe.                                                                                                                                                        |
-| `navigating` (getter)                                 | `boolean`             | `navigation !== null`.                                                                                                                                                                               |
-| `fix` (getter)                                        | `PositionFix \| null` | The position as drawn (smoothed). `null` before the first fix.                                                                                                                                       |
-| `setPosition(fix, heading?)`                          | `void`                | `position-source="external"` only: `{ lat, lng, accuracy, heading?, speed? }` plus where the phone points (degrees, or `null`). Applied on the next frame. Throws `TypeError` on non-finite numbers. |
-| `resize()`                                            | `void`                | Re-measure after you un-hide the element (it also notices by itself after layout).                                                                                                                   |
-| `refreshStyle()`                                      | `void`                | Re-read `--field-map-accent*` after changing them at runtime (§7.2).                                                                                                                                 |
+| Member                                                | Returns               | Notes                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `navigateToPoi(poiId, { source? })`                   | `NavigationState`     | Navigate to a PoI of the current scenario by its id (`"630"`, `"Lima"`). **Throws `RangeError`** for an id the scenario does not show (`scenarioPoiIds(scenario)` lists them).                                                                                                                                                                                                          |
+| `navigateToCoordinates(lat, lng, { name?, source? })` | `NavigationState`     | Navigate anywhere. `name` defaults to the grid square ("Square H6") or "Marked position". **Throws `RangeError`** on non-finite or out-of-range values. A point off the field is allowed.                                                                                                                                                                                               |
+| `navigateToMarker(markerId, { source? })`             | `NavigationState`     | Navigate to a live marker; follows it as it moves. **Throws `RangeError`** if `markers` has no such id (the array as last set: one set in the same task counts). Ends by itself when the marker leaves `markers`.                                                                                                                                                                       |
+| `stopNavigation({ source? })`                         | `void`                | End the running navigation, if any.                                                                                                                                                                                                                                                                                                                                                     |
+| `navigation` (getter)                                 | `NavigationState`     | The running navigation, or `null`. JSON-safe.                                                                                                                                                                                                                                                                                                                                           |
+| `navigating` (getter)                                 | `boolean`             | `navigation !== null`.                                                                                                                                                                                                                                                                                                                                                                  |
+| `fix` (getter)                                        | `PositionFix \| null` | The position as drawn (smoothed); `at` is when it last changed. `null` before the first fix.                                                                                                                                                                                                                                                                                            |
+| `setPosition(fix, heading?)`                          | `void`                | `position-source="external"` only: `{ lat, lng, accuracy, heading?, speed? }` plus where the phone points (degrees, or `null`). Applied on the next frame (before a scenario is loaded too: it is drawn when the map is). Throws `TypeError` on a non-finite `lat`, `lng` or `accuracy`; a non-finite `heading` or `speed` (the browser's own NaN while standing still) counts as none. |
+| `resize()`                                            | `void`                | Re-measure after you un-hide the element (it also notices by itself after layout).                                                                                                                                                                                                                                                                                                      |
+| `refreshStyle()`                                      | `void`                | Re-read `--field-map-accent*` after changing them at runtime (§7.2).                                                                                                                                                                                                                                                                                                                    |
 
 All three `navigateTo*` calls:
 
@@ -204,6 +204,8 @@ All are `CustomEvent`s that bubble and are composed. Listen on the element.
 | `fieldmap-marker-click` | `{ id }`                                                                                          | The player tapped (or long-pressed) a live marker. Show your own UI for it.                                                                                                                                                                                                                                                                                       |
 | `fieldmap-marks-change` | `{ scenario, marks: Mark[] }`                                                                     | The player added, renamed or deleted one of their own marks on this map.                                                                                                                                                                                                                                                                                          |
 | `fieldmap-permission`   | `{ kind: "geolocation" \| "compass", state: "granted" \| "denied" \| "prompt" \| "unavailable" }` | Sensor permission changed. `compass/prompt`: the compass needs a tap — the element shows an "Enable compass" button under the top row (iOS; a phone whose browser gates the sensor). `compass/unavailable`: no compass at all (a laptop); nothing is shown, and turn hints come from the GPS course while the player walks. Only an explicit refusal is `denied`. |
+
+**Order.** Events are dispatched synchronously. The navigation events and `fieldmap-marks-change` come once the map already shows the change, so a handler may call `stopNavigation()` or `navigateTo*` from inside one. A navigation starting sends `fieldmap-navigation` first, then `fieldmap-arrived` if the player is already at the target, then `fieldmap-guidance`; one ending sends `fieldmap-navigation`, then `fieldmap-guidance` `null`. On a scenario switch, `"scenario-changed"` comes once the new map is in place: a `navigateTo*` from that handler runs on the new map, and wins over one you called right after setting `scenario`. `fieldmap-ready` is the last thing a switch reports — after the held call too, at once when the map data is already loaded (any switch after the first), or when it arrives. Deleting the mark being navigated to sends `fieldmap-marks-change` first, then `fieldmap-navigation` (`reason: "target-removed"`, `source: "user"`) — unless a handler of the first already started or stopped a navigation, which then reports itself.
 
 Example payloads (copied from the test page's event log):
 
@@ -273,6 +275,8 @@ The element keeps the player's own settings in `localStorage` (never anything th
 - `<prefix>-marker-layers` — which of your `markerLayers` the player hid.
 
 Each works without storage too (private mode): it then lasts the session.
+
+Changing `storagePrefix` while a map is up switches to the new key's marks, layer switches and hidden layers at once; a navigation to a mark ends (`reason: "target-removed"`, `source: "host"`) unless the new key holds the same mark — same id, name and position; one that only shares the id is another mark. No `fieldmap-marks-change` is sent for it — the player changed nothing.
 
 ## 4. Points of interest, marks, gestures
 
@@ -361,32 +365,98 @@ Updating `markers` once a second for dozens of players is cheap: the element com
 
 ### 5.2 Syncing navigations (e.g. a squad lead sets a waypoint)
 
-Continues §5.1 (`map`, `socket`, `me`, and the `NavigationState` import). Here every change the player makes is sent — starts and stops alike; filter on `reason` if your app only shares starts.
+Continues §5.1 (`map`, `socket`, `me`, and the `NavigationState` import). Here every change the player makes is sent as it happens — starts and stops alike; filter on `reason` if your app only shares starts.
+
+**Never send the navigation on (re)connect.** A phone that rejoins with none would stop everyone else's, and one that rejoins with one would start it again on every other map — re-framing it and ending follow mode. With patchy signal on a field, phones rejoin all day. Catching up is the server's job, and order is its job too, because device clocks disagree by seconds: it numbers each navigation message, counting up per scenario, relays it to every client — the sender included — and keeps the last one per scenario, a stop included, to answer a client that joins that scenario. A client applies only a message numbered higher than any it has seen on its scenario. So a catch-up it already has, or one that arrives after a newer live message, changes nothing, while a phone that missed the lead's new waypoint, or the stop, gets it. A choice the player made offline stays on this device until the squad shares a newer one.
+
+A client joins when its socket opens and whenever the app sets `scenario` — not on `fieldmap-ready`, which a slow or failed map download would hold up, while PoIs and navigation work without it. A new scenario (`""` and an unknown id too) starts from nothing seen: its last navigation is news. The client knows its own messages by an id it makes for each and the server relays back. Until the newest has come back, whatever number it carries, the client applies nothing: what arrives meanwhile may have been numbered before the player's choice or after it, and only the number says which. Once it is back, the map goes to the newest message seen, unless that is the one it shows. A message the server dropped, rejected or did not relay to its sender never comes back, so the wait ends after a few seconds too; the map then goes to the newest message that arrived meanwhile, if one did — otherwise the player's choice stays, like one made offline. That timeout only keeps the sync from freezing: it is not what stops two changes made at once from swapping, so a server has to relay every message to its sender as well. **A follow is personal:** it goes out with the marker's position at that moment, and every other phone walks to that point — "follow Alice" reaches the squad as "go to where Alice is now". Alice's own phone ignores it.
 
 ```ts
-// Out: what the player did on this device.
-map.addEventListener("fieldmap-navigation", (event) => {
-	const { state, source } = event.detail;
-	if (source !== "user") return; // came from the server: do not echo it back
-	socket.send(JSON.stringify({ type: "navigation", from: me.id, state }));
-});
+type NavigationMessage = {
+	type: "navigation";
+	id: string; // made by the sender, which knows its own message by it when it comes back
+	scenario: string; // PoI ids are per scenario: a phone on another one drops it
+	state: NavigationState;
+	seq: number; // stamped by the server; the order of everything below
+};
 
-// In: apply with source "host" (the default for method calls).
-function applyRemoteNavigation(state: NavigationState) {
-	if (!state) return map.stopNavigation();
-	const { target } = state;
-	if (target.kind === "poi") map.navigateToPoi(target.id);
-	else if (target.kind === "marker" && map.markers.some((m) => m.id === target.id))
-		map.navigateToMarker(target.id);
-	// Marks and spots are local to their device; their coordinates are not.
-	else map.navigateToCoordinates(target.lat, target.lng, { name: target.name });
+// The scenario this client asked the server about, and the newest message seen there.
+let joined = "";
+let latest: NavigationMessage | null = null;
+// The id of the message the map shows, and of ours until it comes back.
+let shown: string | null = null;
+let pending: string | null = null;
+
+// Call it whenever your app has set `map.scenario`; it also runs on every (re)connect.
+function join() {
+	if (map.scenario !== joined) {
+		joined = map.scenario; // another map's numbers and messages mean nothing here
+		latest = shown = pending = null;
+	}
+	if (socket.readyState !== WebSocket.OPEN) return;
+	socket.send(JSON.stringify({ type: "join", scenario: joined })); // a request, not a broadcast
 }
 
-// Wire both into connect() from §5.1:
-//   in socket.onmessage:  if (msg.type === "navigation" && msg.from !== me.id) applyRemoteNavigation(msg.state);
-//   and on (re)connect, the current state in one message:
-//   socket.onopen = () => socket.send(JSON.stringify({ type: "navigation", from: me.id, state: map.navigation }));
+// Out: what the player did on this device. Offline, it stays here.
+map.addEventListener("fieldmap-navigation", (event) => {
+	const { state, source } = event.detail;
+	// Only the player's own: a "host" change came from the server.
+	if (source !== "user" || socket.readyState !== WebSocket.OPEN) return;
+	const id = crypto.randomUUID();
+	// A follow too: its target carries where the marker is now.
+	socket.send(JSON.stringify({ type: "navigation", id, scenario: joined, state }));
+	shown = pending = id;
+	// Lost, rejected, or not relayed back to us (a send reports none of it): wait 5 s at most,
+	// then go to what arrived meanwhile, if anything did.
+	const before = latest;
+	setTimeout(() => {
+		if (pending !== id) return; // back already, or a newer one of ours is out
+		pending = null;
+		if (latest !== before) showLatest();
+	}, 5000);
+});
+
+// In: the newest message on this scenario, once ours is back.
+function receiveNavigation(msg: NavigationMessage) {
+	if (msg.scenario !== joined) return; // another map's
+	// Ours coming back ends the wait, whatever its number; anything else older is old news.
+	if (msg.id === pending) pending = null;
+	else if (latest && msg.seq <= latest.seq) return;
+	if (!latest || msg.seq > latest.seq) latest = msg;
+	showLatest();
+}
+
+function showLatest() {
+	if (pending || !latest || latest.id === shown) return; // ours is on its way, or already on the map
+	shown = latest.id;
+	const { state } = latest;
+	try {
+		// Applied with source "host" (the default for method calls), so it is not sent back.
+		if (!state) map.stopNavigation();
+		else if (state.target.kind === "poi") map.navigateToPoi(state.target.id);
+		// Marks and spots are local to their device, a follow is the sender's own: walk to
+		// the point. A follow of this very player means nothing on their phone.
+		else if (state.target.id !== me.id) {
+			map.navigateToCoordinates(state.target.lat, state.target.lng, { name: state.target.name });
+		}
+	} catch (err) {
+		console.warn("[nav-sync] not applied", err); // e.g. a PoI this scenario does not show
+	}
+}
+
+// Wire it into connect() from §5.1: first thing in socket.onmessage,
+//   if (msg.type === "navigation") return receiveNavigation(msg);
+// and right after `socket = new WebSocket(...)`,
+//   socket.onopen = join;
+// and call join() wherever your app sets `map.scenario`.
+// On the server, per scenario: stamp each navigation message with `seq` = the last one
+// + 1 (kept across restarts, or every client ignores it until the count catches up),
+// relay it, `id` and all, in that order to every client, the sender included, and keep
+// the last one, `state: null` included; answer a client's `join` with it. The client
+// sends nothing else on connect.
 ```
+
+A navigation sent into a connection that had silently died (a phone's socket can look open for a while) is lost like one made offline: it stays on this device, and the others never see it.
 
 ### 5.3 Custom markers (objectives, a supply drop)
 
@@ -492,21 +562,23 @@ Anything else: every rule of the element is scoped `field-map .class`; write the
 8. **`fieldmap-fix` and `fieldmap-guidance` fire per frame.** Throttle before network or storage work.
 9. **One element per page.** Two would run two GPS watches and fight over the screen.
 10. **Do not call `update()`** — that is Lit's render cycle. External positions go through `setPosition()`.
+11. **When syncing navigations, never send the state on (re)connect.** A phone that rejoins with no navigation stops everyone else's; one with a navigation restarts it on every map. Send only the player's own changes; let the server number them per scenario, relay them to everyone, the sender included, and hand the last one, a stop included, to a client that joins. Apply only a message numbered higher than any seen on that scenario — never order by device clocks — and nothing while the player's own is on its way back (a few seconds at most), or two changes made at once swap places between the phones (§5.2).
 
 ## 9. Troubleshooting
 
-| Symptom                                             | Cause / fix                                                                                                                                                                                                                                                                         |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Blank dark screen, status "Map could not be loaded" | `map_osm.geojson` not found: see §2.2, check `asset-base`, look for a 404 in the network panel.                                                                                                                                                                                     |
-| Map draws, faction emblems are empty rings          | `logos/` not served next to the GeoJSON.                                                                                                                                                                                                                                            |
-| No location prompt, "Waiting for GPS…" forever      | Not HTTPS; element hidden or 0×0; `position-source="external"` without `setPosition()`; the browser blocked location earlier (site settings).                                                                                                                                       |
-| "Location permission denied"                        | The player refused; only the browser's site settings undo it. Tell them so.                                                                                                                                                                                                         |
-| No turn hints, "Enable compass for turn hints"      | The device has a compass the browser holds back: the player taps "Enable compass" under the top row (the element shows it only where a tap can help). On a device without one the card says "Turn hints appear as you walk": above walking pace the GPS course gives the direction. |
-| Other players fade although they are online         | Their app sends fixes only on change: add the heartbeat from §5.1.                                                                                                                                                                                                                  |
-| Markers do not move                                 | You mutated the array (§8.7), or reused the same `id` for different things.                                                                                                                                                                                                         |
-| `RangeError` from `navigateToPoi`                   | That PoI is not in this scenario: check `scenarioPoiIds(map.scenario)`.                                                                                                                                                                                                             |
-| Nothing renders at all                              | `lit`/`leaflet` not installed, or the module was not imported (`import "@fieldmaps/field-map"` defines the element).                                                                                                                                                                |
-| Styles of my app leak into the map                  | Your global rules (e.g. on `button`) apply inside it; scope them, or override with `field-map …` selectors.                                                                                                                                                                         |
+| Symptom                                             | Cause / fix                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blank dark screen, status "Map could not be loaded" | `map_osm.geojson` not found: see §2.2, check `asset-base`, look for a 404 in the network panel.                                                                                                                                                                                                                                                                                                                                                           |
+| Map draws, faction emblems are empty rings          | `logos/` not served next to the GeoJSON.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| No location prompt, "Waiting for GPS…" forever      | Not HTTPS; element hidden or 0×0; `position-source="external"` without `setPosition()`; the browser blocked location earlier (site settings).                                                                                                                                                                                                                                                                                                             |
+| "Location permission denied"                        | The player refused; only the browser's site settings undo it. Tell them so.                                                                                                                                                                                                                                                                                                                                                                               |
+| No turn hints, "Enable compass for turn hints"      | The device has a compass the browser holds back: the player taps "Enable compass" under the top row (the element shows it only where a tap can help). On a device without one the card says "Turn hints appear as you walk": above walking pace the GPS course gives the direction. With `position-source="external"` it says that until `setPosition()` brings a heading: the fix's `heading` with a `speed` above walking pace, or the second argument. |
+| Other players fade although they are online         | Their app sends fixes only on change: add the heartbeat from §5.1.                                                                                                                                                                                                                                                                                                                                                                                        |
+| Markers do not move                                 | You mutated the array (§8.7), or reused the same `id` for different things.                                                                                                                                                                                                                                                                                                                                                                               |
+| The map goes blank after changing `scenario`        | The id names no map (the pill says "Unknown scenario", the console logs it) or is `""`; either clears the map. The ids are in §6.                                                                                                                                                                                                                                                                                                                         |
+| `RangeError` from `navigateToPoi`                   | That PoI is not in this scenario: check `scenarioPoiIds(map.scenario)`.                                                                                                                                                                                                                                                                                                                                                                                   |
+| Nothing renders at all                              | `lit`/`leaflet` not installed, or the module was not imported (`import "@fieldmaps/field-map"` defines the element).                                                                                                                                                                                                                                                                                                                                      |
+| Styles of my app leak into the map                  | Your global rules (e.g. on `button`) apply inside it; scope them, or override with `field-map …` selectors.                                                                                                                                                                                                                                                                                                                                               |
 
 When in doubt, compare with the test page in the Field Maps repository: it exercises every API above and logs every event.
 
