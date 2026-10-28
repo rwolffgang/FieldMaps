@@ -14,12 +14,12 @@ This app shows a map with the <field-map> custom element from the Field Maps pro
 Packages — NOT on the npm registry. Never install @fieldmaps/* by name; a registry
 lookup either fails or, worse, finds someone else's package. They are installed from
 these exact tarball URLs, as package.json dependencies:
-  "@fieldmaps/core": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.1/fieldmaps-core-0.1.0.tgz"
-  "@fieldmaps/field-map": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.1/fieldmaps-field-map-0.1.0.tgz"
+  "@fieldmaps/core": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.2/fieldmaps-core-0.1.0.tgz"
+  "@fieldmaps/field-map": "https://github.com/rwolffgang/FieldMaps/releases/download/field-map-v0.1.0-pre.2/fieldmaps-field-map-0.1.0.tgz"
 plus the peer dependencies "lit" (^3.2) and "leaflet" (^1.9.4).
 
 The complete integration guide (properties, methods, events, recipes, troubleshooting):
-https://raw.githubusercontent.com/rwolffgang/FieldMaps/field-map-v0.1.0-pre.1/packages/field-map/AGENTS.md
+https://raw.githubusercontent.com/rwolffgang/FieldMaps/field-map-v0.1.0-pre.2/packages/field-map/AGENTS.md
 If you cannot open that URL, read docs/field-map-guide.md in this repository. The
 package's TypeScript declarations win over anything written here.
 
