@@ -40,6 +40,15 @@ interface Release {
 /** Newest first. Only the releases a player has not dismissed are shown. */
 const CHANGES: Release[] = [
 	{
+		id: "2026-10-22",
+		changes: [
+			{
+				de: "Neu: die Karte für FALLEN – Bad Lands, mit den Nummern und Namen aus der IT-Karte von Lost Ideas. Die Orte sind von einer handgezeichneten Karte übertragen – vor Ort gilt die Ausschilderung.",
+				en: "New: the map for FALLEN – Bad Lands, with the numbers and names from Lost Ideas' in-game map. The places were transferred from a hand-drawn map – signs on the ground take precedence.",
+			},
+		],
+	},
+	{
 		id: "2026-10-13",
 		changes: [
 			{

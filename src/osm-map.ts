@@ -281,6 +281,42 @@ const lafTheme: OsmTheme = {
 	},
 };
 
+// "FALLEN" — the Bad Lands map is a black-and-white pen drawing on paper, so this
+// is ink on paper: a pale paper ground, grey wash for the woods, white buildings
+// with an ink outline, ink roads, and a dark ink surround.
+const FALLEN_INK = "#26231e";
+const fallenTheme: OsmTheme = {
+	ground: "#f1ece1",
+	tone: { color: "#8a6a3a", opacity: 0.06 },
+	grid: "#6f675a",
+	border: "#1b1915",
+	edge: FALLEN_INK,
+	styles: {
+		forest: { kind: "area", fillColor: "#a9a497", fillOpacity: 0.55 },
+		treeline: { kind: "line", color: "#5d584e", weight: 2, dashArray: "2 5" },
+		grass: { kind: "area", fillColor: "#e3dccb", fillOpacity: 0.6 },
+		farmland: { kind: "area", fillColor: "#ddd3bc", fillOpacity: 0.55 },
+		bare: { kind: "area", fillColor: "#f8f5ee", fillOpacity: 0.8 },
+		builtup: { kind: "area", fillColor: "#e6dfcf", fillOpacity: 0.5 },
+		wetland: { kind: "area", fillColor: "#a9ab9c", fillOpacity: 0.55 },
+		water: { kind: "area", fillColor: "#a6aeac", fillOpacity: 0.75, color: FALLEN_INK, weight: 1 },
+		building: {
+			kind: "area",
+			fillColor: "#fbf8f1",
+			fillOpacity: 0.9,
+			color: FALLEN_INK,
+			weight: 1.4,
+		},
+		waterway: { kind: "line", color: "#5d6664", weight: 2 },
+		railway: { kind: "line", color: FALLEN_INK, weight: 1.6, dashArray: "8 5" },
+		road_major: { kind: "line", color: FALLEN_INK, weight: 3 },
+		road_minor: { kind: "line", color: "#3d3933", weight: 2.2 },
+		track: { kind: "line", color: "#4a453d", weight: 1.8, dashArray: "9 7" },
+		path: { kind: "line", color: "#4a453d", weight: 1.8, dashArray: "1 6", lineCap: "round" },
+		barrier: { kind: "line", color: FALLEN_INK, weight: 1.6, dashArray: "9 7" },
+	},
+};
+
 const THEMES = {
 	opt: optTheme,
 	m24: m24Theme,
@@ -288,6 +324,7 @@ const THEMES = {
 	asd: asdTheme,
 	lso: lsoTheme,
 	laf: lafTheme,
+	fallen: fallenTheme,
 } as const;
 /** Name of an available OSM look. */
 export type OsmThemeName = keyof typeof THEMES;

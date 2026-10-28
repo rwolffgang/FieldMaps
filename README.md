@@ -53,16 +53,17 @@ nothing on the device, identifies nobody, and never fires without a network. See
 
 ## Events covered
 
-Six scenarios, ordered on the overview screen by how soon they start. While one of them is running, opening the app goes straight to its map (Back still leads to the overview):
+Seven scenarios — six airsoft events and the FALLEN LARP, whose dates move every year — ordered on the overview screen by how soon they start. While one of them is running, opening the app goes straight to its map (Back still leads to the overview):
 
-| Event                 | When           | Id    |
-| --------------------- | -------------- | ----- |
-| Dark Emergency        | 29 Apr – 2 May | `de`  |
-| Lost Airfield         | 20 Jun         | `laf` |
-| Mission 24            | 3 – 5 Jul      | `m24` |
-| Airsoft Days          | 6 – 9 Aug      | `asd` |
-| LIGHT-SIM             | 17 – 20 Sep    | `lso` |
-| Operation Tschernobyl | 8 – 11 Oct     | `opt` |
+| Event                 | When           | Id       |
+| --------------------- | -------------- | -------- |
+| Dark Emergency        | 29 Apr – 2 May | `de`     |
+| FALLEN – Bad Lands    | 17 – 23 May    | `fallen` |
+| Lost Airfield         | 20 Jun         | `laf`    |
+| Mission 24            | 3 – 5 Jul      | `m24`    |
+| Airsoft Days          | 6 – 9 Aug      | `asd`    |
+| LIGHT-SIM             | 17 – 20 Sep    | `lso`    |
+| Operation Tschernobyl | 8 – 11 Oct     | `opt`    |
 
 Dates are stored as month and day only, because the events recur annually.
 

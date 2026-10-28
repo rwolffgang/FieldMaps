@@ -51,6 +51,8 @@ export interface MapDefinition {
 	controlPoints: ControlPoint[];
 	/** PoI id -> label to show on this map. Only listed ids are shown. */
 	poiNames: Record<string, string>;
+	/** PoI id -> the event's own number for it, where that differs from the site's. */
+	poiNumbers?: Record<string, string>;
 	/**
 	 * Active play-area boundary as [lat, lng] points. Everything outside is covered
 	 * by the out-of-bounds texture. Empty/undefined = whole field, no mask.
@@ -92,6 +94,7 @@ function scenarioToMap(scenario: Scenario): MapDefinition {
 		schedule: scenario.schedule,
 		accent: scenario.accent,
 		poiNames: scenario.poiNames,
+		poiNumbers: scenario.poiNumbers,
 		playArea: scenario.playArea,
 		zones: scenario.zones,
 		headquarters: scenario.headquarters,
@@ -141,7 +144,8 @@ export function getMapById(id: string): MapDefinition {
 
 /** PoIs visible on a map: shared coordinates with that map's scenario labels. */
 export function getPointsOfInterestForMap(mapId: string): LabeledPointOfInterest[] {
-	return labelPointsOfInterest(getMapById(mapId).poiNames);
+	const map = getMapById(mapId);
+	return labelPointsOfInterest(map.poiNames, map.poiNumbers);
 }
 
 /**

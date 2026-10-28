@@ -15,6 +15,11 @@ export interface PointOfInterest {
 /** A point of interest with the display label for a specific scenario. */
 export interface LabeledPointOfInterest extends PointOfInterest {
 	name: string;
+	/**
+	 * What this scenario's own map numbers the place, when that is not the site's
+	 * building number — FALLEN renumbers the whole field. Shown wherever the id would be.
+	 */
+	number?: string;
 }
 
 /**
@@ -135,6 +140,16 @@ export const POINTS_OF_INTEREST: PointOfInterest[] = [
 	// --- Placed from a GPS reading on the ground, not read off a map. Not in the
 	// default labels: only the scenarios that name it show it.
 	{ id: "Schranke", lat: 52.3831897, lng: 11.8285109 },
+
+	// --- Places only the FALLEN map marks, read off its hand-drawn bird's-eye view
+	// (not to scale, so good to a few tens of metres at best). Their site numbers are
+	// unknown, so the ids carry FALLEN's own number. Only the FALLEN scenario names them.
+	{ id: "fallen-5", lat: 52.377182, lng: 11.820089 }, // the usual car park, as LIGHT-SIM places it
+	{ id: "fallen-200", lat: 52.377742, lng: 11.827809 },
+	{ id: "fallen-217", lat: 52.377668, lng: 11.826255 },
+	{ id: "fallen-222.I", lat: 52.37895, lng: 11.8232 },
+	{ id: "fallen-258", lat: 52.381361, lng: 11.825845 },
+	{ id: "fallen-T", lat: 52.378342, lng: 11.821266 },
 ];
 
 /**
@@ -264,29 +279,49 @@ const labelledCache = new WeakMap<Record<string, string>, LabeledPointOfInterest
 
 /**
  * Resolve a scenario's `poiNames` map into displayable points of interest: only
- * the ids present in `poiNames` are shown, each with its scenario label.
+ * the ids present in `poiNames` are shown, each with its scenario label — and, where
+ * `poiNumbers` has one, the number that scenario's own map gives it. A scenario hands
+ * in the same pair every time, so the cache stays keyed on `poiNames` alone.
  */
-export function labelPointsOfInterest(poiNames: Record<string, string>): LabeledPointOfInterest[] {
+export function labelPointsOfInterest(
+	poiNames: Record<string, string>,
+	poiNumbers?: Record<string, string>,
+): LabeledPointOfInterest[] {
 	let labelled = labelledCache.get(poiNames);
 	if (!labelled) {
 		labelled = POINTS_OF_INTEREST.flatMap((poi) => {
 			const name = poiNames[poi.id];
-			return name == null ? [] : [{ ...poi, name }];
+			if (name == null) return [];
+			const number = poiNumbers?.[poi.id];
+			return [number == null ? { ...poi, name } : { ...poi, name, number }];
 		});
 		labelledCache.set(poiNames, labelled);
 	}
 	return labelled;
 }
 
+/** The number a player sees for a place: the scenario's own, else the site's id. */
+export function poiNumber(poi: PointOfInterest & { number?: string }): string {
+	return poi.number ?? poi.id;
+}
+
 /**
  * Order for a list a player scans by eye: the numbered buildings in ascending
  * numeric order, then the other named places (the checkpoints), then the wind
- * turbines grouped at the end — each named group alphabetically.
+ * turbines grouped at the end — each named group alphabetically. Sorted by the
+ * number the player sees, so "230.I" follows "230" and "T" falls in with the names.
  */
-export function comparePointsOfInterest(a: PointOfInterest, b: PointOfInterest): number {
-	const group = (id: string) => (isWindTurbine(id) ? 2 : /^\d+$/.test(id) ? 0 : 1);
-	const byGroup = group(a.id) - group(b.id);
+export function comparePointsOfInterest(
+	a: PointOfInterest & { number?: string },
+	b: PointOfInterest & { number?: string },
+): number {
+	const group = (poi: PointOfInterest & { number?: string }) =>
+		isWindTurbine(poi.id) ? 2 : /^\d/.test(poiNumber(poi)) ? 0 : 1;
+	const byGroup = group(a) - group(b);
 	if (byGroup) return byGroup;
-	if (group(a.id) === 0) return Number(a.id) - Number(b.id);
-	return a.id.localeCompare(b.id);
+	if (group(a) === 0) {
+		const byValue = parseFloat(poiNumber(a)) - parseFloat(poiNumber(b));
+		if (byValue) return byValue;
+	}
+	return poiNumber(a).localeCompare(poiNumber(b), undefined, { numeric: true });
 }
