@@ -27,6 +27,7 @@
 		"!src/**/*.test.ts",
 		"AGENTS.md",
 		"llms.txt",
+		"LOVABLE.md",
 		"README.md",
 		"LICENSE"
 	],
