@@ -7,7 +7,15 @@ import {
 	type OsmThemeName,
 } from "./osm-map.js";
 import { comparePointsOfInterest } from "./poi.js";
-import { MAPS, SCENARIOS, getMap, getScenario, scenarioPoiIds } from "./mahlwinkel/index.js";
+import {
+	FIELD_BOUNDS,
+	MAPS,
+	SCENARIOS,
+	getMap,
+	getScenario,
+	scenarioCentre,
+	scenarioPoiIds,
+} from "./mahlwinkel/index.js";
 import { POINTS_OF_INTEREST } from "./mahlwinkel/points-of-interest.js";
 
 let failures = 0;
@@ -67,6 +75,18 @@ check(
 );
 check("scenarioPoiIds lists the shown PoIs", scenarioPoiIds("m24").includes("630"));
 check("scenarioPoiIds of an unknown scenario is empty", scenarioPoiIds("nope").length === 0);
+
+const inside = (p?: { lat: number; lng: number }) =>
+	p != null &&
+	p.lat < FIELD_BOUNDS.north &&
+	p.lat > FIELD_BOUNDS.south &&
+	p.lng > FIELD_BOUNDS.west &&
+	p.lng < FIELD_BOUNDS.east;
+check(
+	"every scenario's centre is on the field",
+	SCENARIOS.every((s) => inside(scenarioCentre(s.id))),
+);
+check("an unknown scenario has no centre", scenarioCentre("nope") === undefined);
 
 const kindOf = (id: string) => POINTS_OF_INTEREST.find((poi) => poi.id === id)?.kind;
 check("turbines are marked", kindOf("Lima") === "turbine");

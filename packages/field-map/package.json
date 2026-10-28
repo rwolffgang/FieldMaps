@@ -1,7 +1,7 @@
 {
 	"name": "@fieldmaps/field-map",
 	"version": "0.1.0",
-	"description": "<field-map>: the Field Maps map of the Mahlwinkel airfield as a custom element — live GPS position, points of interest, navigation, marks, and live markers from your own server.",
+	"description": "<field-map>: the Field Maps map of the Mahlwinkel airfield as a custom element \u2014 live GPS position, points of interest, navigation, marks, and live markers from your own server.",
 	"license": "MIT",
 	"type": "module",
 	"sideEffects": [
@@ -23,6 +23,8 @@
 	},
 	"files": [
 		"dist",
+		"src",
+		"!src/**/*.test.ts",
 		"AGENTS.md",
 		"llms.txt",
 		"README.md",

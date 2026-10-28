@@ -85,14 +85,14 @@ Custom elements take **properties**, not just attributes; set object-valued ones
 ```tsx
 import { useEffect, useRef } from "react";
 import "@fieldmaps/field-map";
-import type { FieldMap, MapMarker, NavigationChangeDetail } from "@fieldmaps/field-map";
+import type { FieldMapElement, MapMarker, NavigationChangeDetail } from "@fieldmaps/field-map";
 
 export function FieldMapView(props: {
 	scenario: string;
 	markers: MapMarker[];
 	onNavigation?: (detail: NavigationChangeDetail) => void;
 }) {
-	const ref = useRef<FieldMap>(null);
+	const ref = useRef<FieldMapElement>(null);
 	useEffect(() => {
 		if (ref.current) ref.current.markers = props.markers;
 	}, [props.markers]);
@@ -110,7 +110,10 @@ export function FieldMapView(props: {
 declare global {
 	namespace JSX {
 		interface IntrinsicElements {
-			"field-map": React.DetailedHTMLProps<React.HTMLAttributes<FieldMap>, FieldMap> & {
+			"field-map": React.DetailedHTMLProps<
+				React.HTMLAttributes<FieldMapElement>,
+				FieldMapElement
+			> & {
 				scenario?: string;
 			};
 		}
@@ -120,9 +123,30 @@ declare global {
 
 Mount it **once** and keep it mounted (hide it rather than unmounting): it keeps the GPS watch running for the session so a return to the map does not wait for a cold fix. Server-side rendering: render nothing for it on the server; import the package only in the browser (`useEffect` / dynamic import).
 
+### 2.5 TypeScript
+
+Nothing special is needed. A working setup for a Vite app:
+
+```jsonc
+// tsconfig.json
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"types": ["vite/client"],
+	},
+	// Leave vite.config.ts out (or add @types/node and an esnext lib): Vite's own types
+	// need them, the Field Maps packages do not.
+	"include": ["src"],
+}
+```
+
 ## 3. Reference
 
-TypeScript users get all of this typed: `HTMLElementTagNameMap["field-map"]` is `FieldMap`, and `addEventListener("fieldmap-…", e => e.detail…)` is typed through `HTMLElementEventMap`.
+TypeScript users get all of this typed: `document.querySelector("field-map")` returns a `FieldMapElement` — **the interface to read** for the element's whole public surface (in `dist/types.d.ts`; the `FieldMap` class also declares its private parts) — and `addEventListener("fieldmap-…", e => e.detail…)` is typed through `HTMLElementEventMap`. The declarations need no `@types/leaflet`.
 
 ### 3.1 Properties
 
@@ -139,7 +163,7 @@ TypeScript users get all of this typed: `HTMLElementTagNameMap["field-map"]` is 
 | `wakeLock` (`wake-lock`)                             | `boolean`                                  | `true`                      | Keep the screen on while the map is visible. Attribute `wake-lock="false"` turns it off.                                                                                                               |
 | `attribution` (`attribution`)                        | `boolean`                                  | `true`                      | Show "© OpenStreetMap" (the data licence requires a credit; turn off only if you credit OSM elsewhere where players see it).                                                                           |
 | `markers`                                            | `readonly MapMarker[]`                     | `[]`                        | Live markers (§5). Replace the array to update.                                                                                                                                                        |
-| `markerLayers`                                       | `readonly { id: string; label: string }[]` | `[]`                        | Rows in the ⚙ menu that hide/show markers by their `layer`.                                                                                                                                            |
+| `markerLayers`                                       | `readonly MarkerLayer[]` (`{ id, label }`) | `[]`                        | Rows in the ⚙ menu that hide/show markers by their `layer`.                                                                                                                                            |
 | `staleAfterMs` (`stale-after-ms`)                    | `number`                                   | `30000`                     | A marker whose `seenAt` is older fades and shows its age. `0`: never.                                                                                                                                  |
 | `topStart` / `topEnd` / `topNotice` / `bottomNotice` | `Element \| null`                          | `null`                      | Your own chrome inside the map's rows (§3.4).                                                                                                                                                          |
 
@@ -170,16 +194,16 @@ All three `navigateTo*` calls:
 
 All are `CustomEvent`s that bubble and are composed. Listen on the element.
 
-| Event                   | `detail`                                                                         | When                                                                                                                                                                            |
-| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fieldmap-ready`        | `{ scenario }`                                                                   | The scenario's map data has loaded and is drawn.                                                                                                                                |
-| `fieldmap-fix`          | `PositionFix`                                                                    | The player's position or heading changed. **Up to once per animation frame** (60 Hz while the compass moves) — throttle before sending anywhere.                                |
-| `fieldmap-navigation`   | `NavigationChangeDetail`                                                         | A navigation started, stopped, lost its target, or was ended by a scenario change.                                                                                              |
-| `fieldmap-arrived`      | `{ target: NavigationTarget }`                                                   | Within 8 m of the target. Once per approach (again only after moving 20 m away). The navigation keeps running; call `stopNavigation()` if arrival should end it.                |
-| `fieldmap-guidance`     | `GuidanceDetail \| null`                                                         | While navigating with a compass: the target's bearing relative to where the phone points, and the distance. `null` when there is none (no compass, arrived, stopped). Frequent. |
-| `fieldmap-marker-click` | `{ id }`                                                                         | The player tapped (or long-pressed) a live marker. Show your own UI for it.                                                                                                     |
-| `fieldmap-marks-change` | `{ scenario, marks: Mark[] }`                                                    | The player added, renamed or deleted one of their own marks on this map.                                                                                                        |
-| `fieldmap-permission`   | `{ kind: "geolocation" \| "compass", state: "granted" \| "denied" \| "prompt" }` | Sensor permission changed. `compass/prompt`: iOS needs a tap on the element's "Enable compass" button (shown automatically).                                                    |
+| Event                   | `detail`                                                                         | When                                                                                                                                                                                                                                                   |
+| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `fieldmap-ready`        | `{ scenario }`                                                                   | The scenario's map data has loaded and is drawn.                                                                                                                                                                                                       |
+| `fieldmap-fix`          | `PositionFix`                                                                    | The player's position or heading changed. **Up to once per animation frame** (60 Hz while the compass moves) — throttle before sending anywhere. **Only on change:** a player standing still may produce none for a while, so send a heartbeat (§5.1). |
+| `fieldmap-navigation`   | `NavigationChangeDetail`                                                         | A navigation started, stopped, lost its target, or was ended by a scenario change.                                                                                                                                                                     |
+| `fieldmap-arrived`      | `{ target: NavigationTarget }`                                                   | Within 8 m of the target. Once per approach (again only after moving 20 m away). The navigation keeps running; call `stopNavigation()` if arrival should end it.                                                                                       |
+| `fieldmap-guidance`     | `GuidanceDetail \| null`                                                         | While navigating with a compass: the target's bearing relative to where the phone points, and the distance. `null` when there is none (no compass, arrived, stopped). Frequent.                                                                        |
+| `fieldmap-marker-click` | `{ id }`                                                                         | The player tapped (or long-pressed) a live marker. Show your own UI for it.                                                                                                                                                                            |
+| `fieldmap-marks-change` | `{ scenario, marks: Mark[] }`                                                    | The player added, renamed or deleted one of their own marks on this map.                                                                                                                                                                               |
+| `fieldmap-permission`   | `{ kind: "geolocation" \| "compass", state: "granted" \| "denied" \| "prompt" }` | Sensor permission changed. `compass/prompt`: the browser gates the compass behind a tap — iOS Safari, and also recent desktop Chromium — so the element shows an "Enable compass" button under the top row.                                            |
 
 Example payloads (copied from the test page's event log):
 
@@ -271,9 +295,9 @@ A complete client side over WebSocket. The message shapes are a **suggestion** �
 
 ```ts
 import "@fieldmaps/field-map";
-import type { FieldMap, MapMarker } from "@fieldmaps/field-map";
+import type { MapMarker, NavigationState } from "@fieldmaps/field-map";
 
-const map = document.querySelector("field-map") as FieldMap;
+const map = document.querySelector("field-map")!; // typed as FieldMapElement
 const me = { id: crypto.randomUUID(), name: "Alice", team: "red" };
 const TEAM_COLOURS: Record<string, string> = { red: "#ff5a4f", blue: "#4fa3ff" };
 const others = new Map<string, MapMarker>();
@@ -314,17 +338,30 @@ connect();
 
 // Our own position out, at most once a second.
 let lastSent = 0;
+function sendFix(fix = map.fix) {
+	if (!fix || socket.readyState !== WebSocket.OPEN) return;
+	lastSent = Date.now();
+	// `at` is when we sent it: other clients fade this player after `staleAfterMs` without one.
+	socket.send(
+		JSON.stringify({ type: "fix", id: me.id, name: me.name, team: me.team, ...fix, at: lastSent }),
+	);
+}
 map.addEventListener("fieldmap-fix", (event) => {
-	const fix = event.detail;
-	if (fix.at - lastSent < 1000 || socket.readyState !== WebSocket.OPEN) return;
-	lastSent = fix.at;
-	socket.send(JSON.stringify({ type: "fix", id: me.id, name: me.name, team: me.team, ...fix }));
+	if (Date.now() - lastSent >= 1000) sendFix(event.detail);
 });
+// fieldmap-fix fires only when something changed. A player standing still (GPS steady,
+// no compass) may produce none for a long time, and would fade on everyone else's
+// screen — so repeat the last fix as a heartbeat.
+setInterval(() => {
+	if (Date.now() - lastSent >= 5000) sendFix();
+}, 1000);
 ```
 
 Updating `markers` once a second for dozens of players is cheap: the element compares the new array with the last by `id` and only moves what moved. Team filtering ("blue only sees blue") belongs on your server, or in your app before you set `markers`.
 
 ### 5.2 Syncing navigations (e.g. a squad lead sets a waypoint)
+
+Continues §5.1 (`map`, `socket`, `me`, and the `NavigationState` import). Here every change the player makes is sent — starts and stops alike; filter on `reason` if your app only shares starts.
 
 ```ts
 // Out: what the player did on this device.
@@ -345,8 +382,10 @@ function applyRemoteNavigation(state: NavigationState) {
 	else map.navigateToCoordinates(target.lat, target.lng, { name: target.name });
 }
 
-// On (re)connect, the current state in one message:
-socket.send(JSON.stringify({ type: "navigation", from: me.id, state: map.navigation }));
+// Wire both into connect() from §5.1:
+//   in socket.onmessage:  if (msg.type === "navigation" && msg.from !== me.id) applyRemoteNavigation(msg.state);
+//   and on (re)connect, the current state in one message:
+//   socket.onopen = () => socket.send(JSON.stringify({ type: "navigation", from: me.id, state: map.navigation }));
 ```
 
 ### 5.3 Custom markers (objectives, a supply drop)
@@ -389,6 +428,8 @@ import {
 	SCENARIOS,
 	getScenario,
 	scenarioPoiIds,
+	scenarioCentre,
+	FIELD_BOUNDS,
 	getMap,
 	labelPointsOfInterest,
 } from "@fieldmaps/core/mahlwinkel";
@@ -396,6 +437,9 @@ import {
 SCENARIOS.map((s) => ({ id: s.id, name: s.name, blurb: s.blurb, schedule: s.schedule })); // build a picker
 scenarioPoiIds("opt"); // ["204", "211", …] — valid for navigateToPoi on that scenario
 labelPointsOfInterest(getMap("opt")!.poiNames); // [{ id, name, lat, lng, kind? }, …] — names as the players see them
+scenarioCentre("opt"); // { lat, lng } inside that event's play area — a default waypoint, a test position
+getScenario("opt")!.playArea; // the play area's boundary, [lat, lng][] (empty: the whole field)
+FIELD_BOUNDS; // { north, south, west, east } — the whole map; outside it the player is "off the map"
 ```
 
 PoI **ids are physical** (the same building has the same id in every scenario); **names are per scenario** (building 610 is "Esco Bar" in one event and "Stalker Bar" in another). Sync ids, show names.
@@ -451,19 +495,27 @@ Anything else: every rule of the element is scoped `field-map .class`; write the
 
 ## 9. Troubleshooting
 
-| Symptom                                             | Cause / fix                                                                                                                                                        |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Blank dark screen, status "Map could not be loaded" | `map_osm.geojson` not found: see §2.2, check `asset-base`, look for a 404 in the network panel.                                                                    |
-| Map draws, faction emblems are empty rings          | `logos/` not served next to the GeoJSON.                                                                                                                           |
-| No location prompt, "Waiting for GPS…" forever      | Not HTTPS; element hidden or 0×0; `position-source="external"` without `setPosition()`; the browser blocked location earlier (site settings).                      |
-| "Location permission denied"                        | The player refused; only the browser's site settings undo it. Tell them so.                                                                                        |
-| No turn hints, "Enable compass for turn hints"      | No compass: on iOS the player must tap "Enable compass" (shown at the top); on desktop there is none. Moving faster than walking pace uses the GPS course instead. |
-| Markers do not move                                 | You mutated the array (§8.7), or reused the same `id` for different things.                                                                                        |
-| `RangeError` from `navigateToPoi`                   | That PoI is not in this scenario: check `scenarioPoiIds(map.scenario)`.                                                                                            |
-| Nothing renders at all                              | `lit`/`leaflet` not installed, or the module was not imported (`import "@fieldmaps/field-map"` defines the element).                                               |
-| Styles of my app leak into the map                  | Your global rules (e.g. on `button`) apply inside it; scope them, or override with `field-map …` selectors.                                                        |
+| Symptom                                             | Cause / fix                                                                                                                                                                                                                              |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Blank dark screen, status "Map could not be loaded" | `map_osm.geojson` not found: see §2.2, check `asset-base`, look for a 404 in the network panel.                                                                                                                                          |
+| Map draws, faction emblems are empty rings          | `logos/` not served next to the GeoJSON.                                                                                                                                                                                                 |
+| No location prompt, "Waiting for GPS…" forever      | Not HTTPS; element hidden or 0×0; `position-source="external"` without `setPosition()`; the browser blocked location earlier (site settings).                                                                                            |
+| "Location permission denied"                        | The player refused; only the browser's site settings undo it. Tell them so.                                                                                                                                                              |
+| No turn hints, "Enable compass for turn hints"      | No compass yet: where the browser gates it (iOS Safari, recent desktop Chromium) the player must tap "Enable compass" under the top row; a laptop has no compass to enable. Moving faster than walking pace uses the GPS course instead. |
+| Other players fade although they are online         | Their app sends fixes only on change: add the heartbeat from §5.1.                                                                                                                                                                       |
+| Markers do not move                                 | You mutated the array (§8.7), or reused the same `id` for different things.                                                                                                                                                              |
+| `RangeError` from `navigateToPoi`                   | That PoI is not in this scenario: check `scenarioPoiIds(map.scenario)`.                                                                                                                                                                  |
+| Nothing renders at all                              | `lit`/`leaflet` not installed, or the module was not imported (`import "@fieldmaps/field-map"` defines the element).                                                                                                                     |
+| Styles of my app leak into the map                  | Your global rules (e.g. on `button`) apply inside it; scope them, or override with `field-map …` selectors.                                                                                                                              |
 
 When in doubt, compare with the test page in the Field Maps repository: it exercises every API above and logs every event.
+
+### Testing your app
+
+- **A position without GPS:** `position-source="external"` and `map.setPosition({ lat, lng, accuracy: 8 }, heading)`; `scenarioCentre(id)` gives a point on the field. In Playwright, a granted `geolocation` on the browser context works in device mode too (one fix, repeated only when you change it).
+- **Wait for the map:** `fieldmap-ready`.
+- **A navigation the player started** (`source: "user"`): choose a value in the element's own list — `page.selectOption("field-map .poi-select", "630")` — whose values are the PoI ids. (The list's other values are internal; use them only through the API.)
+- **Read state:** `map.navigation`, `map.fix`, `map.markers`; live markers are `field-map .fm-live-marker` elements (`.stale` once faded).
 
 ## 10. Privacy and licences
 

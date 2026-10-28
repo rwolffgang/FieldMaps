@@ -59,6 +59,7 @@ import { escapeHtml } from "./marker-diff.js";
 import { fieldMapStrings, type FieldMapLang, type FieldMapStrings } from "./strings.js";
 import type {
 	ExternalFix,
+	FieldMapElement,
 	FieldMapEventMap,
 	FieldMapInsets,
 	GuidanceDetail,
@@ -332,7 +333,7 @@ const SLOTS = {
 } as const;
 
 @customElement("field-map")
-export class FieldMap extends LitElement {
+export class FieldMap extends LitElement implements FieldMapElement {
 	// Light DOM: Leaflet ships global CSS that shadow DOM would wall off.
 	protected createRenderRoot() {
 		return this;
@@ -3058,7 +3059,7 @@ function spotId(lat: number, lng: number): string {
 
 declare global {
 	interface HTMLElementTagNameMap {
-		"field-map": FieldMap;
+		"field-map": FieldMapElement;
 	}
 	interface HTMLElementEventMap extends FieldMapEventMap {}
 }

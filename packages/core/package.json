@@ -24,6 +24,8 @@
 	},
 	"files": [
 		"dist",
+		"src",
+		"!src/**/*.test.ts",
 		"assets",
 		"vite-plugin.mjs",
 		"vite-plugin.d.ts",

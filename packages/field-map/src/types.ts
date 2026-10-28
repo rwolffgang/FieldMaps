@@ -5,7 +5,8 @@
 // server as it is.
 // -----------------------------------------------------------------------------
 
-import type { Mark } from "@fieldmaps/core";
+import type { Mark, OsmTheme, OsmThemeName } from "@fieldmaps/core";
+import type { FieldMapLang, FieldMapStrings } from "./strings.js";
 
 /** Who started (or stopped) a navigation: the player on the map, or the host app in code. */
 export type NavigationSource = "user" | "host";
@@ -171,4 +172,90 @@ export interface FieldMapEventMap {
 	"fieldmap-marks-change": CustomEvent<{ scenario: string; marks: readonly Mark[] }>;
 	/** A sensor permission changed. */
 	"fieldmap-permission": CustomEvent<PermissionDetail>;
+}
+
+/**
+ * `<field-map>`'s whole public surface — what `document.querySelector("field-map")`
+ * returns. The element class (`FieldMap`) implements it; read this rather than the
+ * class, whose declarations also list its private parts.
+ */
+export interface FieldMapElement extends HTMLElement {
+	/** Scenario id ("opt", "de", …). Required. Changing it ends a running navigation. */
+	scenario: string;
+	/** Basemap look: a built-in name or an `OsmTheme` (see `extendTheme`). Default: the scenario's. */
+	theme: OsmThemeName | OsmTheme | undefined;
+	/** Where `map_osm.geojson` and `logos/` are served. Default: the page's directory. */
+	assetBase: string;
+	/** UI language. Default: the browser's. */
+	locale: FieldMapLang | undefined;
+	/** Replacements for any UI text. */
+	strings: Partial<FieldMapStrings>;
+	/** Prefix of the element's `localStorage` keys. Default "field-map". */
+	storagePrefix: string;
+	/** Space the host's own chrome covers at the top/bottom of the screen, in px. */
+	insets: FieldMapInsets;
+	/** "device": the element runs GPS and compass itself. "external": only `setPosition()`. */
+	positionSource: "device" | "external";
+	/** Keep the screen on while visible. Default true. */
+	wakeLock: boolean;
+	/** Show the "© OpenStreetMap" credit. Default true. */
+	attribution: boolean;
+	/** Live markers. Replace the array to update; it is diffed by `id`. */
+	markers: readonly MapMarker[];
+	/** Rows of the ⚙ menu that hide/show markers by `layer`. */
+	markerLayers: readonly MarkerLayer[];
+	/** A marker whose `seenAt` is older than this fades. 0: never. Default 30000. */
+	staleAfterMs: number;
+	/** Host chrome placed in the element's rows (see the guide, §3.4). */
+	topStart: Element | null;
+	topEnd: Element | null;
+	topNotice: Element | null;
+	bottomNotice: Element | null;
+
+	/** The position as drawn (smoothed); null before the first fix. */
+	readonly fix: PositionFix | null;
+	/** The running navigation, or null. JSON-safe. */
+	readonly navigation: NavigationState;
+	/** Whether a navigation is running. */
+	readonly navigating: boolean;
+
+	/** Navigate to a PoI of the scenario. Throws RangeError for an id it does not show. */
+	navigateToPoi(poiId: string, options?: NavigateOptions): NavigationState;
+	/** Navigate to any coordinate. Throws RangeError on a value that is not one. */
+	navigateToCoordinates(
+		lat: number,
+		lng: number,
+		options?: NavigateOptions & { name?: string },
+	): NavigationState;
+	/** Navigate to a live marker, following it. Throws RangeError for an unknown id. */
+	navigateToMarker(markerId: string, options?: NavigateOptions): NavigationState;
+	/** End the running navigation, if any. */
+	stopNavigation(options?: NavigateOptions): void;
+	/** `positionSource = "external"` only: the player's position, and where the phone points. */
+	setPosition(fix: ExternalFix, heading?: number | null): void;
+	/** Re-measure after the element was un-hidden. */
+	resize(): void;
+	/** Re-read `--field-map-accent*` into the parts drawn in JavaScript. */
+	refreshStyle(): void;
+
+	addEventListener<K extends keyof FieldMapEventMap>(
+		type: K,
+		listener: (this: FieldMapElement, event: FieldMapEventMap[K]) => unknown,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	addEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | AddEventListenerOptions,
+	): void;
+	removeEventListener<K extends keyof FieldMapEventMap>(
+		type: K,
+		listener: (this: FieldMapElement, event: FieldMapEventMap[K]) => unknown,
+		options?: boolean | EventListenerOptions,
+	): void;
+	removeEventListener(
+		type: string,
+		listener: EventListenerOrEventListenerObject,
+		options?: boolean | EventListenerOptions,
+	): void;
 }

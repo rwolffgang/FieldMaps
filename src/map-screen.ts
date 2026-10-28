@@ -14,7 +14,7 @@
 import { LitElement, html, render, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "@fieldmaps/field-map";
-import type { FieldMap, GuidanceDetail, PositionFix } from "@fieldmaps/field-map";
+import type { FieldMapElement, GuidanceDetail, PositionFix } from "@fieldmaps/field-map";
 import type { LatLng } from "@fieldmaps/core";
 import { getMap, labelPointsOfInterest } from "@fieldmaps/core/mahlwinkel";
 import "./dosimeter-view.js";
@@ -91,7 +91,7 @@ export class MapScreen extends LitElement {
 	}
 
 	/** The map element. */
-	get map(): FieldMap | null {
+	get map(): FieldMapElement | null {
 		return this.querySelector("field-map");
 	}
 

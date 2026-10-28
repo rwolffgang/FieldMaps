@@ -8,7 +8,7 @@
 
 import "@fieldmaps/field-map";
 import type {
-	FieldMap,
+	FieldMapElement,
 	MapMarker,
 	NavigationChangeDetail,
 	NavigationState,
@@ -16,7 +16,7 @@ import type {
 import { THEMES, extendTheme, type OsmThemeName } from "@fieldmaps/core";
 import { SCENARIOS, getMap, labelPointsOfInterest } from "@fieldmaps/core/mahlwinkel";
 
-const map = document.querySelector("field-map") as FieldMap;
+const map = document.querySelector("field-map") as FieldMapElement;
 const header = document.querySelector("#controls") as HTMLElement;
 const toggle = document.querySelector("#controls-toggle") as HTMLButtonElement;
 const body = document.querySelector("#controls-body") as HTMLElement;

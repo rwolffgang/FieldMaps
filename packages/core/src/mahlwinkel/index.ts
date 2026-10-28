@@ -79,6 +79,36 @@ export function getMap(id: string): MapDefinition | undefined {
 	return MAPS.find((map) => map.id === id);
 }
 
+/**
+ * The canvas every scenario is drawn on, as GPS bounds — the whole airfield and some
+ * surround. A position outside it is "off the map".
+ */
+export const FIELD_BOUNDS = {
+	north: 52.3855,
+	south: 52.376,
+	west: 11.809,
+	east: 11.84,
+} as const;
+
+/**
+ * A point inside the scenario's play area (the mean of its boundary's vertices; the
+ * play areas are roughly convex), or the canvas centre for a scenario that plays the
+ * whole field. Handy for a test position, a default waypoint, a simulated player.
+ */
+export function scenarioCentre(id: string): { lat: number; lng: number } | undefined {
+	const scenario = getScenario(id);
+	if (!scenario) return undefined;
+	const ring = scenario.playArea;
+	if (ring.length < 3) {
+		return {
+			lat: (FIELD_BOUNDS.north + FIELD_BOUNDS.south) / 2,
+			lng: (FIELD_BOUNDS.west + FIELD_BOUNDS.east) / 2,
+		};
+	}
+	const sum = ring.reduce((acc, [lat, lng]) => [acc[0] + lat, acc[1] + lng], [0, 0]);
+	return { lat: sum[0] / ring.length, lng: sum[1] / ring.length };
+}
+
 /** The ids of the PoIs a scenario shows — what `navigateToPoi` accepts for it. */
 export function scenarioPoiIds(id: string): string[] {
 	const map = getMap(id);
